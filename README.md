@@ -1,6 +1,6 @@
 <div align="center">
   <h1>@cyanheads/mailchimp-mcp-server</h1>
-  <p><b>MCP server for the Mailchimp Marketing API — audiences, subscribers, campaigns, and reports. Safe-by-default send workflows, STDIO or Streamable HTTP.</b>
+  <p><b>Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.</b>
   <div>17 Tools • 4 Resources • 1 Prompt</div>
   </p>
 </div>
