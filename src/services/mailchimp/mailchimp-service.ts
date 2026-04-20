@@ -7,6 +7,7 @@
  * @module services/mailchimp/mailchimp-service
  */
 
+import { createHash } from 'node:crypto';
 import type { Context } from '@cyanheads/mcp-ts-core';
 import {
   forbidden,
@@ -85,10 +86,7 @@ const PAID_FEATURE_MARKER = /only available to.*(paid|standard|premium|pro|plus)
 
 /** Compute MD5-lowercase of an email address — Mailchimp uses this as the member-hash URL segment. */
 export async function mailchimpMemberHash(email: string): Promise<string> {
-  const normalized = email.trim().toLowerCase();
-  const bytes = new TextEncoder().encode(normalized);
-  const { createHash } = await import('node:crypto');
-  return createHash('md5').update(bytes).digest('hex');
+  return createHash('md5').update(email.trim().toLowerCase()).digest('hex');
 }
 
 export class MailchimpService {
@@ -255,7 +253,6 @@ export class MailchimpService {
     if (status === 404) return notFound(message, data);
     if (status === 422 || status === 400) return validationError(message, data);
     if (status === 429) return rateLimited(message, data);
-    if (status >= 500) return serviceUnavailable(message, data);
     return serviceUnavailable(message, data);
   }
 
@@ -1204,23 +1201,5 @@ export function setMailchimpServiceForTesting(service: MailchimpService | undefi
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function mergeSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  if (!a) return b;
-  if (a.aborted) return a;
-  if (
-    typeof (AbortSignal as unknown as { any?: (sigs: AbortSignal[]) => AbortSignal }).any ===
-    'function'
-  ) {
-    return (AbortSignal as unknown as { any: (sigs: AbortSignal[]) => AbortSignal }).any([a, b]);
-  }
-  const controller = new AbortController();
-  const onAbort = (src: AbortSignal) => () => {
-    controller.abort(src.reason);
-    a.removeEventListener('abort', onA);
-    b.removeEventListener('abort', onB);
-  };
-  const onA = onAbort(a);
-  const onB = onAbort(b);
-  a.addEventListener('abort', onA, { once: true });
-  b.addEventListener('abort', onB, { once: true });
-  return controller.signal;
+  return a ? AbortSignal.any([a, b]) : b;
 }
