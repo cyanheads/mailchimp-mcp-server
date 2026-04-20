@@ -2,7 +2,7 @@
 
 ## MCP Surface
 
-### Tools (16)
+### Tools (17)
 
 **Workflow tools** (7) — multi-step orchestration for common end-to-end tasks:
 
@@ -15,6 +15,12 @@
 | `mailchimp_find_subscriber` | Search for a subscriber by email across one or all audiences. Wraps `/search-members` and enriches with member detail + tags + last activity. | `email`, `audienceId?` | `readOnlyHint: true` |
 | `mailchimp_campaign_report` | Aggregated post-send analytics for one campaign: headline stats, top clicked links, open timeline, top locations, unsubscribes, abuse reports. | `campaignId`, `includeTopN?` (default 10) | `readOnlyHint: true` |
 | `mailchimp_audience_overview` | Audience health digest: info, stats, last 12 months of growth history, top email clients, merge-field schema, recent activity. | `audienceId` | `readOnlyHint: true` |
+
+**Instruction tool** (1) — returns procedural guidance merged with live account state (no writes):
+
+| Name | Description | Input | Annotations |
+|:-----|:------------|:------|:------------|
+| `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
 
 **Primitive tools** (9) — fine-grained CRUD, consolidated by noun via `operation` enum:
 
@@ -95,7 +101,7 @@ An MCP server that wraps the [Mailchimp Marketing API v3.0](https://mailchimp.co
 - Authenticate with a single Mailchimp API key (basic auth, username is any string, password is the key). Data center (`us1` … `us22`) parsed from the `-dc` suffix.
 - Validate the API key at startup by issuing `GET /ping` — fail fast with `ConfigurationError` rather than surfacing auth failures on the first tool call.
 - Support Free-plan operations across: audiences (read/create/update + analytics + signup forms), subscribers (read/update + tags/notes + activity), segments, merge fields (read/create/update), campaigns (regular/plaintext/rss, no delete), templates, reports, search.
-- Expose workflow tools for the seven highest-frequency tasks (send campaign, replicate campaign, upsert/import/find subscribers, campaign report digest, audience overview) — primitive tools for everything else.
+- Expose workflow tools for the seven highest-frequency tasks (send campaign, replicate campaign, upsert/import/find subscribers, campaign report digest, audience overview), an instruction tool (`mailchimp_playbook`) for state-aware procedural guidance on complex multi-step tasks, and primitive tools for everything else.
 - Gate destructive workflow operations (`mailchimp_send_campaign`/`mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'`) behind `ctx.elicit` confirmation when the client supports it.
 - Default `mailchimp_import_subscribers` to `status: 'pending'` (double-opt-in) to prevent accidental mass-sends.
 - Respect Mailchimp rate limits: ≤10 concurrent requests per account; backoff on 429 with `Retry-After` honored. Cap workflow-tool parallelism below the account limit to leave headroom for concurrent agent/UI sessions.
@@ -180,7 +186,7 @@ Full endpoint inventory from `docs/reference/mailchimp-openapi.json` (282 operat
 | `activity-feed` (1) | ✅ | `mailchimp_account` (`operation: activity-feed`) | Chimp Chatter stream. |
 | `/` root (1) | ✅ | `mailchimp_account` (`operation: info`) | |
 
-**v1 coverage:** 16 tools covering ~140 operations (~50% of the API). Remaining ops are paid-gated, admin-tier, or intentionally deferred as low-signal.
+**v1 coverage:** 17 tools covering ~140 operations (~50% of the API). `mailchimp_playbook` reuses existing endpoints for live state — no new upstream surface. Remaining ops are paid-gated, admin-tier, or intentionally deferred as low-signal.
 
 ---
 
@@ -255,6 +261,17 @@ GET /lists/{id}/merge-fields
 ```
 Digest of audience state, used as a "what does this audience look like" one-call.
 
+**`mailchimp_playbook`** (0–2 upstream calls per topic):
+```
+GET /                                      → (topic=onboarding) account state
+GET /lists/{id}                            → (topic=send | list-hygiene) audience stats
+GET /lists/{id}/growth-history?count=3     → (topic=send) recent-growth context
+GET /reports/{campaignId}                  → (topic=post-send-review) campaign headline stats
+GET /reports?count=10                      → (topic=deliverability) recent-campaign trend
+GET /search-members?query={email}          → (topic=subscriber-triage) locate subscriber
+```
+Returns markdown instructions tailored to current account state plus `nextToolSuggestions` (recommended follow-up calls given the live numbers). Read-only — the agent consumes the playbook, then executes steps using action tools.
+
 ---
 
 ## Flagship Output Shapes
@@ -317,7 +334,7 @@ z.object({
 
 **Workflow tools first, primitives second.** The user workflow for Mailchimp is almost always multi-step (create → content → validate → send). Forcing agents to chain primitive tools is error-prone and wastes context. Workflow tools encode the happy path; primitives exist for edge cases and fine control.
 
-**Consolidate REST verbs into `operation` enum.** Mailchimp's REST surface has 69 `/lists/**` endpoints. Exposing one tool per endpoint would blow up the surface. Grouping by noun with `operation` enum keeps the surface at 16 tools while preserving the CRUD access the agent actually needs.
+**Consolidate REST verbs into `operation` enum.** Mailchimp's REST surface has 69 `/lists/**` endpoints. Exposing one tool per endpoint would blow up the surface. Grouping by noun with `operation` enum keeps the surface at 17 tools while preserving the CRUD access the agent actually needs.
 
 **Lean surface > comprehensive surface.** v1 ships with 16 tools, not 21. Folders, file manager, landing pages, per-audience webhooks, and interest-category groups are intentionally excluded — they're either UI ceremony, off-domain (web pages), one-time human setup, or niche enough that agents rarely touch them. Easier to add a tool when a real use case surfaces than to deprecate one after agents build habits around it.
 
@@ -338,6 +355,8 @@ z.object({
 **Paid-feature error enrichment.** Mailchimp's 403 for paid features is opaque ("This feature is only available to paid accounts"). Service classifies these and adds `{ requiresPlan: 'standard' | 'premium' }` to error data so the agent can surface actionable guidance instead of just "forbidden".
 
 **Startup API-key validation.** Issuing `/ping` in `setup()` catches malformed or revoked keys at server start, not on the first tool call 30 seconds into a user session. The tool-level `ping` op is therefore redundant and not exposed — `mailchimp_account` keeps `info` + `activity-feed` only.
+
+**Instruction tool for state-aware playbooks.** `mailchimp_playbook` returns procedural guidance *merged with live account state* (e.g., "your bounce rate is 2.1%, prioritize list cleanup before tweaking subject lines"). Static playbooks could live as MCP Prompts, but the value is specifically in the state-aware tailoring — generic advice + this account's numbers = prescriptive next steps. Consolidated into one tool with a `topic` enum rather than six separate tools to keep the surface small and discoverable. Mirrors the pattern of `git_wrapup_instructions` from the git MCP server: the tool doesn't do the work, it tells the agent how to.
 
 **No app-tools in v1.** Mailchimp data is well-suited to text rendering (tables, lists). Revisit after v1 ships if an interactive dashboard use case emerges.
 
@@ -404,9 +423,10 @@ Each step is independently testable. `bun run devcheck` after each.
 10. **`mailchimp_reports`** (consolidated `list`/`get`/`slice` with `dimension` enum) + **`mailchimp_campaign_report`** — reports + digest.
 11. **`mailchimp_templates`** — template CRUD.
 12. **`mailchimp_search`** — search-members + search-campaigns.
-13. **Resources.** `mailchimp://account`, `mailchimp://audiences/{id}`, `mailchimp://campaigns/{id}`, `mailchimp://campaigns/{id}/report`.
-14. **Smoke-test** via `bun run dev:stdio` + MCP Inspector against a real API key.
-15. **Field-test** with `skills/field-test` — exercise each tool with realistic inputs, log pain points.
-16. **`polish-docs-meta`** — README, CHANGELOG, version sync, server.json description refresh.
+13. **`mailchimp_playbook`** — procedural guidance tool with `topic` enum. Static markdown templates per topic + 0–2 live-state fetches merged inline. Lands after action tools so playbook advice can reference them reliably.
+14. **Resources.** `mailchimp://account`, `mailchimp://audiences/{id}`, `mailchimp://campaigns/{id}`, `mailchimp://campaigns/{id}/report`.
+15. **Smoke-test** via `bun run dev:stdio` + MCP Inspector against a real API key.
+16. **Field-test** with `skills/field-test` — exercise each tool with realistic inputs, log pain points.
+17. **`polish-docs-meta`** — README, CHANGELOG, version sync, server.json description refresh.
 
-Estimated effort: small service + 16 tools + 4 resources ≈ 28–36 files, with tests. 2 focused sessions.
+Estimated effort: small service + 17 tools + 4 resources ≈ 30–38 files, with tests. 2 focused sessions.
