@@ -5,12 +5,18 @@
  */
 
 import { createApp } from '@cyanheads/mcp-ts-core';
-import { echoPrompt } from './mcp-server/prompts/definitions/echo.prompt.js';
-import { echoResource } from './mcp-server/resources/definitions/echo.resource.js';
-import { echoTool } from './mcp-server/tools/definitions/echo.tool.js';
+import { getServerConfig } from '@/config/server-config.js';
+import { allPromptDefinitions } from '@/mcp-server/prompts/definitions/index.js';
+import { allResourceDefinitions } from '@/mcp-server/resources/definitions/index.js';
+import { allToolDefinitions } from '@/mcp-server/tools/definitions/index.js';
+import { initMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 await createApp({
-  tools: [echoTool],
-  resources: [echoResource],
-  prompts: [echoPrompt],
+  tools: allToolDefinitions,
+  resources: allResourceDefinitions,
+  prompts: allPromptDefinitions,
+  async setup(core) {
+    const serverConfig = getServerConfig();
+    await initMailchimpService(serverConfig, core.logger);
+  },
 });

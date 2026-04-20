@@ -1,0 +1,307 @@
+/**
+ * @fileoverview `mailchimp_replicate_campaign` — duplicate an existing campaign,
+ * optionally override subject/content/recipients, then leave as draft, send a
+ * test, send, or schedule. Same elicit + cleanup semantics as `send_campaign`.
+ * @module mcp-server/tools/definitions/mailchimp-replicate-campaign.tool
+ */
+
+import { tool, z } from '@cyanheads/mcp-ts-core';
+import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+
+const ModeSchema = z.enum(['draft', 'test', 'send', 'schedule']);
+
+const ContentOverrideSchema = z
+  .object({
+    html: z.string().optional(),
+    plainText: z.string().optional(),
+    templateId: z.number().int().optional(),
+    templateSections: z.record(z.string(), z.unknown()).optional(),
+  })
+  .describe("Content replacement. Omit to keep the source campaign's content.");
+
+const InputSchema = z.object({
+  sourceCampaignId: z.string().describe('Campaign ID to clone.'),
+  subjectOverride: z
+    .string()
+    .optional()
+    .describe('New subject line. Omit to keep the source subject.'),
+  previewTextOverride: z.string().optional(),
+  fromNameOverride: z.string().optional(),
+  replyToOverride: z.string().optional(),
+  titleOverride: z.string().optional(),
+  audienceOverride: z
+    .string()
+    .optional()
+    .describe('New audience ID. Omit to keep the source audience.'),
+  segmentOverride: z
+    .number()
+    .int()
+    .optional()
+    .describe('New saved-segment ID. Omit to keep the source segment.'),
+  contentOverride: ContentOverrideSchema.optional(),
+  mode: ModeSchema.default('draft'),
+  scheduleTime: z.string().optional().describe('Required for mode=schedule.'),
+  testEmails: z.array(z.string()).max(50).optional(),
+  testSendType: z.enum(['html', 'plaintext']).default('html'),
+  cleanupOnError: z
+    .boolean()
+    .default(true)
+    .describe('Delete the replicated draft if the workflow fails mid-flight.'),
+});
+
+const ChecklistItemSchema = z.object({
+  type: z.enum(['success', 'warning', 'error']),
+  heading: z.string(),
+  details: z.string(),
+});
+
+const OutputSchema = z.object({
+  sourceCampaignId: z.string(),
+  campaignId: z.string().describe('ID of the newly created replica.'),
+  webId: z.number().optional(),
+  mode: ModeSchema,
+  status: z.string(),
+  subject: z.string(),
+  recipientCount: z.number().optional(),
+  sendTime: z.string().optional(),
+  testsSentTo: z.array(z.string()).optional(),
+  checklistWarnings: z.array(ChecklistItemSchema),
+  archiveUrl: z.string().optional(),
+  webUrl: z.string().optional(),
+  cancelledByUser: z.boolean().optional(),
+  cleanedUp: z.boolean().optional(),
+  overridesApplied: z
+    .array(z.string())
+    .describe('Labels of the overrides that were actually applied (for audit).'),
+});
+
+type Output = z.infer<typeof OutputSchema>;
+
+export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign', {
+  description:
+    "Duplicate an existing campaign, optionally override subject/from/reply/audience/segment/content, then leave as draft, send a test, send, or schedule. Same elicit confirmation and cleanup semantics as `mailchimp_send_campaign`. Use for the common 'send v2 of last week's newsletter with an updated intro' pattern.",
+  annotations: { destructiveHint: true, openWorldHint: true },
+  input: InputSchema,
+  output: OutputSchema,
+
+  async handler(input, ctx): Promise<Output> {
+    const svc = getMailchimpService();
+
+    if (input.mode === 'schedule' && !input.scheduleTime) {
+      throw validationError("'scheduleTime' is required when mode=schedule.");
+    }
+    if (input.mode === 'test' && (!input.testEmails || input.testEmails.length === 0)) {
+      throw validationError("'testEmails' (≥1) is required when mode=test.");
+    }
+
+    const overridesApplied: string[] = [];
+    let newCampaignId: string | undefined;
+
+    try {
+      // 1. Replicate.
+      const replica = await svc.campaigns.replicate(ctx, input.sourceCampaignId);
+      newCampaignId = replica.id;
+      ctx.log.info('campaign replicated', {
+        sourceId: input.sourceCampaignId,
+        newId: newCampaignId,
+      });
+
+      // 2. Apply settings/recipients overrides.
+      const settingsBody: Record<string, unknown> = {};
+      if (input.subjectOverride !== undefined) {
+        settingsBody['subject_line'] = input.subjectOverride;
+        overridesApplied.push('subject');
+      }
+      if (input.previewTextOverride !== undefined) {
+        settingsBody['preview_text'] = input.previewTextOverride;
+        overridesApplied.push('previewText');
+      }
+      if (input.fromNameOverride !== undefined) {
+        settingsBody['from_name'] = input.fromNameOverride;
+        overridesApplied.push('fromName');
+      }
+      if (input.replyToOverride !== undefined) {
+        settingsBody['reply_to'] = input.replyToOverride;
+        overridesApplied.push('replyTo');
+      }
+      if (input.titleOverride !== undefined) {
+        settingsBody['title'] = input.titleOverride;
+        overridesApplied.push('title');
+      }
+
+      const recipientsBody: Record<string, unknown> | null =
+        input.audienceOverride || typeof input.segmentOverride === 'number'
+          ? {
+              ...(input.audienceOverride
+                ? { list_id: input.audienceOverride }
+                : { list_id: replica.recipients?.list_id }),
+              ...(typeof input.segmentOverride === 'number'
+                ? { segment_opts: { saved_segment_id: input.segmentOverride } }
+                : {}),
+            }
+          : null;
+      if (recipientsBody && input.audienceOverride) overridesApplied.push('audience');
+      if (recipientsBody && typeof input.segmentOverride === 'number')
+        overridesApplied.push('segment');
+
+      if (Object.keys(settingsBody).length > 0 || recipientsBody) {
+        const body: Record<string, unknown> = {};
+        if (Object.keys(settingsBody).length > 0) body['settings'] = settingsBody;
+        if (recipientsBody) body['recipients'] = recipientsBody;
+        await svc.campaigns.update(ctx, newCampaignId, body);
+      }
+
+      // 3. Content override.
+      if (input.contentOverride) {
+        const contentBody: Parameters<typeof svc.campaigns.setContent>[2] = {};
+        if (input.contentOverride.html) contentBody.html = input.contentOverride.html;
+        if (input.contentOverride.plainText)
+          contentBody.plain_text = input.contentOverride.plainText;
+        if (typeof input.contentOverride.templateId === 'number') {
+          contentBody.template = {
+            id: input.contentOverride.templateId,
+            ...(input.contentOverride.templateSections
+              ? { sections: input.contentOverride.templateSections }
+              : {}),
+          };
+        }
+        if (Object.keys(contentBody).length === 0) {
+          throw validationError(
+            'contentOverride must include at least one of html/plainText/templateId.',
+          );
+        }
+        await svc.campaigns.setContent(ctx, newCampaignId, contentBody);
+        overridesApplied.push('content');
+      }
+
+      // 4. Checklist.
+      const checklist = await svc.campaigns.getChecklist(ctx, newCampaignId);
+      const warnings = checklist.items.filter((i) => i.type !== 'success');
+      const errors = checklist.items.filter((i) => i.type === 'error');
+      if (
+        (input.mode === 'send' || input.mode === 'schedule' || input.mode === 'test') &&
+        errors.length > 0
+      ) {
+        throw validationError(
+          `Campaign failed send-checklist with ${errors.length} error(s): ${errors
+            .map((e) => e.heading)
+            .join('; ')}`,
+        );
+      }
+
+      // 5. Elicit for destructive modes.
+      let cancelledByUser = false;
+      if ((input.mode === 'send' || input.mode === 'schedule') && ctx.elicit) {
+        const post = await svc.campaigns.get(ctx, newCampaignId);
+        const subj = post.settings?.subject_line ?? '(no subject)';
+        const audienceLabel = post.recipients?.list_name ?? post.recipients?.list_id ?? '?';
+        const count = post.recipients?.recipient_count;
+        const message =
+          input.mode === 'send'
+            ? `Send replica "${subj}" to ${count ?? '?'} subscribers in "${audienceLabel}" now?`
+            : `Schedule replica "${subj}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
+        const response = await ctx.elicit(
+          message,
+          z.object({
+            confirmed: z.boolean().describe('Confirm to proceed, decline to leave as draft.'),
+          }),
+        );
+        if (response.action !== 'accept' || !response.content?.confirmed) {
+          cancelledByUser = true;
+        }
+      }
+
+      // 6. Dispatch.
+      const effectiveMode: z.infer<typeof ModeSchema> = cancelledByUser ? 'draft' : input.mode;
+      let testsSentTo: string[] | undefined;
+      if (effectiveMode === 'test') {
+        await svc.campaigns.sendTest(ctx, newCampaignId, {
+          test_emails: input.testEmails ?? [],
+          send_type: input.testSendType,
+        });
+        testsSentTo = input.testEmails ?? [];
+      } else if (effectiveMode === 'send') {
+        await svc.campaigns.send(ctx, newCampaignId);
+      } else if (effectiveMode === 'schedule') {
+        await svc.campaigns.schedule(ctx, newCampaignId, {
+          schedule_time: input.scheduleTime as string,
+        });
+      }
+
+      const post = await svc.campaigns.get(ctx, newCampaignId);
+
+      const result: Output = {
+        sourceCampaignId: input.sourceCampaignId,
+        campaignId: newCampaignId,
+        mode: effectiveMode,
+        status: post.status,
+        subject: post.settings?.subject_line ?? '',
+        checklistWarnings: warnings.map((w) => ({
+          type: w.type,
+          heading: w.heading,
+          details: w.details,
+        })),
+        overridesApplied,
+      };
+      if (typeof post.web_id === 'number') {
+        result.webId = post.web_id;
+        result.webUrl = `https://${svc.dataCenter}.admin.mailchimp.com/campaigns/edit?id=${post.web_id}`;
+      }
+      if (typeof post.recipients?.recipient_count === 'number')
+        result.recipientCount = post.recipients.recipient_count;
+      if (post.send_time) result.sendTime = post.send_time;
+      if (post.archive_url) result.archiveUrl = post.archive_url;
+      if (testsSentTo) result.testsSentTo = testsSentTo;
+      if (cancelledByUser) result.cancelledByUser = true;
+
+      ctx.log.info('replicate_campaign complete', {
+        sourceId: input.sourceCampaignId,
+        newId: newCampaignId,
+        mode: effectiveMode,
+      });
+      return result;
+    } catch (err) {
+      if (newCampaignId && input.cleanupOnError) {
+        try {
+          await svc.campaigns.delete(ctx, newCampaignId);
+          ctx.log.info('replica draft cleaned up after failure', { campaignId: newCampaignId });
+        } catch (cleanupErr) {
+          ctx.log.warning('cleanup failed; replica draft may remain', {
+            campaignId: newCampaignId,
+            error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+          });
+        }
+      }
+      throw err;
+    }
+  },
+
+  format: (result) => {
+    const lines: string[] = [
+      `# ${result.cancelledByUser ? 'Replica cancelled' : `Campaign replicated — ${result.mode}`}: ${result.subject}`,
+      '',
+      `**New campaign ID:** ${result.campaignId}  `,
+      `**Source:** ${result.sourceCampaignId}  `,
+      `**Status:** ${result.status}  `,
+      `**Mode:** ${result.mode}${result.cancelledByUser ? ' (downgraded from send/schedule)' : ''}  `,
+    ];
+    if (result.overridesApplied.length > 0)
+      lines.push(`**Overrides applied:** ${result.overridesApplied.join(', ')}  `);
+    if (typeof result.recipientCount === 'number')
+      lines.push(`**Recipients:** ${result.recipientCount}  `);
+    if (result.sendTime) lines.push(`**Send time:** ${result.sendTime}  `);
+    if (result.testsSentTo && result.testsSentTo.length > 0)
+      lines.push(`**Test sent to:** ${result.testsSentTo.join(', ')}  `);
+    if (result.archiveUrl) lines.push(`**Archive:** ${result.archiveUrl}  `);
+    if (result.webUrl) lines.push(`**Mailchimp UI:** ${result.webUrl}  `);
+    if (result.checklistWarnings.length > 0) {
+      lines.push('', `## Checklist warnings (${result.checklistWarnings.length})`, '');
+      for (const w of result.checklistWarnings) {
+        const icon = w.type === 'warning' ? '⚠' : w.type === 'error' ? '✗' : '·';
+        lines.push(`- ${icon} **${w.heading}** — ${w.details}`);
+      }
+    }
+    return [{ type: 'text', text: lines.join('\n') }];
+  },
+});
