@@ -2,6 +2,21 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.1 — 2026-04-20
+
+### Added
+
+- Vitest coverage for the Mailchimp service HTTP layer (success, error classification, retry/abort), the `mailchimp_playbook` tool (`design-campaign` topic, tone adjustments, `format()` projection), and the `newsletter_from_source` prompt template.
+
+### Changed
+
+- Shortened `server.json` description to fit MCP registry conventions. Long-form description is retained in `package.json` and `README.md`.
+
+### Internal
+
+- `mailchimpMemberHash` and `MailchimpService.request` are now synchronous / non-`async` — removes unnecessary promise wrapping around the MD5 hash and the retry-wrapped fetch.
+- Dot-notation cleanup across tools, service, and config: replaced literal `obj['key']` access with `obj.key` where TypeScript permits.
+
 ## 0.2.0 — 2026-04-20
 
 ### Added
