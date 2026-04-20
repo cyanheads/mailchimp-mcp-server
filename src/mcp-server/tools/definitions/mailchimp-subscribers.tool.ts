@@ -32,7 +32,7 @@ const OperationSchema = z
     'list-goals',
   ])
   .describe(
-    'Which subscriber operation to run. `list`/`get` reads. `update` changes status/merge fields/language (NOT for create — use `mailchimp_upsert_subscriber`). `archive` removes the subscriber from the active audience while preserving the record so they can resubscribe. `list-tags` and `set-tags` manage tags. `list-notes`/`add-note`/`update-note`/`delete-note` manage CRM-style notes. `list-activity`/`list-events`/`list-goals` are engagement reads.',
+    'Which subscriber operation to run. `list`/`get` reads. `update` changes status/merge fields/language (NOT for create — use `mailchimp_upsert_subscriber`). `archive` removes the subscriber from the active audience while preserving the record so they can resubscribe. `list-tags` reads tags; `set-tags` declaratively syncs to a desired set — note that Mailchimp stores static-segment membership as a tag, so `set-tags` will remove segment membership unless you include those names or pass `preserveTags`. `list-notes`/`add-note`/`update-note`/`delete-note` manage CRM-style notes. `list-activity`/`list-events`/`list-goals` are engagement reads.',
   );
 
 const InputSchema = z.object({
@@ -58,7 +58,13 @@ const InputSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'Desired tag set for `set-tags`. This is *declarative* — the provided list becomes the full active tag set; tags not in the list are removed.',
+      'Desired tag set for `set-tags`. This is *declarative* — the provided list becomes the full active tag set; tags not in the list are removed. **Warning:** Mailchimp stores static-segment membership as a tag with the same name, so removing a tag that matches a static-segment name also removes the subscriber from that segment. Include those names in `tags` or list them in `preserveTags` to keep them.',
+    ),
+  preserveTags: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Tag names that should NOT be removed by `set-tags` even if absent from `tags`. Use this to protect static-segment memberships (Mailchimp stores them as tags) or any other 'sticky' tag you don't want the declarative sync to strip.",
     ),
   note: z.string().optional().describe('Note body. Required for `add-note`/`update-note`.'),
   noteId: z
@@ -217,7 +223,11 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
             "At least one of `status`, `mergeFields`, `language`, or `vip` must be provided for 'update'.",
           );
         }
-        const sub = await svc.subscribers.update(ctx, audienceId, hash, body);
+        // Mailchimp revalidates existing merge fields on every PATCH. Skip
+        // that validation only when the caller isn't touching merge fields.
+        const sub = await svc.subscribers.update(ctx, audienceId, hash, body, {
+          skipMergeValidation: !input.mergeFields,
+        });
         return { operation: 'update', subscriber: summarize(sub) };
       }
 
@@ -257,8 +267,9 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         });
         const current = new Set(currentTags.map((t) => t.name));
         const desired = new Set(input.tags);
+        const preserve = new Set(input.preserveTags ?? []);
         const toAdd = input.tags.filter((t) => !current.has(t));
-        const toRemove = [...current].filter((t) => !desired.has(t));
+        const toRemove = [...current].filter((t) => !desired.has(t) && !preserve.has(t));
         const delta = [
           ...toAdd.map((name) => ({ name, status: 'active' as const })),
           ...toRemove.map((name) => ({ name, status: 'inactive' as const })),
@@ -270,12 +281,15 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
           email: input.email,
           added: toAdd.length,
           removed: toRemove.length,
+          preserved: [...current].filter((t) => preserve.has(t)).length,
         });
+        const finalSet = new Set<string>(input.tags);
+        for (const t of current) if (preserve.has(t)) finalSet.add(t);
         return {
           operation: 'set-tags',
           tagsAdded: toAdd,
           tagsRemoved: toRemove,
-          tagsActive: input.tags.map((t) => ({ id: 0, name: t })),
+          tagsActive: [...finalSet].map((t) => ({ id: 0, name: t })),
         };
       }
 

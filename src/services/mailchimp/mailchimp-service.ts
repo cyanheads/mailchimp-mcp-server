@@ -434,11 +434,13 @@ export class MailchimpService {
       listId: string,
       memberHash: string,
       body: Partial<Subscriber>,
+      opts?: { skipMergeValidation?: boolean },
     ): Promise<Subscriber> =>
       this.request('PATCH', `/lists/${listId}/members/${memberHash}`, {
         signal: ctx.signal,
         log: ctx.log,
         body,
+        query: opts?.skipMergeValidation ? { skip_merge_validation: true } : undefined,
       }),
 
     /** Create-or-update subscriber by member hash. Safest primitive for idempotent upsert. */
@@ -456,11 +458,13 @@ export class MailchimpService {
         vip?: boolean;
         tags?: string[];
       },
+      opts?: { skipMergeValidation?: boolean },
     ): Promise<Subscriber> =>
       this.request('PUT', `/lists/${listId}/members/${memberHash}`, {
         signal: ctx.signal,
         log: ctx.log,
         body,
+        query: opts?.skipMergeValidation ? { skip_merge_validation: true } : undefined,
       }),
 
     archive: async (
