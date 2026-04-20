@@ -5,6 +5,7 @@
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 
 export const mailchimpCampaignResource = resource('mailchimp://campaigns/{campaignId}', {
   name: 'mailchimp-campaign',
@@ -24,10 +25,10 @@ export const mailchimpCampaignResource = resource('mailchimp://campaigns/{campai
       sendTime: c.send_time,
       emailsSent: c.emails_sent,
       archiveUrl: c.archive_url,
-      settings: c.settings,
-      recipients: c.recipients,
-      tracking: c.tracking,
-      reportSummary: c.report_summary,
+      settings: c.settings ? normalizeMailchimp(c.settings) : undefined,
+      recipients: c.recipients ? normalizeMailchimp(c.recipients) : undefined,
+      tracking: c.tracking ? normalizeMailchimp(c.tracking) : undefined,
+      reportSummary: c.report_summary ? normalizeMailchimp(c.report_summary) : undefined,
     };
   },
 });

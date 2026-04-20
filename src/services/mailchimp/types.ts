@@ -79,8 +79,9 @@ export interface ActivityFeedItem {
 
 export interface ActivityFeedResponse {
   _links?: MailchimpLink[];
-  activity: ActivityFeedItem[];
-  total_items: number;
+  // Upstream omits `activity` on quiet accounts — treat as optional.
+  activity?: ActivityFeedItem[];
+  total_items?: number;
 }
 
 // ─── Audiences (lists) ───────────────────────────────────────────────

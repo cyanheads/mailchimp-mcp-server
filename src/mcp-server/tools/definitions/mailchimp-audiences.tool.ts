@@ -8,6 +8,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Audience, SignupForm } from '@/services/mailchimp/types.js';
 
 const OperationSchema = z
@@ -325,7 +326,10 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         const { activity } = await svc.audiences.listActivity(ctx, requireAudienceId(input), {
           count: input.count,
         });
-        return { operation: 'list-activity', activity };
+        return {
+          operation: 'list-activity',
+          activity: normalizeMailchimp<Array<Record<string, unknown>>>(activity ?? []),
+        };
       }
       case 'list-growth': {
         const { history, total_items } = await svc.audiences.listGrowthHistory(
@@ -405,7 +409,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         return {
           operation: 'get-signup-forms',
           totalItems: total_items,
-          signupForms: signup_forms as unknown as Array<Record<string, unknown>>,
+          signupForms: normalizeMailchimp<Array<Record<string, unknown>>>(signup_forms ?? []),
         };
       }
       case 'customize-signup-forms': {
@@ -423,7 +427,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         const saved = await svc.audiences.customizeSignupForms(ctx, requireAudienceId(input), body);
         return {
           operation: 'customize-signup-forms',
-          signupForm: saved as unknown as Record<string, unknown>,
+          signupForm: normalizeMailchimp<Record<string, unknown>>(saved),
         };
       }
     }

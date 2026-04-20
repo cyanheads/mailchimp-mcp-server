@@ -138,7 +138,7 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
     }
 
     const feed = await svc.account.activityFeed(ctx, { count: input.count, offset: input.offset });
-    const items = feed.activity.map((item) => {
+    const items = (feed.activity ?? []).map((item) => {
       const mapped: z.infer<typeof ActivityFeedItemSchema> = {
         type: item.type,
         updateTime: item.update_time,
@@ -154,7 +154,7 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
     return {
       operation: 'activity-feed',
       items,
-      totalItems: feed.total_items,
+      totalItems: feed.total_items ?? items.length,
       offset: input.offset,
     };
   },

@@ -13,6 +13,7 @@ import {
   getMailchimpService,
   mailchimpMemberHash,
 } from '@/services/mailchimp/mailchimp-service.js';
+import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
 
 const OperationSchema = z
@@ -105,9 +106,18 @@ const OutputSchema = z.object({
   subscribers: z.array(SubscriberSummarySchema).optional().describe('Populated for `list`.'),
   totalItems: z.number().optional().describe('Total items from Mailchimp (for list-style reads).'),
   tagsActive: z
-    .array(z.object({ id: z.number(), name: z.string(), dateAdded: z.string().optional() }))
+    .array(
+      z.object({
+        /** Mailchimp tag ID. Omitted when the upstream response doesn't provide one (e.g. the `set-tags` sync endpoint returns names only). */
+        id: z.number().optional(),
+        name: z.string(),
+        dateAdded: z.string().optional(),
+      }),
+    )
     .optional()
-    .describe('Currently active tags on this subscriber.'),
+    .describe(
+      'Currently active tags on this subscriber. The `id` field is present on `list-tags` reads; `set-tags` returns names only.',
+    ),
   tagsAdded: z.array(z.string()).optional().describe('Tag names added by `set-tags`.'),
   tagsRemoved: z.array(z.string()).optional().describe('Tag names removed by `set-tags`.'),
   notes: z
@@ -142,7 +152,13 @@ const OutputSchema = z.object({
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe('Goal completions attributed to the subscriber. Populated for `list-goals`.'),
-  deleted: z.boolean().optional().describe('Populated for `archive` and `delete-note`.'),
+  archived: z
+    .boolean()
+    .optional()
+    .describe(
+      'Populated for `archive`. True when the subscriber was successfully moved to the archived pool. Archive preserves the record so the email can resubscribe.',
+    ),
+  deleted: z.boolean().optional().describe('Populated for `delete-note`.'),
 });
 
 type Output = z.infer<typeof OutputSchema>;
@@ -235,7 +251,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         const hash = mailchimpMemberHash(requireEmail(input.email, 'archive'));
         await svc.subscribers.archive(ctx, audienceId, hash);
         ctx.log.info('subscriber archived', { email: input.email });
-        return { operation: 'archive', deleted: true };
+        return { operation: 'archive', archived: true };
       }
 
       case 'list-tags': {
@@ -289,7 +305,8 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
           operation: 'set-tags',
           tagsAdded: toAdd,
           tagsRemoved: toRemove,
-          tagsActive: [...finalSet].map((t) => ({ id: 0, name: t })),
+          // `id` intentionally omitted — Mailchimp's bulk sync endpoint returns names only.
+          tagsActive: [...finalSet].map((t) => ({ name: t })),
         };
       }
 
@@ -357,7 +374,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         return {
           operation: 'list-activity',
           totalItems: total_items,
-          activity: activity.map((a) => a as unknown as Record<string, unknown>),
+          activity: normalizeMailchimp<Array<Record<string, unknown>>>(activity ?? []),
         };
       }
 
@@ -370,7 +387,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         return {
           operation: 'list-events',
           totalItems: total_items,
-          events: events.map((e) => e as unknown as Record<string, unknown>),
+          events: normalizeMailchimp<Array<Record<string, unknown>>>(events ?? []),
         };
       }
 
@@ -380,7 +397,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         return {
           operation: 'list-goals',
           totalItems: total_items,
-          goals: goals.map((g) => g as unknown as Record<string, unknown>),
+          goals: normalizeMailchimp<Array<Record<string, unknown>>>(goals ?? []),
         };
       }
     }

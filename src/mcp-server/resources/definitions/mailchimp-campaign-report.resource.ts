@@ -5,6 +5,7 @@
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 
 export const mailchimpCampaignReportResource = resource(
   'mailchimp://campaigns/{campaignId}/report',
@@ -26,10 +27,10 @@ export const mailchimpCampaignReportResource = resource(
         emailsSent: r.emails_sent,
         abuseReports: r.abuse_reports,
         unsubscribed: r.unsubscribed,
-        bounces: r.bounces,
-        opens: r.opens,
-        clicks: r.clicks,
-        industryStats: r.industry_stats,
+        bounces: r.bounces ? normalizeMailchimp(r.bounces) : undefined,
+        opens: r.opens ? normalizeMailchimp(r.opens) : undefined,
+        clicks: r.clicks ? normalizeMailchimp(r.clicks) : undefined,
+        industryStats: r.industry_stats ? normalizeMailchimp(r.industry_stats) : undefined,
       };
     },
   },

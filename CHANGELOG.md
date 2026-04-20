@@ -2,6 +2,26 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.2 — 2026-04-20
+
+### Fixed
+
+- **`mailchimp_account` `activity-feed` no longer crashes on quiet accounts.** Mailchimp omits the `activity` array when there's nothing to report; the handler now treats it as optional and returns an empty list instead of a raw `TypeError`. ([#1](https://github.com/cyanheads/mailchimp-mcp-server/issues/1))
+- **`mailchimp_subscribers` `set-tags` no longer fabricates `id: 0`.** The bulk tag-sync endpoint returns names only, so `tagsActive` entries now omit `id` entirely rather than filling a misleading placeholder. The output schema documents when `id` is present vs omitted. ([#1](https://github.com/cyanheads/mailchimp-mcp-server/issues/1))
+- **`mailchimp_subscribers` `archive` returns `archived: true`** (was `deleted: true`). Archive preserves the subscriber record for resubscribe, so the field name now matches the behavior. `delete-note` continues to return `deleted: true`. ([#1](https://github.com/cyanheads/mailchimp-mcp-server/issues/1))
+
+### Changed
+
+- **Consistent `camelCase` across nested payloads.** Added `normalizeMailchimp()` — a small recursive helper that converts `snake_case` keys to `camelCase` and strips `_links` HAL arrays. Applied at every leaky call site, so these surfaces now return the same shape the primary CRUD operations already did:
+  - `mailchimp_audiences` `list-activity`, `get-signup-forms`, `customize-signup-forms`
+  - `mailchimp_subscribers` `list-activity`, `list-events`, `list-goals`
+  - `mailchimp_reports` `slice` — every dimension (click-details, open-details, locations, sent-to, unsubscribed, abuse-reports, advice, domain-performance, eepurl, email-activity)
+  - Resources: `mailchimp://audiences/{audienceId}` (`stats`, `contact`, `campaignDefaults`), `mailchimp://campaigns/{campaignId}` (`settings`, `recipients`, `tracking`, `reportSummary`), `mailchimp://campaigns/{campaignId}/report` (`bounces`, `opens`, `clicks`, `industryStats`)
+
+### Added
+
+- Vitest coverage for `normalizeMailchimp()` — key conversion, `_links` stripping, nested traversal, preservation of all-caps merge-field tags.
+
 ## 0.2.1 — 2026-04-20
 
 ### Added

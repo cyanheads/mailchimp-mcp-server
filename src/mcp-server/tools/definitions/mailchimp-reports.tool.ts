@@ -9,7 +9,12 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { CampaignReport } from '@/services/mailchimp/types.js';
+
+type Row = Record<string, unknown>;
+const normalizeRows = (rows: unknown): Row[] => normalizeMailchimp<Row[]>(rows ?? []);
+const normalizeRow = (row: unknown): Row => normalizeMailchimp<Row>(row);
 
 const OperationSchema = z
   .enum(['list', 'get', 'slice'])
@@ -165,7 +170,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'abuse-reports',
               campaignId: id,
               totalItems: total_items,
-              rows: abuse_reports as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(abuse_reports),
             };
           }
           case 'advice': {
@@ -175,7 +180,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'advice',
               campaignId: id,
               totalItems: total_items,
-              rows: advice.map((a) => a as unknown as Record<string, unknown>),
+              rows: normalizeRows(advice),
             };
           }
           case 'click-details': {
@@ -185,7 +190,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
                 operation: 'slice',
                 dimension: 'click-details',
                 campaignId: id,
-                rows: [detail as unknown as Record<string, unknown>],
+                rows: [normalizeRow(detail)],
               };
             }
             const { urls_clicked, total_items } = await svc.reports.clickDetailsList(ctx, id, pg);
@@ -194,7 +199,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'click-details',
               campaignId: id,
               totalItems: total_items,
-              rows: urls_clicked as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(urls_clicked),
             };
           }
           case 'open-details': {
@@ -204,7 +209,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
                 operation: 'slice',
                 dimension: 'open-details',
                 campaignId: id,
-                rows: [detail as unknown as Record<string, unknown>],
+                rows: [normalizeRow(detail)],
               };
             }
             const odParams: Parameters<typeof svc.reports.openDetails>[2] = {
@@ -218,7 +223,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'open-details',
               campaignId: id,
               totalItems: total_items,
-              rows: members as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(members),
             };
           }
           case 'domain-performance': {
@@ -228,7 +233,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'domain-performance',
               campaignId: id,
               totalItems: total_items,
-              rows: domains,
+              rows: normalizeRows(domains),
             };
           }
           case 'eepurl': {
@@ -237,7 +242,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               operation: 'slice',
               dimension: 'eepurl',
               campaignId: id,
-              rows: [data],
+              rows: [normalizeRow(data)],
             };
           }
           case 'email-activity': {
@@ -252,7 +257,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'email-activity',
               campaignId: id,
               totalItems: total_items,
-              rows: emails,
+              rows: normalizeRows(emails),
             };
           }
           case 'locations': {
@@ -262,7 +267,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'locations',
               campaignId: id,
               totalItems: total_items,
-              rows: locations as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(locations),
             };
           }
           case 'sent-to': {
@@ -272,7 +277,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'sent-to',
               campaignId: id,
               totalItems: total_items,
-              rows: sent_to as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(sent_to),
             };
           }
           case 'unsubscribed': {
@@ -282,7 +287,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
               dimension: 'unsubscribed',
               campaignId: id,
               totalItems: total_items,
-              rows: unsubscribes as unknown as Array<Record<string, unknown>>,
+              rows: normalizeRows(unsubscribes),
             };
           }
         }
