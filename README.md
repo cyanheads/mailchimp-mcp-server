@@ -1,12 +1,15 @@
 <div align="center">
-  <h1>mailchimp-mcp-server</h1>
-  <p><b>MCP server for the Mailchimp Marketing API — audiences, subscribers, campaigns, and reports. Safe-by-default send workflows, STDIO & Streamable HTTP transports.</b></p>
-  <p><b>17 Tools · 4 Resources · 1 Prompt</b></p>
+  <h1>@cyanheads/mailchimp-mcp-server</h1>
+  <p><b>MCP server for the Mailchimp Marketing API — audiences, subscribers, campaigns, and reports. Safe-by-default send workflows, STDIO or Streamable HTTP.</b>
+  <div>17 Tools • 4 Resources • 1 Prompt</div>
+  </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-^1.3-fbf0df.svg?style=flat-square&logo=bun)](https://bun.sh/) [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg?style=flat-square)](./CHANGELOG.md)
+[![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) 
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -112,30 +115,17 @@ Returns a structured procedural playbook merged with live account state. Advice-
 - Returns markdown instructions + a live-state snapshot
 - `nextToolSuggestions` pre-fills arguments for the next likely tool call
 
----
+## Resources and prompts
 
-## Resources
+| Type | Name | Description |
+|:---|:---|:---|
+| Resource | `mailchimp://account` | Account info snapshot — profile, plan, data center, total subscribers. |
+| Resource | `mailchimp://audiences/{audienceId}` | Audience snapshot — name, contact, stats, double-opt-in status. |
+| Resource | `mailchimp://campaigns/{campaignId}` | Campaign snapshot — status, settings, recipients summary. |
+| Resource | `mailchimp://campaigns/{campaignId}/report` | Post-send campaign report headline metrics. |
+| Prompt | `newsletter_from_source` | User-invokable starter — compose a monthly editorial newsletter from a URL or brief. Chains into `mailchimp_playbook` (`topic: design-campaign`) and walks the draft → test → send flow. |
 
-| URI Template | Description |
-|:-------------|:------------|
-| `mailchimp://account` | Account info snapshot — profile, plan, data center, total subscribers. |
-| `mailchimp://audiences/{audienceId}` | Audience snapshot — name, contact, stats, double-opt-in status. |
-| `mailchimp://campaigns/{campaignId}` | Campaign snapshot — status, settings, recipients summary. |
-| `mailchimp://campaigns/{campaignId}/report` | Post-send campaign report headline metrics. |
-
-All resource data is also reachable via tools. Large collections (`audiences`, `campaigns`) are not exposed as resources — use the `list` operation on the corresponding tool instead.
-
----
-
-## Prompts
-
-| Name | Description | Args |
-|:-----|:------------|:-----|
-| `newsletter_from_source` | User-invokable starter that briefs the agent to compose a monthly editorial newsletter from a URL or free-form description. Chains into `mailchimp_playbook` (`topic: design-campaign`) for live audience-aware design guidance, then walks the draft → test → send flow. | `source` (URL or brief), `audienceId?`, `seasonalContext?` |
-
-Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook.md) — palette, typography, email-safe HTML, graphics via CDN, subject/preview craft.
-
----
+All resource data is also reachable via tools. Large collections (`audiences`, `campaigns`) are not exposed as resources — use the `list` operation on the corresponding tool instead. Design reference for the prompt: [`docs/email-design-playbook.md`](./docs/email-design-playbook.md).
 
 ## Features
 
@@ -154,13 +144,9 @@ Mailchimp-specific:
 - Workflow tools parallelize related sub-requests under a configurable concurrency limit
 - Domain normalization shapes sparse upstream payloads into compact, LLM-friendly output without fabricating values
 
----
+## Getting started
 
-## Getting Started
-
-### MCP Client Config
-
-Add to your MCP client config (e.g., `claude_desktop_config.json`):
+Add the following to your MCP client configuration file. See [`docs/api-key.md`](./docs/api-key.md) for how to generate a Mailchimp API key.
 
 ```json
 {
@@ -170,34 +156,91 @@ Add to your MCP client config (e.g., `claude_desktop_config.json`):
       "command": "bunx",
       "args": ["@cyanheads/mailchimp-mcp-server@latest"],
       "env": {
-        "MAILCHIMP_API_KEY": "your-key-with-dc-suffix-e.g-us22",
-        "MCP_TRANSPORT_TYPE": "stdio"
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "info",
+        "MAILCHIMP_API_KEY": "your-key-with-dc-suffix-e.g.-us22"
       }
     }
   }
 }
 ```
 
-See [`docs/api-key.md`](./docs/api-key.md) for how to generate a Mailchimp API key with the correct permissions.
+Or with npx (no Bun required):
+
+```json
+{
+  "mcpServers": {
+    "mailchimp": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@cyanheads/mailchimp-mcp-server@latest"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_LOG_LEVEL": "info",
+        "MAILCHIMP_API_KEY": "your-key-with-dc-suffix-e.g.-us22"
+      }
+    }
+  }
+}
+```
+
+Or with Docker:
+
+```json
+{
+  "mcpServers": {
+    "mailchimp": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "MCP_TRANSPORT_TYPE=stdio",
+        "-e", "MAILCHIMP_API_KEY=your-key-with-dc-suffix-e.g.-us22",
+        "ghcr.io/cyanheads/mailchimp-mcp-server:latest"
+      ]
+    }
+  }
+}
+```
+
+For Streamable HTTP, set the transport and start the server:
+
+```sh
+MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 MAILCHIMP_API_KEY=... bun run start:http
+# Server listens at http://localhost:3010/mcp
+```
 
 ### Prerequisites
 
-- [Bun v1.3.2](https://bun.sh/) or higher (or Node.js v22+)
-- A Mailchimp Marketing API key — the key's `-dc` suffix (e.g. `-us22`) identifies your data center and is parsed at startup
+- [Bun v1.3.2](https://bun.sh/) or higher (or Node.js v22+).
+- A Mailchimp Marketing API key — the key's `-dc` suffix (e.g. `-us22`) identifies your data center and is parsed at startup.
 
-### Install from source
+### Installation
+
+1. **Clone the repository:**
 
 ```sh
 git clone https://github.com/cyanheads/mailchimp-mcp-server.git
-cd mailchimp-mcp-server
-bun install
-cp .env.example .env
-# edit .env and set MAILCHIMP_API_KEY
-bun run build
-bun run start:stdio
 ```
 
----
+2. **Navigate into the directory:**
+
+```sh
+cd mailchimp-mcp-server
+```
+
+3. **Install dependencies:**
+
+```sh
+bun install
+```
+
+4. **Configure environment:**
+
+```sh
+cp .env.example .env
+# edit .env and set MAILCHIMP_API_KEY
+```
 
 ## Configuration
 
@@ -219,27 +262,36 @@ bun run start:stdio
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
 
----
+## Running the server
 
-## Running the Server
+### Local development
 
-### Local Development
+- **Hot-reload dev mode:**
 
-```sh
-# Hot-reload dev mode
-bun run dev:stdio
-bun run dev:http
+  ```sh
+  bun run dev:stdio
+  bun run dev:http
+  ```
 
-# Production build + run
-bun run build
-bun run start:stdio
-bun run start:http
+- **Build and run the production version:**
 
-# Checks and tests
-bun run devcheck          # Lint, format, typecheck, security
-bun run test              # Vitest test suite
-bun run lint:mcp          # Validate MCP definitions against spec
-```
+  ```sh
+  # One-time build
+  bun run rebuild
+
+  # Run the built server
+  bun run start:stdio
+  # or
+  bun run start:http
+  ```
+
+- **Run checks and tests:**
+
+  ```sh
+  bun run devcheck   # Lint, format, typecheck, security
+  bun run test       # Vitest test suite
+  bun run lint:mcp   # Validate MCP definitions against spec
+  ```
 
 ### Docker
 
@@ -250,46 +302,37 @@ docker run --rm -e MAILCHIMP_API_KEY=your-key-us22 -p 3010:3010 mailchimp-mcp-se
 
 The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/mailchimp-mcp-server`. OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them.
 
----
-
-## Project Structure
+## Project structure
 
 | Directory | Purpose |
-|:----------|:--------|
+|:---|:---|
 | `src/index.ts` | `createApp()` entry point — registers tools/resources/prompts and inits services. |
-| `src/config/` | Server-specific env var parsing and validation (`server-config.ts`). |
-| `src/mcp-server/tools/definitions/` | Tool definitions (`*.tool.ts`). |
-| `src/mcp-server/resources/definitions/` | Resource definitions (`*.resource.ts`). |
-| `src/mcp-server/prompts/definitions/` | Prompt definitions (`*.prompt.ts`). |
-| `src/services/mailchimp/` | Mailchimp client wrapper — HTTP plumbing, retries, normalization, typed surface. |
-| `docs/` | Design notes, API-key guide, directory tree, and cached OpenAPI reference. |
+| `src/config` | Server-specific environment variable parsing and validation with Zod. |
+| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). Seventeen Mailchimp tools. |
+| `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). Four snapshot resources. |
+| `src/mcp-server/prompts` | Prompt definitions (`*.prompt.ts`). Newsletter starter prompt. |
+| `src/services/mailchimp` | Mailchimp client wrapper — HTTP plumbing, retries, normalization, typed surface. |
 | `tests/` | Vitest tests mirroring `src/`. Currently only `config/` is covered; other subdirs are scaffolded for expansion. |
-| `scripts/` | Build, clean, devcheck, tree, and MCP-lint scripts. |
 
----
-
-## Development Guide
+## Development guide
 
 See [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
 
 - Handlers throw, framework catches — no `try/catch` in tool logic
-- Use `ctx.log` for request-scoped logging, `ctx.state` for tenant-scoped storage
+- Use `ctx.log` for request-scoped logging
 - Register new tools and resources via the barrels in `src/mcp-server/*/definitions/index.ts`
 - Wrap external API calls: validate raw → normalize to domain type → return output schema; never fabricate missing fields
 
----
-
 ## Contributing
 
-Issues and pull requests are welcome. Run checks before submitting:
+Issues and pull requests are welcome. Run checks and tests before submitting:
 
 ```sh
 bun run devcheck
 bun run test
 ```
 
----
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) for details.
+This project is licensed under the Apache 2.0 License. See the [LICENSE](./LICENSE) file for details.
