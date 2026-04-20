@@ -212,7 +212,10 @@ export class MailchimpService {
     const errorData = this.buildErrorData(res.status, body);
     const title = body?.title ?? res.statusText;
     const detail = body?.detail ?? 'No details from Mailchimp.';
-    const message = `Mailchimp ${method} ${url} failed (${res.status} ${title}): ${detail}`;
+    const fieldErrors = body?.errors?.length
+      ? ` Field errors: ${body.errors.map((e) => `${e.field}: ${e.message}`).join('; ')}.`
+      : '';
+    const message = `Mailchimp ${method} ${url} failed (${res.status} ${title}): ${detail}${fieldErrors}`;
 
     log.warning('Mailchimp upstream error', {
       url,
@@ -220,6 +223,7 @@ export class MailchimpService {
       status: res.status,
       title,
       detail: body?.detail,
+      errors: body?.errors,
     });
 
     throw this.classifyStatus(res.status, message, errorData);

@@ -4,6 +4,7 @@
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
+import { validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 
@@ -19,6 +20,12 @@ export const mailchimpCampaignReportResource = resource(
     async handler(params, ctx) {
       const svc = getMailchimpService();
       const r = await svc.reports.get(ctx, params.campaignId);
+      if (!r.send_time) {
+        throw validationError(
+          `Campaign '${params.campaignId}' has not been sent yet — no report data available. Send it with mailchimp_send_campaign first.`,
+          { campaignId: params.campaignId },
+        );
+      }
       return {
         campaignId: r.id,
         campaignTitle: r.campaign_title,

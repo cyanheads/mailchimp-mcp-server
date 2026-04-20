@@ -151,6 +151,40 @@ describe('MailchimpService.request', () => {
     });
   });
 
+  it('surfaces Mailchimp `errors[]` field entries in the error message', async () => {
+    fetchStub.mockResolvedValueOnce(
+      fakeResponse(400, {
+        title: 'Invalid Resource',
+        detail:
+          "The resource submitted could not be validated. For field-specific details, see the 'errors' array.",
+        errors: [
+          { field: 'members_to_add.0.email_address', message: 'must be subscribed' },
+          { field: 'members_to_remove.0', message: 'not a member of this segment' },
+        ],
+      }),
+    );
+    const svc = makeService();
+    await expect(svc.request('POST', '/lists/abc/segments/1')).rejects.toMatchObject({
+      code: JsonRpcErrorCode.ValidationError,
+      message: expect.stringContaining('members_to_add.0.email_address: must be subscribed'),
+      data: {
+        upstream: {
+          errors: expect.arrayContaining([
+            expect.objectContaining({ field: 'members_to_remove.0' }),
+          ]),
+        },
+      },
+    });
+  });
+
+  it('omits the `Field errors` suffix when `errors[]` is absent or empty', async () => {
+    fetchStub.mockResolvedValueOnce(fakeResponse(400, { title: 'Bad', detail: 'generic failure' }));
+    const svc = makeService();
+    await expect(svc.request('POST', '/x')).rejects.toMatchObject({
+      message: expect.not.stringContaining('Field errors:'),
+    });
+  });
+
   it('classifies 429 as RateLimited', async () => {
     fetchStub.mockResolvedValueOnce(fakeResponse(429, { title: 'Too many requests' }));
     const svc = makeService({ maxRetries: 0 });

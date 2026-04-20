@@ -7,6 +7,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const InputSchema = z.object({
@@ -117,8 +118,14 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
-    const [report, clicks, locations, unsubs] = await Promise.all([
-      svc.reports.get(ctx, input.campaignId),
+    const report = await svc.reports.get(ctx, input.campaignId);
+    if (!report.send_time) {
+      throw validationError(
+        `Campaign '${input.campaignId}' has not been sent yet — no report data available. Send it with mailchimp_send_campaign, or inspect the draft with mailchimp_campaigns (operation: 'get').`,
+        { campaignId: input.campaignId, status: report.type ?? 'unsent' },
+      );
+    }
+    const [clicks, locations, unsubs] = await Promise.all([
       svc.reports
         .clickDetailsList(ctx, input.campaignId, { count: input.includeTopN })
         .catch(() => ({ urls_clicked: [], total_items: 0 })),

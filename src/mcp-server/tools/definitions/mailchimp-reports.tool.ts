@@ -153,7 +153,14 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
       }
 
       case 'get': {
-        const r = await svc.reports.get(ctx, requireCampaignId(input));
+        const campaignId = requireCampaignId(input);
+        const r = await svc.reports.get(ctx, campaignId);
+        if (!r.send_time) {
+          throw validationError(
+            `Campaign '${campaignId}' has not been sent yet — no report data available. Send it with mailchimp_send_campaign, or inspect the draft with mailchimp_campaigns (operation: 'get').`,
+            { campaignId },
+          );
+        }
         return { operation: 'get', campaignId: r.id, report: summarize(r) };
       }
 
