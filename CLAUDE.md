@@ -1,9 +1,9 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
-**Surface:** 17 tools · 4 resources · 0 prompts · 1 service (`mailchimp`)
+**Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 

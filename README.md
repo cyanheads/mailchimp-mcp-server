@@ -1,12 +1,12 @@
 <div align="center">
   <h1>mailchimp-mcp-server</h1>
   <p><b>MCP server for the Mailchimp Marketing API — audiences, subscribers, campaigns, and reports. Safe-by-default send workflows, STDIO & Streamable HTTP transports.</b></p>
-  <p><b>17 Tools · 4 Resources · 0 Prompts</b></p>
+  <p><b>17 Tools · 4 Resources · 1 Prompt</b></p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-^1.3-fbf0df.svg?style=flat-square&logo=bun)](https://bun.sh/) [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-^1.3-fbf0df.svg?style=flat-square&logo=bun)](https://bun.sh/) [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg?style=flat-square)](./CHANGELOG.md)
 
 </div>
 
@@ -108,7 +108,7 @@ Single-call audience health digest — answers "what does this audience look lik
 
 Returns a structured procedural playbook merged with live account state. Advice-only — the agent executes subsequent steps with other tools.
 
-- Topics: `send`, `post-send-review`, `deliverability`, `list-hygiene`, `onboarding`, `subscriber-triage`
+- Topics: `send`, `post-send-review`, `deliverability`, `list-hygiene`, `onboarding`, `subscriber-triage`, `design-campaign`
 - Returns markdown instructions + a live-state snapshot
 - `nextToolSuggestions` pre-fills arguments for the next likely tool call
 
@@ -124,6 +124,16 @@ Returns a structured procedural playbook merged with live account state. Advice-
 | `mailchimp://campaigns/{campaignId}/report` | Post-send campaign report headline metrics. |
 
 All resource data is also reachable via tools. Large collections (`audiences`, `campaigns`) are not exposed as resources — use the `list` operation on the corresponding tool instead.
+
+---
+
+## Prompts
+
+| Name | Description | Args |
+|:-----|:------------|:-----|
+| `newsletter_from_source` | User-invokable starter that briefs the agent to compose a monthly editorial newsletter from a URL or free-form description. Chains into `mailchimp_playbook` (`topic: design-campaign`) for live audience-aware design guidance, then walks the draft → test → send flow. | `source` (URL or brief), `audienceId?`, `seasonalContext?` |
+
+Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook.md) — palette, typography, email-safe HTML, graphics via CDN, subject/preview craft.
 
 ---
 
@@ -159,7 +169,7 @@ Add to your MCP client config (e.g., `claude_desktop_config.json`):
     "mailchimp": {
       "type": "stdio",
       "command": "bunx",
-      "args": ["mailchimp-mcp-server@latest"],
+      "args": ["@cyanheads/mailchimp-mcp-server@latest"],
       "env": {
         "MAILCHIMP_API_KEY": "your-key-with-dc-suffix-e.g-us22",
         "MCP_TRANSPORT_TYPE": "stdio"
@@ -252,7 +262,7 @@ The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `
 | `src/config/` | Server-specific env var parsing and validation (`server-config.ts`). |
 | `src/mcp-server/tools/definitions/` | Tool definitions (`*.tool.ts`). |
 | `src/mcp-server/resources/definitions/` | Resource definitions (`*.resource.ts`). |
-| `src/mcp-server/prompts/definitions/` | Prompt definitions (currently empty). |
+| `src/mcp-server/prompts/definitions/` | Prompt definitions (`*.prompt.ts`). |
 | `src/services/mailchimp/` | Mailchimp client wrapper — HTTP plumbing, retries, normalization, typed surface. |
 | `docs/` | Design notes, API-key guide, directory tree, and cached OpenAPI reference. |
 | `tests/` | Unit tests (Vitest) mirroring `src/`. |
