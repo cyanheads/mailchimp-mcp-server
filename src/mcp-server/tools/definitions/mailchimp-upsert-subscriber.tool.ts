@@ -76,7 +76,7 @@ export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber',
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
-    const hash = await mailchimpMemberHash(input.email);
+    const hash = mailchimpMemberHash(input.email);
 
     const before = await svc.subscribers.get(ctx, input.audienceId, hash).catch(() => null);
     const isNew = before === null;

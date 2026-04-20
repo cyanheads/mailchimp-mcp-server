@@ -298,7 +298,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
     switch (input.operation) {
       case 'list': {
         const page = await svc.audiences.list(ctx, { count: input.count, offset: input.offset });
-        const lists = Array.isArray(page['lists']) ? (page['lists'] as Audience[]) : [];
+        const lists = Array.isArray(page.lists) ? (page.lists as Audience[]) : [];
         return {
           operation: 'list',
           audiences: lists.map(summarize),

@@ -206,13 +206,13 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'get': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'get'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'get'));
         const sub = await svc.subscribers.get(ctx, audienceId, hash);
         return { operation: 'get', subscriber: summarize(sub) };
       }
 
       case 'update': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'update'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'update'));
         const body: Partial<Subscriber> = {};
         if (input.status) body.status = input.status;
         if (input.mergeFields) body.merge_fields = input.mergeFields;
@@ -232,14 +232,14 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'archive': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'archive'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'archive'));
         await svc.subscribers.archive(ctx, audienceId, hash);
         ctx.log.info('subscriber archived', { email: input.email });
         return { operation: 'archive', deleted: true };
       }
 
       case 'list-tags': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'list-tags'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-tags'));
         const { tags, total_items } = await svc.subscribers.listTags(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -261,7 +261,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
             "'tags' is required for 'set-tags' (pass an empty array to remove all).",
           );
         }
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'set-tags'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'set-tags'));
         const { tags: currentTags } = await svc.subscribers.listTags(ctx, audienceId, hash, {
           count: 1000,
         });
@@ -294,7 +294,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-notes': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'list-notes'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-notes'));
         const { notes, total_items } = await svc.subscribers.listNotes(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -314,7 +314,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'add-note': {
         if (!input.note) throw validationError("'note' is required for 'add-note'.");
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'add-note'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'add-note'));
         const note = await svc.subscribers.addNote(ctx, audienceId, hash, input.note);
         const out: NonNullable<Output['note']> = { id: note.id, note: note.note };
         if (note.created_at) out.createdAt = note.created_at;
@@ -325,7 +325,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         if (!input.note) throw validationError("'note' is required for 'update-note'.");
         if (input.noteId === undefined)
           throw validationError("'noteId' is required for 'update-note'.");
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'update-note'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'update-note'));
         const note = await svc.subscribers.updateNote(
           ctx,
           audienceId,
@@ -341,13 +341,13 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       case 'delete-note': {
         if (input.noteId === undefined)
           throw validationError("'noteId' is required for 'delete-note'.");
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'delete-note'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'delete-note'));
         await svc.subscribers.deleteNote(ctx, audienceId, hash, input.noteId);
         return { operation: 'delete-note', deleted: true };
       }
 
       case 'list-activity': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'list-activity'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-activity'));
         const { activity, total_items } = await svc.subscribers.listActivity(
           ctx,
           audienceId,
@@ -362,7 +362,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-events': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'list-events'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-events'));
         const { events, total_items } = await svc.subscribers.listEvents(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -375,7 +375,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-goals': {
-        const hash = await mailchimpMemberHash(requireEmail(input.email, 'list-goals'));
+        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-goals'));
         const { goals, total_items } = await svc.subscribers.listGoals(ctx, audienceId, hash);
         return {
           operation: 'list-goals',

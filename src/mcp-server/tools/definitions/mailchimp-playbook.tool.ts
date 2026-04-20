@@ -380,7 +380,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const exact = found?.exact_matches?.members ?? [];
         const fuzzy = found?.full_search?.members ?? [];
         if (exact.length === 0 && fuzzy.length === 0) {
-          const hash = await mailchimpMemberHash(input.email);
+          const hash = mailchimpMemberHash(input.email);
           return {
             topic: 'subscriber-triage',
             instructions: [

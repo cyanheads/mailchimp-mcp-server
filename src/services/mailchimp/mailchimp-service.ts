@@ -85,7 +85,7 @@ type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
 const PAID_FEATURE_MARKER = /only available to.*(paid|standard|premium|pro|plus)/i;
 
 /** Compute MD5-lowercase of an email address — Mailchimp uses this as the member-hash URL segment. */
-export async function mailchimpMemberHash(email: string): Promise<string> {
+export function mailchimpMemberHash(email: string): string {
   return createHash('md5').update(email.trim().toLowerCase()).digest('hex');
 }
 
@@ -124,7 +124,7 @@ export class MailchimpService {
     return url.toString();
   }
 
-  async request<T>(method: HttpMethod, path: string, opts: RequestOptions = {}): Promise<T> {
+  request<T>(method: HttpMethod, path: string, opts: RequestOptions = {}): Promise<T> {
     const url = this.buildUrl(path, opts.query);
     const log = opts.log ?? globalLogger;
     const fn = async (): Promise<T> => this.sendOnce<T>(method, url, opts, log);
@@ -231,7 +231,7 @@ export class MailchimpService {
 
   private buildErrorData(status: number, body: MailchimpErrorBody | undefined): MailchimpErrorData {
     const data: MailchimpErrorData = { status };
-    if (body) data['upstream'] = body;
+    if (body) data.upstream = body;
     if (body?.type) data.type = body.type;
     if (body?.title) data.title = body.title;
     if (body?.detail) data.detail = body.detail;

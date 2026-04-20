@@ -50,7 +50,7 @@ const ServerConfigSchema = z
       .describe('Max in-flight upstream requests per workflow tool.'),
   })
   .transform((raw) => {
-    const dc = API_KEY_PATTERN.exec(raw.apiKey)?.groups?.['dc'] ?? '';
+    const dc = API_KEY_PATTERN.exec(raw.apiKey)?.groups?.dc ?? '';
     const baseUrl = raw.baseUrl ?? `https://${dc}.api.mailchimp.com/3.0`;
     return { ...raw, dataCenter: dc, baseUrl };
   });
@@ -62,11 +62,11 @@ let _config: ServerConfig | undefined;
 export function getServerConfig(): ServerConfig {
   if (!_config) {
     _config = ServerConfigSchema.parse({
-      apiKey: process.env['MAILCHIMP_API_KEY'],
-      baseUrl: process.env['MAILCHIMP_BASE_URL'],
-      timeoutMs: process.env['MAILCHIMP_TIMEOUT_MS'],
-      maxRetries: process.env['MAILCHIMP_MAX_RETRIES'],
-      concurrencyLimit: process.env['MAILCHIMP_CONCURRENCY_LIMIT'],
+      apiKey: process.env.MAILCHIMP_API_KEY,
+      baseUrl: process.env.MAILCHIMP_BASE_URL,
+      timeoutMs: process.env.MAILCHIMP_TIMEOUT_MS,
+      maxRetries: process.env.MAILCHIMP_MAX_RETRIES,
+      concurrencyLimit: process.env.MAILCHIMP_CONCURRENCY_LIMIT,
     });
   }
   return _config;

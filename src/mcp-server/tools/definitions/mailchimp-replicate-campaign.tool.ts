@@ -159,23 +159,23 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
       // 2. Apply settings/recipients overrides.
       const settingsBody: Record<string, unknown> = {};
       if (input.subjectOverride !== undefined) {
-        settingsBody['subject_line'] = input.subjectOverride;
+        settingsBody.subject_line = input.subjectOverride;
         overridesApplied.push('subject');
       }
       if (input.previewTextOverride !== undefined) {
-        settingsBody['preview_text'] = input.previewTextOverride;
+        settingsBody.preview_text = input.previewTextOverride;
         overridesApplied.push('previewText');
       }
       if (input.fromNameOverride !== undefined) {
-        settingsBody['from_name'] = input.fromNameOverride;
+        settingsBody.from_name = input.fromNameOverride;
         overridesApplied.push('fromName');
       }
       if (input.replyToOverride !== undefined) {
-        settingsBody['reply_to'] = input.replyToOverride;
+        settingsBody.reply_to = input.replyToOverride;
         overridesApplied.push('replyTo');
       }
       if (input.titleOverride !== undefined) {
-        settingsBody['title'] = input.titleOverride;
+        settingsBody.title = input.titleOverride;
         overridesApplied.push('title');
       }
 
@@ -196,8 +196,8 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
 
       if (Object.keys(settingsBody).length > 0 || recipientsBody) {
         const body: Record<string, unknown> = {};
-        if (Object.keys(settingsBody).length > 0) body['settings'] = settingsBody;
-        if (recipientsBody) body['recipients'] = recipientsBody;
+        if (Object.keys(settingsBody).length > 0) body.settings = settingsBody;
+        if (recipientsBody) body.recipients = recipientsBody;
         await svc.campaigns.update(ctx, newCampaignId, body);
       }
 
