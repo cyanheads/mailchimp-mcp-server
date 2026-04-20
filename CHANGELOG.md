@@ -2,6 +2,17 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.4 — 2026-04-20
+
+### Fixed
+
+- **`mailchimp_campaign_report`, `mailchimp_reports` (`operation: get`), and the `mailchimp://campaigns/{campaignId}/report` resource** now throw a clear `ValidationError` when a campaign has not been sent yet, instead of returning a structurally complete zero-valued report that agents misinterpreted as "sent but fully ignored." The guard fires on an empty upstream `send_time`. `mailchimp_campaign_report` also short-circuits the three slice fetches (click-details, locations, unsubscribed) on the draft path — one upstream call on failure instead of four. ([#2](https://github.com/cyanheads/mailchimp-mcp-server/issues/2))
+- **Mailchimp 4xx `errors[]` field entries are now surfaced in the thrown error message.** Previously 400 responses ended with "For field-specific details, see the 'errors' array" but discarded the array — e.g. `mailchimp_segments` `batch-update-members` failures were effectively opaque. The message now appends `Field errors: field: message; …`; the full array remains available in `data.upstream.errors`. ([#2](https://github.com/cyanheads/mailchimp-mcp-server/issues/2))
+
+### Added
+
+- Vitest coverage for both fixes — 3 cases for the draft guard (rejection, slice short-circuit, sent passes through) and 2 for upstream `errors[]` surfacing (present, absent). 55 tests total (up from 50).
+
 ## 0.2.3 — 2026-04-20
 
 ### Changed
