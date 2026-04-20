@@ -6,7 +6,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^5.9-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-^1.3-fbf0df.svg?style=flat-square&logo=bun)](https://bun.sh/) [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg?style=flat-square)](./CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP Spec](https://img.shields.io/badge/MCP%20Spec-2025--06--18-blueviolet.svg?style=flat-square)](https://modelcontextprotocol.io/) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-^1.3-fbf0df.svg?style=flat-square&logo=bun)](https://bun.sh/) [![Status](https://img.shields.io/badge/Status-Beta-yellow.svg?style=flat-square)](./CHANGELOG.md)
 
 </div>
 
@@ -144,9 +144,8 @@ Built on [`@cyanheads/mcp-ts-core`](https://www.npmjs.com/package/@cyanheads/mcp
 - Declarative tool, resource, and prompt definitions — single file per primitive, framework handles registration and validation
 - Unified error handling — handlers throw, framework catches, classifies, and formats
 - Pluggable auth: `none`, `jwt`, `oauth`
-- Swappable storage backends: `in-memory`, `filesystem`, `Supabase`, `Cloudflare KV/R2/D1`
 - Structured logging with optional OpenTelemetry tracing
-- Runs locally (stdio or streamable HTTP) or on Cloudflare Workers from the same codebase
+- STDIO and Streamable HTTP transports
 
 Mailchimp-specific:
 
@@ -183,7 +182,7 @@ See [`docs/api-key.md`](./docs/api-key.md) for how to generate a Mailchimp API k
 
 ### Prerequisites
 
-- [Bun v1.2](https://bun.sh/) or higher (or Node.js v22+)
+- [Bun v1.3.2](https://bun.sh/) or higher (or Node.js v22+)
 - A Mailchimp Marketing API key — the key's `-dc` suffix (e.g. `-us22`) identifies your data center and is parsed at startup
 
 ### Install from source
@@ -216,7 +215,6 @@ bun run start:stdio
 | `MCP_AUTH_MODE` | Auth mode: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (RFC 5424). | `info` |
 | `LOGS_DIR` | Directory for log files (Node.js only). | `<project-root>/logs` |
-| `STORAGE_PROVIDER_TYPE` | Storage backend. | `in-memory` |
 | `OTEL_ENABLED` | Enable OpenTelemetry. | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
@@ -250,7 +248,7 @@ docker build -t mailchimp-mcp-server .
 docker run --rm -e MAILCHIMP_API_KEY=your-key-us22 -p 3010:3010 mailchimp-mcp-server
 ```
 
-The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/mailchimp-mcp-server`. Build with `--build-arg OTEL_ENABLED=true` to include OpenTelemetry peer dependencies.
+The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `/var/log/mailchimp-mcp-server`. OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them.
 
 ---
 
@@ -265,7 +263,7 @@ The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `
 | `src/mcp-server/prompts/definitions/` | Prompt definitions (`*.prompt.ts`). |
 | `src/services/mailchimp/` | Mailchimp client wrapper — HTTP plumbing, retries, normalization, typed surface. |
 | `docs/` | Design notes, API-key guide, directory tree, and cached OpenAPI reference. |
-| `tests/` | Unit tests (Vitest) mirroring `src/`. |
+| `tests/` | Vitest tests mirroring `src/`. Currently only `config/` is covered; other subdirs are scaffolded for expansion. |
 | `scripts/` | Build, clean, devcheck, tree, and MCP-lint scripts. |
 
 ---
