@@ -103,11 +103,13 @@ After installing dependencies (prefer `bun install`; `npm install` also works), 
 
 ## Checklist
 
-- [ ] Agent protocol file selected — keep one authoritative file (`CLAUDE.md` or `AGENTS.md`)
-- [ ] `{{PACKAGE_NAME}}` placeholders replaced in agent protocol file (if not auto-substituted by init)
-- [ ] Core framework CLAUDE.md read (`node_modules/@cyanheads/mcp-ts-core/CLAUDE.md`)
-- [ ] Unused echo definitions cleaned up (and unregistered from `src/index.ts`)
-- [ ] Skills copied to agent directory (`cp -R skills/* .claude/skills/` or equivalent)
-- [ ] Project structure understood (definitions directories, entry point)
-- [ ] `bun run devcheck` passes
+- [x] Agent protocol file selected — keep one authoritative file (`CLAUDE.md` or `AGENTS.md`)
+- [x] `{{PACKAGE_NAME}}` placeholders replaced in agent protocol file (if not auto-substituted by init)
+- [x] Core framework CLAUDE.md read (`node_modules/@cyanheads/mcp-ts-core/CLAUDE.md`)
+- [ ] Unused echo definitions cleaned up (and unregistered from `src/index.ts`) — deferred until `design-mcp-server` decides which surfaces (tools/resources/prompts/app-tools) the Mailchimp integration needs
+- [x] Skills copied to agent directory (`cp -R skills/* .claude/skills/` or equivalent)
+- [x] Project structure understood (definitions directories, entry point)
+- [x] `bun run devcheck` passes
 - [ ] If new server: proceed to `design-mcp-server` skill to plan the tool surface
+
+Completed: 2026-04-19

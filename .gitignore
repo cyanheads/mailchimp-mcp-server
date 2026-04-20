@@ -77,3 +77,8 @@ docs/devdocs.md
 .agents/
 .mcpregistry_github_token
 .mcpregistry_registry_token
+
+# =============================================================================
+# REFERENCE ARTIFACTS (large; fetch on demand)
+# =============================================================================
+docs/reference/*.json
