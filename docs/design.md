@@ -20,7 +20,7 @@
 
 | Name | Description | Input | Annotations |
 |:-----|:------------|:------|:------------|
-| `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
+| `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (designing a campaign, sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage` \| `design-campaign`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
 
 **Primitive tools** (9) — fine-grained CRUD, consolidated by noun via `operation` enum:
 
@@ -49,14 +49,17 @@ Supplementary — all data is also reachable via tools. Stable URIs for capable 
 
 Lists themselves (`mailchimp://audiences`, `mailchimp://campaigns`) are not exposed as resources — use the `list` operation on the corresponding tool. Mailchimp pagination is `count`/`offset` which doesn't map cleanly to resource cursors for large collections.
 
-### Prompts (0)
+### Prompts (1)
 
-None in v1. Candidates for a later iteration:
+| Name | Description | Args |
+|:-----|:------------|:-----|
+| `newsletter_from_source` | User-invokable starter that briefs the agent to compose a monthly editorial newsletter from a URL or free-form description. Chains into `mailchimp_playbook` (`topic: design-campaign`) for live audience-aware design guidance, then walks the draft → test → send flow. | `source` (URL or brief), `audienceId?`, `seasonalContext?` |
+
+Design reference: `docs/email-design-playbook.md` — the worked-example playbook (palette, typography, email-safe HTML, graphics via CDN) that the prompt and the `design-campaign` topic both point to.
+
+Future candidates:
 
 - `analyze_campaign_performance` — structured analysis of a `mailchimp_campaign_report` output.
-- `compose_newsletter` — newsletter draft scaffold (topic, audience tone, section outline).
-
-Skipped because the tool surface already covers the common flows and prompts add ceremony without earning their keep yet.
 
 ---
 

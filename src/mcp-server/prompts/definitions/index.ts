@@ -1,9 +1,10 @@
 /**
  * @fileoverview Prompt definitions barrel — exposes `allPromptDefinitions` for `createApp()`.
- * No prompts in v1 — tool surface covers the flows. Candidate prompts listed in `docs/design.md`.
  * @module mcp-server/prompts/definitions/index
  */
 
-import type { PromptDefinition } from '@cyanheads/mcp-ts-core/prompts';
+import type { AnyPromptDefinition } from '@cyanheads/mcp-ts-core/prompts';
 
-export const allPromptDefinitions: PromptDefinition[] = [];
+import { newsletterFromSourcePrompt } from './newsletter-from-source.prompt.js';
+
+export const allPromptDefinitions: AnyPromptDefinition[] = [newsletterFromSourcePrompt];

@@ -21,9 +21,10 @@ const TopicSchema = z
     'list-hygiene',
     'onboarding',
     'subscriber-triage',
+    'design-campaign',
   ])
   .describe(
-    'Which playbook to render. `send` — compose & dispatch a campaign. `post-send-review` — interpret a just-sent campaign. `deliverability` — diagnose bounces / abuse / low engagement. `list-hygiene` — clean a stale audience. `onboarding` — first-time setup walk-through. `subscriber-triage` — investigate one subscriber.',
+    "Which playbook to render. `send` — compose & dispatch a campaign. `post-send-review` — interpret a just-sent campaign. `deliverability` — diagnose bounces / abuse / low engagement. `list-hygiene` — clean a stale audience. `onboarding` — first-time setup walk-through. `subscriber-triage` — investigate one subscriber. `design-campaign` — compose a well-designed editorial newsletter (palette, typography, graphics via CDN, subject/preview craft) tailored to the audience's engagement profile.",
   );
 
 const InputSchema = z.object({
@@ -32,7 +33,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Audience ID. Needed for `send`, `list-hygiene`, `subscriber-triage` (to scope the probe).',
+      'Audience ID. Needed for `send`, `list-hygiene`, `subscriber-triage`, `design-campaign` (to scope the probe).',
     ),
   campaignId: z.string().optional().describe('Campaign ID. Needed for `post-send-review`.'),
   email: z.string().optional().describe('Subscriber email. Needed for `subscriber-triage`.'),
@@ -65,7 +66,7 @@ const PCT = (v: number | undefined): string =>
 
 export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   description:
-    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using the other tools. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments.',
+    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (designing a campaign, sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using the other tools. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments.',
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -464,6 +465,146 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
                 email: input.email,
                 count: 20,
               },
+            },
+          ],
+        };
+      }
+
+      case 'design-campaign': {
+        if (!input.audienceId) {
+          throw validationError("'audienceId' is required for topic 'design-campaign'.");
+        }
+        const [audience, growth] = await Promise.all([
+          svc.audiences.get(ctx, input.audienceId),
+          svc.audiences
+            .listGrowthHistory(ctx, input.audienceId, { count: 3 })
+            .catch(() => ({ history: [], total_items: 0 })),
+        ]);
+        const memberCount = audience.stats?.member_count ?? 0;
+        const open = audience.stats?.open_rate;
+        const click = audience.stats?.click_rate;
+        const recentNet = growth.history.reduce(
+          (acc, h) => acc + (h.subscribed ?? 0) - (h.unsubscribed ?? 0),
+          0,
+        );
+        const toneAdjustments: string[] = [];
+        if (memberCount > 0 && memberCount < 25) {
+          toneAdjustments.push(
+            '- **Small list.** Write like a personal note, not a broadcast. Skip the big CTA panels; a single inline link is plenty.',
+          );
+        }
+        if (memberCount >= 500) {
+          toneAdjustments.push(
+            '- **Large list.** Compose for the median reader, not the power fan. Keep the feature tight and the CTA obvious.',
+          );
+        }
+        if (typeof open === 'number' && open < 0.15 && memberCount > 0) {
+          toneAdjustments.push(
+            `- **Low open rate (${PCT(open)}).** Subject line + from-name quality matter more than frequency. Write the subject last, make it concrete, avoid hype punctuation.`,
+          );
+        }
+        if (typeof open === 'number' && open >= 0.25) {
+          toneAdjustments.push(
+            `- **Strong open rate (${PCT(open)}).** Readers trust the from-name; you can be a little more playful with the subject.`,
+          );
+        }
+        if (recentNet > 0) {
+          toneAdjustments.push(
+            `- **Net growth (+${recentNet}) over the last 3 months.** Consider a one-line welcome to newer subscribers in the greeting.`,
+          );
+        }
+        if (recentNet < 0) {
+          toneAdjustments.push(
+            `- **Shrinking list (${recentNet}).** Tone should feel earned, not urgent. Avoid sales language.`,
+          );
+        }
+        const instructions = [
+          `# Design playbook — "${audience.name}"`,
+          '',
+          `**Audience state:** ${memberCount} members, avg open ${PCT(open)}, avg click ${PCT(click)}, net growth (3mo): ${recentNet >= 0 ? '+' : ''}${recentNet}.`,
+          '',
+          'Design an editorial newsletter: warm, typographic, restrained. Full reference with worked examples lives at `docs/email-design-playbook.md`.',
+          '',
+          '## 1. Research the brand',
+          'Before drafting, build a mental model of the source. Pull palette, voice, visual rhythm, subject-matter specifics, and the one-sentence mission. If the source is a website, `curl -sL https://r.jina.ai/<URL>` returns clean markdown.',
+          '',
+          '## 2. Palette (pick 4–6 hex values with roles)',
+          '- **Primary brand** — masthead, section headers, footer, CTA bg',
+          '- **Cream body bg** — NOT pure white (`#fbf8f0`-ish is warmer)',
+          '- **Page bg** — slightly darker than body, for breathing room',
+          '- **Accent** — one color for the CTA button / hairline bands',
+          '- **Muted ink** — kicker labels, captions',
+          '- **Body ink** — near-black, not pure black (`#2b2a26`)',
+          '',
+          '## 3. Typography',
+          'Two families max. Georgia/Times for serif, system sans or Arial for sans. Body line-height 1.6–1.7, display headers 1.1–1.25. Scale: 11–13px kicker, 15–16px body, 22–26px headers, 34px masthead.',
+          '',
+          '## 4. Layout (email-safe HTML)',
+          '- 600px max-width outer table, all styles inline',
+          "- Tables for layout (Outlook uses Word's renderer — no flex/grid)",
+          '- Every `<img>` has explicit `width`, `height`, `alt`, `display:block`, `border:0`',
+          '- Preheader in a hidden `<div style="display:none;…">` at top of body',
+          '- Section structure: masthead → greeting → feature → 2–4 supporting sections → highlighted block → CTA panel → sign-off → mission → contact footer',
+          '',
+          '## 5. Graphics via CDN (optional but effective)',
+          'Inline SVG and base64 data URIs get stripped. The reliable path is hosted PNGs. Twemoji on jsDelivr is free, consistent, bubbly:',
+          '```',
+          'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/<codepoint>.png',
+          '```',
+          '6–8 placements max across a 600px email. Each should label a section, anchor warmth, or pun on content. curl-check each URL for 200 before sending.',
+          '',
+          '## 6. Subject & preview',
+          '- **From name:** brand, ≤25 chars, monitored inbox',
+          '- **Subject:** 40–60 chars, concrete nouns not adjectives, specific over generic',
+          '- **Preview text:** ~90 chars, extends the subject instead of repeating it',
+          '- Write these *last*, after the content is settled',
+          '',
+          '## 7. Personalization',
+          'Use merge tags with graceful fallbacks: `*|FNAME:friend|*` — not bare `*|FNAME|*`, which renders as empty string when missing.',
+          '',
+          toneAdjustments.length > 0
+            ? ['## 8. Tailored for this audience', ...toneAdjustments].join('\n')
+            : '',
+          '',
+          '## Workflow',
+          '1. Research source → extract palette, voice, mission',
+          '2. Outline sections and write copy',
+          '3. Build HTML (600px table, inline styles)',
+          '4. Curl-check any CDN image URLs',
+          '5. `mailchimp_send_campaign` `mode: draft` → review `checklistWarnings`',
+          '6. `mode: test` → proofread the rendered output (iOS + Gmail web minimum)',
+          '7. `mode: send` (elicits confirmation on HITL clients)',
+          '8. After ~24h: `mailchimp_playbook` `topic: post-send-review`',
+        ]
+          .filter(Boolean)
+          .join('\n');
+        return {
+          topic: 'design-campaign',
+          instructions,
+          liveState: {
+            audienceId: audience.id,
+            audienceName: audience.name,
+            memberCount,
+            openRate: open,
+            clickRate: click,
+            recentNetGrowth: recentNet,
+            toneAdjustmentCount: toneAdjustments.length,
+          },
+          nextToolSuggestions: [
+            {
+              tool: 'mailchimp_audience_overview',
+              reason: 'Refresh audience state (growth, clients, merge-field schema)',
+              suggestedInput: { audienceId: audience.id },
+            },
+            {
+              tool: 'mailchimp_templates',
+              reason: 'Browse saved templates before drafting from scratch',
+              suggestedInput: { operation: 'list', type: 'user' },
+            },
+            {
+              tool: 'mailchimp_send_campaign',
+              reason: 'Start the draft once design is settled',
+              suggestedInput: { audienceId: audience.id, mode: 'draft' },
             },
           ],
         };
