@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.2.0
+**Version:** 0.2.3
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
 
@@ -21,7 +21,7 @@ When the user asks what to do next, what's left, or needs direction, suggest rel
 6. **Field-test definitions** — exercise tools/resources/prompts with real inputs using the `field-test` skill, get a report of issues and pain points
 7. **Run `devcheck`** — lint, format, typecheck, and security audit
 8. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
-9. **Run the `maintenance` skill** — sync skills and dependencies after framework updates
+9. **Run the `maintenance` skill** — investigate changelogs, adopt upstream changes, and sync skills after `bun update --latest`
 
 Tailor suggestions to what's actually missing or stale — don't recite the full list every time.
 
@@ -115,7 +115,10 @@ export const mailchimpAudienceResource = resource('mailchimp://audiences/{audien
 ### Server config
 
 ```ts
-// src/config/server-config.ts — lazy-parsed, with derived data-center field
+// src/config/server-config.ts — lazy-parsed via parseEnvConfig for env-var-aware errors
+import { z } from '@cyanheads/mcp-ts-core';
+import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
+
 const API_KEY_PATTERN = /^[a-f0-9]{32}-(?<dc>[a-z]+\d+)$/i;
 
 const ServerConfigSchema = z.object({
@@ -128,7 +131,21 @@ const ServerConfigSchema = z.object({
   const dc = API_KEY_PATTERN.exec(raw.apiKey)?.groups?.['dc'] ?? '';
   return { ...raw, dataCenter: dc, baseUrl: raw.baseUrl ?? `https://${dc}.api.mailchimp.com/3.0` };
 });
+
+let _config: z.infer<typeof ServerConfigSchema> | undefined;
+export function getServerConfig() {
+  _config ??= parseEnvConfig(ServerConfigSchema, {
+    apiKey: 'MAILCHIMP_API_KEY',
+    baseUrl: 'MAILCHIMP_BASE_URL',
+    timeoutMs: 'MAILCHIMP_TIMEOUT_MS',
+    maxRetries: 'MAILCHIMP_MAX_RETRIES',
+    concurrencyLimit: 'MAILCHIMP_CONCURRENCY_LIMIT',
+  });
+  return _config;
+}
 ```
+
+`parseEnvConfig` maps Zod paths → env-var names so a missing `MAILCHIMP_API_KEY` surfaces as `MAILCHIMP_API_KEY (apiKey): ...` instead of a raw Zod path. It throws a `ConfigurationError` which the framework catches at startup and prints as a clean banner.
 
 ---
 
@@ -229,7 +246,7 @@ src/
 
 Skills are modular instructions in `skills/` at the project root. Read them directly when a task matches — e.g., `skills/add-tool/SKILL.md` when adding a tool.
 
-**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, re-copy to pick up changes.
+**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
 
 Available skills:
 
@@ -246,7 +263,7 @@ Available skills:
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
 | `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
-| `maintenance` | Sync skills and dependencies after updates |
+| `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
 | `api-auth` | Auth modes, scopes, JWT/OAuth |
@@ -313,7 +330,7 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 
 ## Checklist
 
-- [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, etc.)
+- [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, `z.bigint()`, `z.symbol()`, `z.void()`, `z.map()`, `z.set()`, `z.function()`, `z.nan()`) on **tool/resource input/output**. Server config may use `.transform()`.
 - [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`)
 - [ ] JSDoc `@fileoverview` + `@module` on every file
 - [ ] `ctx.log` for logging — no `console`

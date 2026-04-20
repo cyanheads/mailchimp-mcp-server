@@ -6,6 +6,7 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
+import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 /**
  * Mailchimp API keys have the form `<hex>-<dc>` where `<dc>` is the data center (e.g. `us22`).
@@ -17,11 +18,8 @@ const ServerConfigSchema = z
   .object({
     apiKey: z
       .string()
-      .min(1, 'MAILCHIMP_API_KEY is required')
-      .regex(
-        API_KEY_PATTERN,
-        'MAILCHIMP_API_KEY must match the format `<32-hex>-<dc>` (e.g. `abc…-us22`)',
-      )
+      .min(1)
+      .regex(API_KEY_PATTERN, 'must match the format `<32-hex>-<dc>` (e.g. `abc…-us22`)')
       .describe('Mailchimp Marketing API key, including the data-center suffix.'),
     baseUrl: z
       .string()
@@ -60,15 +58,13 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 let _config: ServerConfig | undefined;
 
 export function getServerConfig(): ServerConfig {
-  if (!_config) {
-    _config = ServerConfigSchema.parse({
-      apiKey: process.env.MAILCHIMP_API_KEY,
-      baseUrl: process.env.MAILCHIMP_BASE_URL,
-      timeoutMs: process.env.MAILCHIMP_TIMEOUT_MS,
-      maxRetries: process.env.MAILCHIMP_MAX_RETRIES,
-      concurrencyLimit: process.env.MAILCHIMP_CONCURRENCY_LIMIT,
-    });
-  }
+  _config ??= parseEnvConfig(ServerConfigSchema, {
+    apiKey: 'MAILCHIMP_API_KEY',
+    baseUrl: 'MAILCHIMP_BASE_URL',
+    timeoutMs: 'MAILCHIMP_TIMEOUT_MS',
+    maxRetries: 'MAILCHIMP_MAX_RETRIES',
+    concurrencyLimit: 'MAILCHIMP_CONCURRENCY_LIMIT',
+  });
   return _config;
 }
 

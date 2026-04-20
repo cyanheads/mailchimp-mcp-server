@@ -2,6 +2,19 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.3 — 2026-04-20
+
+### Changed
+
+- **Bumped `@cyanheads/mcp-ts-core` `^0.4.1` → `^0.5.0`.** Brings framework-level `ZodError` → `ConfigurationError` conversion at startup, so missing/invalid env vars now surface as a formatted banner on `stderr` instead of a raw Zod path dump.
+- **Adopted `parseEnvConfig` for server config parsing.** `src/config/server-config.ts` now maps Zod schema paths → env var names, so validation errors name the actual variable (e.g. `MAILCHIMP_API_KEY (apiKey): ...`) rather than the internal Zod path. Internal refactor — no user-facing config surface change.
+
+### Internal
+
+- **`mailchimp-service.ts`** replaces the last raw `new McpError(JsonRpcErrorCode.Timeout, ...)` call with the `timeout()` error factory. No behavior change.
+- **`skills/maintenance/SKILL.md`** rewritten to v1.3 — adds Mode A (full update flow) vs Mode B (post-update review), delegates changelog investigation to the `changelog` skill, and introduces the two-phase skill sync (package → project → agent directories).
+- **`CLAUDE.md`** documents the `parseEnvConfig` pattern, expands the forbidden Zod types list in the checklist, and references the Phase B agent-skill-directory sync.
+
 ## 0.2.2 — 2026-04-20
 
 ### Fixed
