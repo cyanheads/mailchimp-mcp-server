@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.cyanheads/mailchimp-mcp-server",
-  "description": "MCP server for the Mailchimp Marketing API.",
+  "description": "MCP server for the Mailchimp Marketing API — audiences, subscribers, campaigns, and reports.",
   "repository": {
     "url": "https://github.com/cyanheads/mailchimp-mcp-server",
     "source": "github"
@@ -12,19 +12,46 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mailchimp-mcp-server",
-      "runtimeHint": "node",
+      "runtimeHint": "bun",
       "version": "0.1.0",
       "packageArguments": [
-        {
-          "type": "positional",
-          "value": "run"
-        },
-        {
-          "type": "positional",
-          "value": "start:stdio"
-        }
+        { "type": "positional", "value": "run" },
+        { "type": "positional", "value": "start:stdio" }
       ],
       "environmentVariables": [
+        {
+          "name": "MAILCHIMP_API_KEY",
+          "description": "Mailchimp Marketing API key, including the '-dc' data-center suffix (e.g. 'abc...-us22'). Generate at Mailchimp → Account → Extras → API keys.",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "MAILCHIMP_BASE_URL",
+          "description": "Override the API base URL (for mock servers or testing). Defaults to 'https://{dc}.api.mailchimp.com/3.0' derived from the API key suffix.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "MAILCHIMP_TIMEOUT_MS",
+          "description": "Per-request timeout in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "60000"
+        },
+        {
+          "name": "MAILCHIMP_MAX_RETRIES",
+          "description": "Max retry attempts for transient upstream failures (0-10).",
+          "format": "string",
+          "isRequired": false,
+          "default": "3"
+        },
+        {
+          "name": "MAILCHIMP_CONCURRENCY_LIMIT",
+          "description": "Max in-flight upstream requests per workflow tool (1-10).",
+          "format": "string",
+          "isRequired": false,
+          "default": "4"
+        },
         {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
@@ -41,19 +68,46 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "mailchimp-mcp-server",
-      "runtimeHint": "node",
+      "runtimeHint": "bun",
       "version": "0.1.0",
       "packageArguments": [
-        {
-          "type": "positional",
-          "value": "run"
-        },
-        {
-          "type": "positional",
-          "value": "start:http"
-        }
+        { "type": "positional", "value": "run" },
+        { "type": "positional", "value": "start:http" }
       ],
       "environmentVariables": [
+        {
+          "name": "MAILCHIMP_API_KEY",
+          "description": "Mailchimp Marketing API key, including the '-dc' data-center suffix (e.g. 'abc...-us22'). Generate at Mailchimp → Account → Extras → API keys.",
+          "format": "string",
+          "isRequired": true
+        },
+        {
+          "name": "MAILCHIMP_BASE_URL",
+          "description": "Override the API base URL (for mock servers or testing). Defaults to 'https://{dc}.api.mailchimp.com/3.0' derived from the API key suffix.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "MAILCHIMP_TIMEOUT_MS",
+          "description": "Per-request timeout in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "60000"
+        },
+        {
+          "name": "MAILCHIMP_MAX_RETRIES",
+          "description": "Max retry attempts for transient upstream failures (0-10).",
+          "format": "string",
+          "isRequired": false,
+          "default": "3"
+        },
+        {
+          "name": "MAILCHIMP_CONCURRENCY_LIMIT",
+          "description": "Max in-flight upstream requests per workflow tool (1-10).",
+          "format": "string",
+          "isRequired": false,
+          "default": "4"
+        },
         {
           "name": "MCP_HTTP_HOST",
           "description": "The hostname for the HTTP server.",

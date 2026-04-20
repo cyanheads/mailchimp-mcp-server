@@ -1,8 +1,9 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.1.1
+**Version:** 0.1.0
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
+**Surface:** 17 tools · 4 resources · 0 prompts · 1 service (`mailchimp`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -38,109 +39,111 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 ## Patterns
 
-### Tool
+### Tool (primitive — noun grouped by `operation`)
 
 ```ts
+// src/mcp-server/tools/definitions/mailchimp-search.tool.ts
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
-export const searchItems = tool('search_items', {
-  description: 'Search inventory items by query.',
+const InputSchema = z.object({
+  scope: z.enum(['members', 'campaigns']).describe('What to search.'),
+  query: z.string().min(1).describe('Search terms.'),
+  audienceId: z.string().optional().describe('Restrict member search to one audience.'),
+});
+
+export const mailchimpSearchTool = tool('mailchimp_search', {
+  description: 'Global search. Use `scope: members` to find subscribers; `scope: campaigns` for campaigns.',
   annotations: { readOnlyHint: true },
-  input: z.object({
-    query: z.string().describe('Search terms'),
-    limit: z.number().default(10).describe('Max results'),
-  }),
-  output: z.object({
-    items: z.array(z.object({
-      id: z.string().describe('Item ID'),
-      name: z.string().describe('Item name'),
-    })).describe('Matching items'),
-  }),
-  auth: ['inventory:read'],
-
+  input: InputSchema,
+  output: OutputSchema,
   async handler(input, ctx) {
-    const items = await findItems(input.query, input.limit);
-    ctx.log.info('Search completed', { query: input.query, count: items.length });
-    return { items };
+    const svc = getMailchimpService();
+    return input.scope === 'members'
+      ? svc.search.members(ctx, input.query, input.audienceId)
+      : svc.search.campaigns(ctx, input.query);
   },
+  format: (result) => [{ type: 'text', text: renderSearchHits(result) }],
+});
+```
 
-  // format() populates content[] — the only field most LLM clients forward to
-  // the model. Render all data the LLM needs, not just a count or title.
-  format: (result) => [{
-    type: 'text',
-    text: result.items.map(i => `**${i.id}**: ${i.name}`).join('\n'),
-  }],
+### Tool (workflow — orchestrates multi-step flows, elicits confirmation)
+
+```ts
+// src/mcp-server/tools/definitions/mailchimp-send-campaign.tool.ts
+export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
+  description: 'Compose and send (or schedule/test) a campaign in one call.',
+  annotations: { destructiveHint: true, openWorldHint: true },
+  input: InputSchema,
+  output: OutputSchema,
+  async handler(input, ctx) {
+    const svc = getMailchimpService();
+    const draftId = await svc.campaigns.create(ctx, input);
+    try {
+      if (input.mode === 'send' && ctx.elicit) {
+        const ok = await ctx.elicit('Confirm send?', z.object({ confirm: z.boolean() }));
+        if (ok.action !== 'accept' || !ok.data.confirm) throw new Error('Send cancelled by user.');
+      }
+      return await svc.campaigns.finalize(ctx, draftId, input);
+    } catch (err) {
+      if (input.cleanupOnError !== false) await svc.campaigns.deleteDraft(ctx, draftId).catch(() => {});
+      throw err;
+    }
+  },
 });
 ```
 
 ### Resource
 
 ```ts
+// src/mcp-server/resources/definitions/mailchimp-audience.resource.ts
 import { resource, z } from '@cyanheads/mcp-ts-core';
+import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
-export const itemData = resource('inventory://{itemId}', {
-  description: 'Fetch an inventory item by ID.',
-  params: z.object({ itemId: z.string().describe('Item identifier') }),
-  auth: ['inventory:read'],
+export const mailchimpAudienceResource = resource('mailchimp://audiences/{audienceId}', {
+  name: 'mailchimp-audience',
+  description: 'Audience (list) snapshot — name, contact, stats, double-opt-in status.',
+  mimeType: 'application/json',
+  params: z.object({ audienceId: z.string().describe('Audience ID.') }),
   async handler(params, ctx) {
-    const item = await ctx.state.get(`item:${params.itemId}`);
-    if (!item) throw new Error(`Item ${params.itemId} not found`);
-    return item;
+    const svc = getMailchimpService();
+    return svc.audiences.getSnapshot(ctx, params.audienceId);
   },
-});
-```
-
-### Prompt
-
-```ts
-import { prompt, z } from '@cyanheads/mcp-ts-core';
-
-export const reviewCode = prompt('review_code', {
-  description: 'Review code for issues and best practices.',
-  args: z.object({
-    code: z.string().describe('Code to review'),
-    language: z.string().optional().describe('Programming language'),
-  }),
-  generate: (args) => [
-    { role: 'user', content: { type: 'text', text: `Review this ${args.language ?? ''} code:\n${args.code}` } },
-  ],
 });
 ```
 
 ### Server config
 
 ```ts
-// src/config/server-config.ts — lazy-parsed, separate from framework config
+// src/config/server-config.ts — lazy-parsed, with derived data-center field
+const API_KEY_PATTERN = /^[a-f0-9]{32}-(?<dc>[a-z]+\d+)$/i;
+
 const ServerConfigSchema = z.object({
-  myApiKey: z.string().describe('External API key'),
-  maxResults: z.coerce.number().default(100),
+  apiKey: z.string().min(1).regex(API_KEY_PATTERN),
+  baseUrl: z.string().url().optional(),
+  timeoutMs: z.coerce.number().int().positive().default(60_000),
+  maxRetries: z.coerce.number().int().min(0).max(10).default(3),
+  concurrencyLimit: z.coerce.number().int().min(1).max(10).default(4),
+}).transform((raw) => {
+  const dc = API_KEY_PATTERN.exec(raw.apiKey)?.groups?.['dc'] ?? '';
+  return { ...raw, dataCenter: dc, baseUrl: raw.baseUrl ?? `https://${dc}.api.mailchimp.com/3.0` };
 });
-let _config: z.infer<typeof ServerConfigSchema> | undefined;
-export function getServerConfig() {
-  _config ??= ServerConfigSchema.parse({
-    myApiKey: process.env.MY_API_KEY,
-    maxResults: process.env.MY_MAX_RESULTS,
-  });
-  return _config;
-}
 ```
 
 ---
 
 ## Context
 
-Handlers receive a unified `ctx` object. Key properties:
+Handlers receive a unified `ctx` object. Used in this server:
 
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
-| `ctx.state` | Tenant-scoped KV — `.get(key)`, `.set(key, value, { ttl? })`, `.delete(key)`, `.list(prefix, { cursor, limit })`. Accepts any serializable value. |
-| `ctx.elicit` | Ask user for structured input. **Check for presence first:** `if (ctx.elicit) { ... }` |
-| `ctx.sample` | Request LLM completion from the client. **Check for presence first:** `if (ctx.sample) { ... }` |
-| `ctx.signal` | `AbortSignal` for cancellation. |
-| `ctx.progress` | Task progress (present when `task: true`) — `.setTotal(n)`, `.increment()`, `.update(message)`. |
-| `ctx.requestId` | Unique request ID. |
-| `ctx.tenantId` | Tenant ID from JWT or `'default'` for stdio. |
+| `ctx.elicit` | Used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request human confirmation on destructive sends. **Check for presence first.** |
+| `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
+| `ctx.requestId` / `ctx.traceId` | Appended to the `X-Request-Id` header for correlation with Mailchimp support cases. |
+
+Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap), `ctx.sample` (no model-calling tools), `ctx.progress` (no task tools).
 
 ---
 
@@ -171,20 +174,41 @@ Plain `Error` is fine for most cases. Use factories when the error code matters.
 
 ```text
 src/
-  index.ts                              # createApp() entry point
+  index.ts                              # createApp() — registers tools/resources/prompts, inits mailchimp service
   config/
-    server-config.ts                    # Server-specific env vars (Zod schema)
+    server-config.ts                    # MAILCHIMP_* env vars, API-key regex, derived data-center
   services/
-    [domain]/
-      [domain]-service.ts               # Domain service (init/accessor pattern)
-      types.ts                          # Domain types
+    mailchimp/
+      mailchimp-service.ts              # HTTP client, retries, normalization, typed endpoint methods
+      types.ts                          # Raw + domain types shared across tools
   mcp-server/
     tools/definitions/
-      [tool-name].tool.ts               # Tool definitions
+      index.ts                          # allToolDefinitions barrel
+      mailchimp-account.tool.ts
+      mailchimp-audience-overview.tool.ts
+      mailchimp-audiences.tool.ts
+      mailchimp-campaign-report.tool.ts
+      mailchimp-campaigns.tool.ts
+      mailchimp-find-subscriber.tool.ts
+      mailchimp-import-subscribers.tool.ts
+      mailchimp-merge-fields.tool.ts
+      mailchimp-playbook.tool.ts
+      mailchimp-replicate-campaign.tool.ts
+      mailchimp-reports.tool.ts
+      mailchimp-search.tool.ts
+      mailchimp-segments.tool.ts
+      mailchimp-send-campaign.tool.ts
+      mailchimp-subscribers.tool.ts
+      mailchimp-templates.tool.ts
+      mailchimp-upsert-subscriber.tool.ts
     resources/definitions/
-      [resource-name].resource.ts       # Resource definitions
+      index.ts                          # allResourceDefinitions barrel
+      mailchimp-account.resource.ts
+      mailchimp-audience.resource.ts
+      mailchimp-campaign.resource.ts
+      mailchimp-campaign-report.resource.ts
     prompts/definitions/
-      [prompt-name].prompt.ts           # Prompt definitions
+      index.ts                          # empty — no prompts in v1
 ```
 
 ---
@@ -274,12 +298,14 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 - [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, etc.)
 - [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`)
 - [ ] JSDoc `@fileoverview` + `@module` on every file
-- [ ] `ctx.log` for logging, `ctx.state` for storage
-- [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch
+- [ ] `ctx.log` for logging — no `console`
+- [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch (except workflow tools that need to clean up drafts on failure)
 - [ ] `format()` renders all data the LLM needs — `content[]` is the only field most clients forward to the model
-- [ ] If wrapping external API: raw/domain/output schemas reviewed against real upstream sparsity/nullability before finalizing required vs optional fields
-- [ ] If wrapping external API: normalization and `format()` preserve uncertainty; do not fabricate facts from missing upstream data
-- [ ] If wrapping external API: tests include at least one sparse payload case with omitted upstream fields
-- [ ] Registered in `createApp()` arrays (directly or via barrel exports)
+- [ ] Mailchimp raw/domain/output schemas reviewed against real upstream sparsity/nullability (many fields are `null` or absent on free-tier accounts)
+- [ ] Normalization and `format()` preserve uncertainty — never fabricate metrics, counts, or timestamps from missing upstream data
+- [ ] Tests include at least one sparse payload case (empty audience, un-sent campaign, missing `industry_stats`, etc.)
+- [ ] Destructive writes (`send`, `schedule`, batch member delete) elicit confirmation via `ctx.elicit` when available
+- [ ] New primitive tools grouped by noun via `operation` enum — don't add a new top-level tool per verb
+- [ ] Registered in `src/mcp-server/*/definitions/index.ts` barrel
 - [ ] Tests use `createMockContext()` from `@cyanheads/mcp-ts-core/testing`
-- [ ] `bun run devcheck` passes
+- [ ] `bun run devcheck` and `bun run test` pass
