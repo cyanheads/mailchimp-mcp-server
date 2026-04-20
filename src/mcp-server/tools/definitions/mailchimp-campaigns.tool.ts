@@ -81,12 +81,23 @@ const InputSchema = z.object({
   settings: SettingsSchema.optional().describe('Required for `create`; partial for `update`.'),
   content: ContentSchema.optional().describe('Required for `set-content`.'),
   // filters for list
-  status: z.string().optional(),
-  listId: z.string().optional(),
-  sinceSendTime: z.string().optional(),
-  beforeSendTime: z.string().optional(),
-  count: z.number().int().min(1).max(1000).default(10),
-  offset: z.number().int().min(0).default(0),
+  status: z
+    .string()
+    .optional()
+    .describe(
+      'Filter by campaign status for `list` (`save`, `paused`, `schedule`, `sending`, `sent`).',
+    ),
+  listId: z.string().optional().describe('Filter campaigns by audience ID for `list`.'),
+  sinceSendTime: z
+    .string()
+    .optional()
+    .describe('Filter `list` to campaigns sent after this ISO 8601 timestamp.'),
+  beforeSendTime: z
+    .string()
+    .optional()
+    .describe('Filter `list` to campaigns sent before this ISO 8601 timestamp.'),
+  count: z.number().int().min(1).max(1000).default(10).describe('Page size for `list`. Max 1000.'),
+  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const CampaignSummarySchema = z.object({
@@ -118,22 +129,28 @@ const ChecklistItemSchema = z.object({
 
 const OutputSchema = z.object({
   operation: OperationSchema,
-  campaign: CampaignSummarySchema.optional(),
-  campaigns: z.array(CampaignSummarySchema).optional(),
-  totalItems: z.number().optional(),
+  campaign: CampaignSummarySchema.optional().describe(
+    'Populated for `get`, `create`, `update`, `replicate`, `create-resend`.',
+  ),
+  campaigns: z.array(CampaignSummarySchema).optional().describe('Populated for `list`.'),
+  totalItems: z.number().optional().describe('Total items from Mailchimp (for `list`).'),
   content: z
     .object({
-      html: z.string().optional(),
-      plainText: z.string().optional(),
-      archiveHtml: z.string().optional(),
+      html: z.string().optional().describe('Rendered HTML body of the campaign.'),
+      plainText: z.string().optional().describe('Plaintext body of the campaign.'),
+      archiveHtml: z.string().optional().describe('Archive-ready HTML (older Mailchimp field).'),
     })
-    .optional(),
+    .optional()
+    .describe('Populated for `get-content` and `set-content`.'),
   checklist: z
     .object({
-      isReady: z.boolean(),
-      items: z.array(ChecklistItemSchema),
+      isReady: z.boolean().describe('True when Mailchimp considers the campaign ready to send.'),
+      items: z
+        .array(ChecklistItemSchema)
+        .describe('Individual checklist entries with severity and guidance.'),
     })
-    .optional(),
+    .optional()
+    .describe('Populated for `get-checklist`.'),
 });
 
 type Output = z.infer<typeof OutputSchema>;

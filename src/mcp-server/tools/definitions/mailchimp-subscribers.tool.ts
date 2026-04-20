@@ -95,9 +95,9 @@ const SubscriberSummarySchema = z.object({
 
 const OutputSchema = z.object({
   operation: OperationSchema,
-  subscriber: SubscriberSummarySchema.optional(),
-  subscribers: z.array(SubscriberSummarySchema).optional(),
-  totalItems: z.number().optional(),
+  subscriber: SubscriberSummarySchema.optional().describe('Populated for `get`, `update`.'),
+  subscribers: z.array(SubscriberSummarySchema).optional().describe('Populated for `list`.'),
+  totalItems: z.number().optional().describe('Total items from Mailchimp (for list-style reads).'),
   tagsActive: z
     .array(z.object({ id: z.number(), name: z.string(), dateAdded: z.string().optional() }))
     .optional()
@@ -114,17 +114,28 @@ const OutputSchema = z.object({
         createdBy: z.string().optional(),
       }),
     )
-    .optional(),
+    .optional()
+    .describe('Populated for `list-notes`.'),
   note: z
     .object({
       id: z.number(),
       note: z.string(),
       createdAt: z.string().optional(),
     })
-    .optional(),
-  activity: z.array(z.record(z.string(), z.unknown())).optional(),
-  events: z.array(z.record(z.string(), z.unknown())).optional(),
-  goals: z.array(z.record(z.string(), z.unknown())).optional(),
+    .optional()
+    .describe('Populated for `add-note`, `update-note`.'),
+  activity: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Raw subscriber activity events (opens, clicks). Populated for `list-activity`.'),
+  events: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Custom events attached to the subscriber. Populated for `list-events`.'),
+  goals: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe('Goal completions attributed to the subscriber. Populated for `list-goals`.'),
   deleted: z.boolean().optional().describe('Populated for `archive` and `delete-note`.'),
 });
 

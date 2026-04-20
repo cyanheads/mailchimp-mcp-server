@@ -34,7 +34,7 @@ const InputSchema = z.object({
       'Desired tag set. Declarative — the provided list becomes the full active tag set. Omit to leave tags untouched; pass `[]` to remove all.',
     ),
   note: z.string().optional().describe('Optional note to attach to the subscriber record.'),
-  vip: z.boolean().optional(),
+  vip: z.boolean().optional().describe('Mark this subscriber as VIP in the Mailchimp UI.'),
   language: z.string().optional().describe('ISO 639-1 language code.'),
   updateExistingStatus: z
     .boolean()
@@ -46,8 +46,8 @@ const InputSchema = z.object({
 
 const OutputSchema = z.object({
   subscriberId: z.string().describe('Mailchimp subscriber ID (the member hash).'),
-  email: z.string(),
-  status: z.string(),
+  email: z.string().describe('Subscriber email echoed back.'),
+  status: z.string().describe('Resulting subscriber status after the upsert.'),
   isNew: z.boolean().describe('True if the subscriber record was just created.'),
   tagsAdded: z.array(z.string()).describe('Tag names added during sync.'),
   tagsRemoved: z.array(z.string()).describe('Tag names removed during sync.'),

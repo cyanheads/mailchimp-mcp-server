@@ -64,10 +64,10 @@ const InputSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  audienceId: z.string(),
+  audienceId: z.string().describe('Audience ID echoed back.'),
   totalCreated: z.number().describe('Rows added as new subscribers.'),
   totalUpdated: z.number().describe('Existing rows updated (0 unless `updateExisting: true`).'),
-  errorCount: z.number(),
+  errorCount: z.number().describe('Rows that failed (see `failed` for per-row reasons).'),
   statusApplied: z.string().describe('Top-level status applied to rows that did not override.'),
   succeeded: z
     .array(

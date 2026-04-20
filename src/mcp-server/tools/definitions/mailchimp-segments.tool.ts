@@ -76,14 +76,20 @@ const SegmentSummarySchema = z.object({
 
 const OutputSchema = z.object({
   operation: OperationSchema,
-  segment: SegmentSummarySchema.optional(),
-  segments: z.array(SegmentSummarySchema).optional(),
-  totalItems: z.number().optional(),
-  members: z.array(z.object({ id: z.string(), email: z.string(), status: z.string() })).optional(),
-  added: z.array(z.string()).optional(),
-  removed: z.array(z.string()).optional(),
-  errors: z.array(z.object({ email: z.string(), error: z.string() })).optional(),
-  deleted: z.boolean().optional(),
+  segment: SegmentSummarySchema.optional().describe('Populated for `get`, `create`, `update`.'),
+  segments: z.array(SegmentSummarySchema).optional().describe('Populated for `list`.'),
+  totalItems: z.number().optional().describe('Total items for `list` / `list-members`.'),
+  members: z
+    .array(z.object({ id: z.string(), email: z.string(), status: z.string() }))
+    .optional()
+    .describe('Subscribers in the segment. Populated for `list-members`.'),
+  added: z.array(z.string()).optional().describe('Emails added by `batch-update-members`.'),
+  removed: z.array(z.string()).optional().describe('Emails removed by `batch-update-members`.'),
+  errors: z
+    .array(z.object({ email: z.string(), error: z.string() }))
+    .optional()
+    .describe('Per-row errors from `batch-update-members`.'),
+  deleted: z.boolean().optional().describe('True when the segment was deleted (for `delete`).'),
 });
 
 type Output = z.infer<typeof OutputSchema>;

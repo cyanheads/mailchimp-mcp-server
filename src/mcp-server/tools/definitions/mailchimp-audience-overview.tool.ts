@@ -23,8 +23,14 @@ const OutputSchema = z.object({
   audienceId: z.string().describe('Audience ID echoed back.'),
   name: z.string().describe('Audience display name.'),
   dateCreated: z.string().optional().describe('When the audience was created.'),
-  visibility: z.enum(['pub', 'prv']).optional(),
-  doubleOptin: z.boolean().optional(),
+  visibility: z
+    .enum(['pub', 'prv'])
+    .optional()
+    .describe('`pub` = publicly searchable, `prv` = private.'),
+  doubleOptin: z
+    .boolean()
+    .optional()
+    .describe('Whether this audience requires double opt-in confirmation for new subscribers.'),
   listRating: z.number().optional().describe('Mailchimp list rating 0-5.'),
   stats: z
     .object({
@@ -51,7 +57,8 @@ const OutputSchema = z.object({
       zip: z.string().optional(),
       country: z.string().optional(),
     })
-    .optional(),
+    .optional()
+    .describe('Physical contact info required by CAN-SPAM (appears in the email footer).'),
   campaignDefaults: z
     .object({
       fromName: z.string().optional(),
@@ -59,7 +66,8 @@ const OutputSchema = z.object({
       subject: z.string().optional(),
       language: z.string().optional(),
     })
-    .optional(),
+    .optional()
+    .describe('Default From/subject/language settings for new campaigns on this audience.'),
   growth: z
     .array(
       z.object({

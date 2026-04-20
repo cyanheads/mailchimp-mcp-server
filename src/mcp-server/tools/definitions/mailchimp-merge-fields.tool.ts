@@ -44,20 +44,33 @@ const InputSchema = z.object({
       'Merge tag (e.g. `FNAME`). Required for `create`. Limited to 10 characters upstream.',
     ),
   type: MergeFieldTypeSchema.optional().describe('Field type. Required for `create`.'),
-  required: z.boolean().optional(),
-  defaultValue: z.string().optional(),
+  required: z
+    .boolean()
+    .optional()
+    .describe('Whether this field is required on signup forms. Default `false`.'),
+  defaultValue: z
+    .string()
+    .optional()
+    .describe('Default value applied when a subscriber record has no explicit value.'),
   isPublic: z
     .boolean()
     .optional()
     .describe('Whether the field appears on public signup forms and subscriber-facing updates.'),
-  helpText: z.string().optional(),
-  displayOrder: z.number().int().optional(),
+  helpText: z
+    .string()
+    .optional()
+    .describe('Help text shown next to the field on signup/profile forms.'),
+  displayOrder: z
+    .number()
+    .int()
+    .optional()
+    .describe('Order in which this field is displayed on signup forms (lower is earlier).'),
   options: z
     .record(z.string(), z.unknown())
     .optional()
     .describe('Merge-field options (e.g. choices for dropdown, date format for date).'),
-  count: z.number().int().min(1).max(1000).default(80),
-  offset: z.number().int().min(0).default(0),
+  count: z.number().int().min(1).max(1000).default(80).describe('Page size for `list`. Max 1000.'),
+  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const MergeFieldSummarySchema = z.object({
@@ -74,9 +87,14 @@ const MergeFieldSummarySchema = z.object({
 
 const OutputSchema = z.object({
   operation: OperationSchema,
-  mergeField: MergeFieldSummarySchema.optional(),
-  mergeFields: z.array(MergeFieldSummarySchema).optional(),
-  totalItems: z.number().optional(),
+  mergeField: MergeFieldSummarySchema.optional().describe(
+    'Populated for `get`, `create`, `update`.',
+  ),
+  mergeFields: z.array(MergeFieldSummarySchema).optional().describe('Populated for `list`.'),
+  totalItems: z
+    .number()
+    .optional()
+    .describe('Total merge fields defined on the audience (for `list`).'),
 });
 
 type Output = z.infer<typeof OutputSchema>;

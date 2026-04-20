@@ -43,21 +43,27 @@ const CampaignMatchSchema = z.object({
 
 const OutputSchema = z.object({
   scope: ScopeSchema,
-  query: z.string(),
+  query: z.string().describe('Echoed search query.'),
   members: z
     .object({
-      exact: z.array(MemberMatchSchema),
-      fuzzy: z.array(MemberMatchSchema),
-      totalExact: z.number(),
-      totalFuzzy: z.number(),
+      exact: z.array(MemberMatchSchema).describe('Exact email-address matches.'),
+      fuzzy: z
+        .array(MemberMatchSchema)
+        .describe('Near-miss members Mailchimp thinks may be related.'),
+      totalExact: z.number().describe('Total exact matches available upstream.'),
+      totalFuzzy: z.number().describe('Total fuzzy matches available upstream.'),
     })
-    .optional(),
+    .optional()
+    .describe('Populated for `scope: members`.'),
   campaigns: z
     .object({
-      matches: z.array(CampaignMatchSchema),
-      totalMatches: z.number(),
+      matches: z
+        .array(CampaignMatchSchema)
+        .describe('Matching campaigns with a snippet of where the hit occurred.'),
+      totalMatches: z.number().describe('Total matches available upstream.'),
     })
-    .optional(),
+    .optional()
+    .describe('Populated for `scope: campaigns`.'),
 });
 
 type Output = z.infer<typeof OutputSchema>;

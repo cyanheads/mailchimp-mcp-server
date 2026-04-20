@@ -21,35 +21,49 @@ const InputSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  campaignId: z.string(),
-  campaignTitle: z.string().optional(),
-  subjectLine: z.string().optional(),
-  type: z.string().optional(),
-  sendTime: z.string().optional(),
-  audienceName: z.string().optional(),
+  campaignId: z.string().describe('Campaign ID echoed back.'),
+  campaignTitle: z.string().optional().describe('Internal campaign title.'),
+  subjectLine: z.string().optional().describe('Subject line that was sent.'),
+  type: z.string().optional().describe('Campaign type (`regular`, `plaintext`, `rss`).'),
+  sendTime: z.string().optional().describe('When the campaign was sent (ISO 8601).'),
+  audienceName: z.string().optional().describe('Audience the campaign was sent to.'),
   recipientsCount: z.number().optional().describe('Emails that Mailchimp attempted to deliver.'),
-  delivery: z.object({
-    delivered: z.number().optional().describe('emails_sent - hard - soft - syntax bounces.'),
-    bounces: z
-      .object({ hard: z.number(), soft: z.number(), syntax: z.number() })
-      .describe('Per-category bounce counts.'),
-    abuseReports: z.number(),
-  }),
-  engagement: z.object({
-    opens: z.object({
-      total: z.number(),
-      unique: z.number(),
-      rate: z.number(),
-      lastOpen: z.string().optional(),
-    }),
-    clicks: z.object({
-      total: z.number(),
-      unique: z.number(),
-      rate: z.number(),
-      lastClick: z.string().optional(),
-    }),
-    unsubscribes: z.number(),
-  }),
+  delivery: z
+    .object({
+      delivered: z.number().optional().describe('emails_sent - hard - soft - syntax bounces.'),
+      bounces: z
+        .object({
+          hard: z.number().describe('Hard bounces (permanent delivery failures).'),
+          soft: z.number().describe('Soft bounces (temporary delivery failures).'),
+          syntax: z.number().describe('Syntax-error bounces (malformed addresses).'),
+        })
+        .describe('Per-category bounce counts.'),
+      abuseReports: z.number().describe('Count of subscribers who marked the email as spam.'),
+    })
+    .describe('Delivery-side metrics.'),
+  engagement: z
+    .object({
+      opens: z
+        .object({
+          total: z.number().describe('Total opens (includes repeats by the same subscriber).'),
+          unique: z.number().describe('Unique opens (one per subscriber).'),
+          rate: z.number().describe('Open rate (0–1).'),
+          lastOpen: z.string().optional().describe('Most recent open timestamp.'),
+        })
+        .describe('Open metrics.'),
+      clicks: z
+        .object({
+          total: z.number().describe('Total clicks.'),
+          unique: z.number().describe('Unique clickers.'),
+          rate: z.number().describe('Click rate (0–1).'),
+          lastClick: z.string().optional().describe('Most recent click timestamp.'),
+        })
+        .describe('Click metrics.'),
+      unsubscribes: z
+        .number()
+        .describe('Count of subscribers who unsubscribed from this campaign.'),
+    })
+    .describe('Engagement metrics.'),
   topClickedLinks: z
     .array(
       z.object({

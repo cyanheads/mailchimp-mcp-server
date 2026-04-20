@@ -9,7 +9,11 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
-const ModeSchema = z.enum(['draft', 'test', 'send', 'schedule']);
+const ModeSchema = z
+  .enum(['draft', 'test', 'send', 'schedule'])
+  .describe(
+    'What to do after replicating. `draft` leaves the replica unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues for `scheduleTime`. `send`/`schedule` prompt via `ctx.elicit` when supported.',
+  );
 
 const ContentOverrideSchema = z
   .object({
@@ -26,10 +30,26 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('New subject line. Omit to keep the source subject.'),
-  previewTextOverride: z.string().optional(),
-  fromNameOverride: z.string().optional(),
-  replyToOverride: z.string().optional(),
-  titleOverride: z.string().optional(),
+  previewTextOverride: z
+    .string()
+    .optional()
+    .describe(
+      'New preview text (shown after subject in most clients). Omit to keep the source preview text.',
+    ),
+  fromNameOverride: z
+    .string()
+    .optional()
+    .describe('New From-name. Omit to keep the source From-name.'),
+  replyToOverride: z
+    .string()
+    .optional()
+    .describe('New Reply-to email. Omit to keep the source Reply-to.'),
+  titleOverride: z
+    .string()
+    .optional()
+    .describe(
+      'New internal campaign title (not seen by recipients). Omit to keep the source title.',
+    ),
   audienceOverride: z
     .string()
     .optional()
@@ -40,10 +60,19 @@ const InputSchema = z.object({
     .optional()
     .describe('New saved-segment ID. Omit to keep the source segment.'),
   contentOverride: ContentOverrideSchema.optional(),
-  mode: ModeSchema.default('draft'),
-  scheduleTime: z.string().optional().describe('Required for mode=schedule.'),
-  testEmails: z.array(z.string()).max(50).optional(),
-  testSendType: z.enum(['html', 'plaintext']).default('html'),
+  mode: ModeSchema.default('draft').describe(
+    'What to do after replicating: `draft` (default), `test`, `send`, or `schedule`. Same elicit semantics as `mailchimp_send_campaign`.',
+  ),
+  scheduleTime: z
+    .string()
+    .optional()
+    .describe('Required for mode=schedule. ISO 8601 timestamp at least 15 minutes in the future.'),
+  testEmails: z
+    .array(z.string())
+    .max(50)
+    .optional()
+    .describe('Test-email recipients for `mode: test`. Max 50.'),
+  testSendType: z.enum(['html', 'plaintext']).default('html').describe('Format for the test send.'),
   cleanupOnError: z
     .boolean()
     .default(true)
@@ -51,26 +80,46 @@ const InputSchema = z.object({
 });
 
 const ChecklistItemSchema = z.object({
-  type: z.enum(['success', 'warning', 'error']),
-  heading: z.string(),
-  details: z.string(),
+  type: z.enum(['success', 'warning', 'error']).describe('Severity of the checklist entry.'),
+  heading: z.string().describe('Short title of the checklist item.'),
+  details: z.string().describe('Full description of the checklist finding.'),
 });
 
 const OutputSchema = z.object({
-  sourceCampaignId: z.string(),
+  sourceCampaignId: z.string().describe('Source campaign ID that was replicated.'),
   campaignId: z.string().describe('ID of the newly created replica.'),
-  webId: z.number().optional(),
-  mode: ModeSchema,
-  status: z.string(),
-  subject: z.string(),
-  recipientCount: z.number().optional(),
-  sendTime: z.string().optional(),
-  testsSentTo: z.array(z.string()).optional(),
-  checklistWarnings: z.array(ChecklistItemSchema),
-  archiveUrl: z.string().optional(),
-  webUrl: z.string().optional(),
-  cancelledByUser: z.boolean().optional(),
-  cleanedUp: z.boolean().optional(),
+  webId: z.number().optional().describe('Mailchimp web-id for constructing UI deep links.'),
+  mode: ModeSchema.describe('What actually happened; downgraded to `draft` if elicit rejected.'),
+  status: z
+    .string()
+    .describe(
+      'Post-action Mailchimp campaign status (`save`, `schedule`, `sending`, `sent`, etc.).',
+    ),
+  subject: z.string().describe('Resolved subject line after applying overrides.'),
+  recipientCount: z
+    .number()
+    .optional()
+    .describe('Number of recipients the campaign is addressed to.'),
+  sendTime: z.string().optional().describe('Scheduled send time (ISO 8601) when mode=schedule.'),
+  testsSentTo: z
+    .array(z.string())
+    .optional()
+    .describe('Test recipients echo, only when mode=test.'),
+  checklistWarnings: z
+    .array(ChecklistItemSchema)
+    .describe(
+      'Non-blocking checklist items. Blocking items throw ValidationError before this point.',
+    ),
+  archiveUrl: z.string().optional().describe('Public archive URL, populated once sending begins.'),
+  webUrl: z.string().optional().describe('Deep link to the campaign in the Mailchimp UI.'),
+  cancelledByUser: z
+    .boolean()
+    .optional()
+    .describe('True when elicit confirmation was rejected; mode was downgraded to draft.'),
+  cleanedUp: z
+    .boolean()
+    .optional()
+    .describe('True if the replica draft was deleted due to a mid-flow failure.'),
   overridesApplied: z
     .array(z.string())
     .describe('Labels of the overrides that were actually applied (for audit).'),

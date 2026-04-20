@@ -46,8 +46,12 @@ const MatchSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  email: z.string(),
-  searchedAcross: z.enum(['single-audience', 'all-audiences']),
+  email: z.string().describe('Email address that was searched for, echoed back.'),
+  searchedAcross: z
+    .enum(['single-audience', 'all-audiences'])
+    .describe(
+      'Scope of the search: `single-audience` when an audienceId was supplied, `all-audiences` otherwise.',
+    ),
   exactMatches: z.array(MatchSchema).describe('Exact email-address matches.'),
   fuzzyMatches: z
     .array(MatchSchema)

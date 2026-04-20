@@ -83,14 +83,17 @@ const OutputSchema = z.object({
   webId: z.number().optional().describe('Mailchimp web-id (for UI deep links).'),
   mode: ModeSchema.describe('What actually happened; downgraded to `draft` if elicit rejected.'),
   status: z.string().describe('Post-action Mailchimp campaign status.'),
-  subject: z.string(),
-  recipientCount: z.number().optional(),
+  subject: z.string().describe('Subject line used (echoed from input).'),
+  recipientCount: z
+    .number()
+    .optional()
+    .describe('Number of recipients the campaign was addressed to.'),
   sendTime: z.string().optional().describe('Scheduled send time (ISO 8601) when mode=schedule.'),
   testsSentTo: z.array(z.string()).optional().describe('Test recipients, only when mode=test.'),
   checklistWarnings: z
     .array(ChecklistItemSchema)
     .describe('Non-blocking checklist items. Blocking items throw before this point.'),
-  archiveUrl: z.string().optional(),
+  archiveUrl: z.string().optional().describe('Public archive URL, populated once sending begins.'),
   webUrl: z.string().optional().describe('Deep link to the campaign in the Mailchimp UI.'),
   cancelledByUser: z.boolean().optional().describe('True when elicit confirmation was rejected.'),
   cleanedUp: z

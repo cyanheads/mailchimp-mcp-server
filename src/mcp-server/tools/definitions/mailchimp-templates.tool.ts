@@ -36,8 +36,8 @@ const InputSchema = z.object({
       'Filter by type for `list`. `user` = your saved templates; `base` = Mailchimp starter layouts; `gallery` = paid drag-and-drop designs.',
     ),
   category: z.string().optional().describe('Category filter for `list`.'),
-  count: z.number().int().min(1).max(1000).default(20),
-  offset: z.number().int().min(0).default(0),
+  count: z.number().int().min(1).max(1000).default(20).describe('Page size for `list`. Max 1000.'),
+  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const TemplateSummarySchema = z.object({
@@ -57,11 +57,19 @@ const TemplateSummarySchema = z.object({
 
 const OutputSchema = z.object({
   operation: OperationSchema,
-  template: TemplateSummarySchema.optional(),
-  templates: z.array(TemplateSummarySchema).optional(),
-  totalItems: z.number().optional(),
-  defaultContent: z.object({ sections: z.record(z.string(), z.unknown()).optional() }).optional(),
-  deleted: z.boolean().optional(),
+  template: TemplateSummarySchema.optional().describe('Populated for `get`, `create`, `update`.'),
+  templates: z.array(TemplateSummarySchema).optional().describe('Populated for `list`.'),
+  totalItems: z.number().optional().describe('Total items from Mailchimp (for `list`).'),
+  defaultContent: z
+    .object({
+      sections: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe('Section name → default content mapping.'),
+    })
+    .optional()
+    .describe('Populated for `get-default-content`.'),
+  deleted: z.boolean().optional().describe('True when the template was deleted (for `delete`).'),
 });
 
 type Output = z.infer<typeof OutputSchema>;

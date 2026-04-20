@@ -51,10 +51,22 @@ const InputSchema = z.object({
     .optional()
     .describe('ISO 8601 lower bound for `email-activity` / `open-details`.'),
   type: z.string().optional().describe('Campaign type filter for `list`.'),
-  beforeSendTime: z.string().optional(),
-  sinceSendTime: z.string().optional(),
-  count: z.number().int().min(1).max(1000).default(20),
-  offset: z.number().int().min(0).default(0),
+  beforeSendTime: z
+    .string()
+    .optional()
+    .describe('Filter `list` to reports for campaigns sent before this ISO 8601 timestamp.'),
+  sinceSendTime: z
+    .string()
+    .optional()
+    .describe('Filter `list` to reports for campaigns sent after this ISO 8601 timestamp.'),
+  count: z
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(20)
+    .describe('Page size for list-style reads. Max 1000.'),
+  offset: z.number().int().min(0).default(0).describe('Offset for list-style pagination.'),
 });
 
 const ReportSummarySchema = z.object({
@@ -73,14 +85,17 @@ const ReportSummarySchema = z.object({
 const OutputSchema = z.object({
   operation: OperationSchema,
   dimension: DimensionSchema.optional(),
-  campaignId: z.string().optional(),
-  report: ReportSummarySchema.optional(),
-  reports: z.array(ReportSummarySchema).optional(),
+  campaignId: z.string().optional().describe('Echoed campaign ID for `get` and `slice`.'),
+  report: ReportSummarySchema.optional().describe('Populated for `get`.'),
+  reports: z.array(ReportSummarySchema).optional().describe('Populated for `list`.'),
   rows: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe('Raw per-row data for the requested dimension.'),
-  totalItems: z.number().optional(),
+  totalItems: z
+    .number()
+    .optional()
+    .describe('Total items available upstream (for `list` / `slice`).'),
 });
 
 type Output = z.infer<typeof OutputSchema>;
