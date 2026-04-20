@@ -16,6 +16,7 @@ import {
   notFound,
   rateLimited,
   serviceUnavailable,
+  timeout,
   unauthorized,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
@@ -167,12 +168,7 @@ export class MailchimpService {
     } catch (err) {
       clearTimeout(timer);
       if (opts.signal?.aborted) {
-        throw new McpError(
-          JsonRpcErrorCode.Timeout,
-          'Request cancelled by caller.',
-          { url, method },
-          { cause: err },
-        );
+        throw timeout('Request cancelled by caller.', { url, method }, { cause: err });
       }
       if (timeoutController.signal.aborted) {
         throw serviceUnavailable(
