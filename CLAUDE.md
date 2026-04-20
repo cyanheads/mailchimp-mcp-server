@@ -208,7 +208,8 @@ src/
       mailchimp-campaign.resource.ts
       mailchimp-campaign-report.resource.ts
     prompts/definitions/
-      index.ts                          # empty — no prompts in v1
+      index.ts                          # allPromptDefinitions barrel
+      newsletter-from-source.prompt.ts
 ```
 
 ---

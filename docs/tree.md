@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-04-20 14:43:00
+Generated on: 2026-04-20 15:47:10
 
 ```text
 mailchimp-mcp-server/
@@ -129,8 +129,13 @@ mailchimp-mcp-server/
 │   ├── config/
 │   │   └── server-config.test.ts
 │   ├── prompts/
+│   │   └── newsletter-from-source.test.ts
 │   ├── resources/
+│   ├── services/
+│   │   └── mailchimp/
+│   │       └── mailchimp-service.test.ts
 │   └── tools/
+│       └── mailchimp-playbook.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
