@@ -1,6 +1,6 @@
 # Email Design Playbook
 
-A reference for composing campaigns that feel editorial rather than templated. Distilled from the Redden Gardens April 2026 dispatch and generalized for reuse.
+A reference for composing campaigns that feel editorial rather than templated. Distilled from a worked community-garden newsletter and generalized for reuse.
 
 The goal is simple: emails should feel like they were written for the reader, typeset with intent, and illustrated only where an image earns its place. Everything below is in service of that.
 
@@ -26,7 +26,7 @@ If the source is a website, `curl -sL https://r.jina.ai/<URL>` returns clean mar
 
 Pick a small, purposeful palette and commit to it. Four to six hex values, with clear roles.
 
-The Redden Gardens palette, as an example:
+An example garden-newsletter palette:
 
 | Role | Hex | Used for |
 |:-----|:----|:---------|
@@ -53,7 +53,7 @@ Two families at most. Usually one is enough.
 
 Web-safe serifs (Georgia, Times New Roman) and sans-serifs (Arial, Helvetica, `-apple-system`) render everywhere. Custom fonts via `@import` work in Apple Mail and iOS but not Outlook or Gmail webmail — don't rely on them.
 
-Scale used in the Redden example:
+An example scale for an editorial newsletter:
 
 | Role | Size | Weight |
 |:-----|:-----|:-------|
@@ -184,10 +184,10 @@ Three lines of copy decide whether the email gets opened. Write them last, after
 | **Subject** | ~40–60 chars visible on mobile | Concrete, curious, not hype-y. Specific nouns beat adjectives. |
 | **Preview text** | ~90 chars | Extends the subject instead of repeating it. Written in `<div style="display:none; …">` at the top of the body. |
 
-Good subject patterns (from the Redden example):
+Good subject patterns (garden-newsletter examples):
 
-- *"This Month at Redden Gardens — peas are up, and the blackberry is waking"* (concrete, seasonal, specific)
-- *"April at Redden Gardens — a bunny, some carrots, and your planting list"* (playful, promises utility)
+- *"This Month in the Garden — peas are up, and the blackberry is waking"* (concrete, seasonal, specific)
+- *"April in the Garden — a bunny, some carrots, and your planting list"* (playful, promises utility)
 
 Bad subject patterns:
 
@@ -223,7 +223,7 @@ Hello *|FNAME|*,  →  better: "Hi *|FNAME:friend|*,"
 Email accessibility is usually an afterthought. Don't make it one.
 
 - **Alt text** on every meaningful image. Decorative graphics can use `alt=""` — screen readers will skip them. Meaningful illustrations get a short description (`alt="bunny"`).
-- **Contrast ratio ≥4.5:1** for body text against its background. The Redden palette: body `#2b2a26` on `#fbf8f0` cream is 13.7:1. Muted text `#6b5d3a` on `#fbf8f0` is 5.4:1. Both pass.
+- **Contrast ratio ≥4.5:1** for body text against its background. The example palette: body `#2b2a26` on `#fbf8f0` cream is 13.7:1. Muted text `#6b5d3a` on `#fbf8f0` is 5.4:1. Both pass.
 - **Linked text should be descriptive.** "Request a Plot ›" not "Click here."
 - **Underline or color + weight** for links. Color alone can fail for colorblind readers.
 - **Semantic HTML** when possible — `<h1>`, `<h2>`, `<p>` — even if you style them inline. Screen readers use the tags.
@@ -288,11 +288,6 @@ Before sending:
 
 Full codepoint lookup: <https://unicode.org/emoji/charts/full-emoji-list.html>
 
-## Appendix B: The Redden Gardens April dispatch
+## Appendix B: The worked example
 
-The worked example that seeded this doc is archived at:
-
-- v1 (text-only) — <http://eepurl.com/jEdlGg>
-- v2 (illustrated) — <http://eepurl.com/jEdp-Y>
-
-Both were composed via `mailchimp_send_campaign` against a one-subscriber test audience. v2 adds eight Twemoji placements: masthead corner cluster, hero bunny, three planting-category labels, one poetic match (sunflower → Sunflower Library), a pollinator bee, and a trailing sign-off bunny.
+The garden-newsletter example that seeded this doc was composed via `mailchimp_send_campaign` against a one-subscriber test audience. The illustrated revision adds eight Twemoji placements: masthead corner cluster, hero bunny, three planting-category labels, one poetic match (sunflower next to a seed-library section), a pollinator bee, and a trailing sign-off bunny.
