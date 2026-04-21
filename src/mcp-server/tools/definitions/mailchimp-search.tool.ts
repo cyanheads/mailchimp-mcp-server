@@ -20,7 +20,13 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('Restrict member search to a single audience. Ignored for `scope: campaigns`.'),
-  includeTopN: z.number().int().min(1).max(100).default(10).describe('Max results to return.'),
+  includeTopN: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(10)
+    .describe('Max results to return.'),
 });
 
 const MemberMatchSchema = z.object({

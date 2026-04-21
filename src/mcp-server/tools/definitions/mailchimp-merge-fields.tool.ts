@@ -35,7 +35,11 @@ const MergeFieldTypeSchema = z
 const InputSchema = z.object({
   operation: OperationSchema,
   audienceId: z.string().describe('Audience (list) ID.'),
-  mergeId: z.number().int().optional().describe('Merge-field ID. Required for `get` and `update`.'),
+  mergeId: z.coerce
+    .number()
+    .int()
+    .optional()
+    .describe('Merge-field ID. Required for `get` and `update`.'),
   name: z.string().optional().describe('Display name. Required for `create`.'),
   tag: z
     .string()
@@ -60,7 +64,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('Help text shown next to the field on signup/profile forms.'),
-  displayOrder: z
+  displayOrder: z.coerce
     .number()
     .int()
     .optional()
@@ -69,8 +73,14 @@ const InputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe('Merge-field options (e.g. choices for dropdown, date format for date).'),
-  count: z.number().int().min(1).max(1000).default(80).describe('Page size for `list`. Max 1000.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
+  count: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(80)
+    .describe('Page size for `list`. Max 1000.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const MergeFieldSummarySchema = z.object({

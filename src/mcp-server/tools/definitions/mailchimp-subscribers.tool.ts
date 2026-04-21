@@ -68,13 +68,19 @@ const InputSchema = z.object({
       "Tag names that should NOT be removed by `set-tags` even if absent from `tags`. Use this to protect static-segment memberships (Mailchimp stores them as tags) or any other 'sticky' tag you don't want the declarative sync to strip.",
     ),
   note: z.string().optional().describe('Note body. Required for `add-note`/`update-note`.'),
-  noteId: z
+  noteId: z.coerce
     .number()
     .int()
     .optional()
     .describe('Note ID. Required for `update-note`/`delete-note`.'),
-  count: z.number().int().min(1).max(1000).default(20).describe('Page size for list-style reads.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for list-style reads.'),
+  count: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(20)
+    .describe('Page size for list-style reads.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
 });
 
 const SubscriberSummarySchema = z.object({

@@ -32,7 +32,7 @@ const SegmentOptionsSchema = z.object({
 const InputSchema = z.object({
   operation: OperationSchema,
   audienceId: z.string().describe('Audience (list) ID the segment belongs to.'),
-  segmentId: z
+  segmentId: z.coerce
     .number()
     .int()
     .optional()
@@ -59,8 +59,14 @@ const InputSchema = z.object({
     .optional()
     .describe('Emails to remove. Used by `batch-update-members`.'),
   type: z.enum(['saved', 'static', 'fuzzy']).optional().describe('Filter (for `list`).'),
-  count: z.number().int().min(1).max(1000).default(20).describe('Page size for list-style reads.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for list-style reads.'),
+  count: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(20)
+    .describe('Page size for list-style reads.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
 });
 
 const SegmentSummarySchema = z.object({
