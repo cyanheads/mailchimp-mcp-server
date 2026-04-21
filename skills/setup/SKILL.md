@@ -4,14 +4,14 @@ description: >
   Post-init orientation for an MCP server built on @cyanheads/mcp-ts-core. Use after running `@cyanheads/mcp-ts-core init` to understand the project structure, conventions, and skill sync model. Also use when onboarding to an existing project for the first time.
 metadata:
   author: cyanheads
-  version: "1.2"
+  version: "1.3"
   audience: external
   type: workflow
 ---
 
 ## Context
 
-This skill assumes `@cyanheads/mcp-ts-core init` has already run. The CLI created the project's `CLAUDE.md` and `AGENTS.md` for different agents, copied external skills to `skills/`, and scaffolded the directory structure with echo definitions as starting points. This skill covers what was created and what to do next.
+This skill assumes `npx @cyanheads/mcp-ts-core init [name]` has already run. The CLI created the project's `CLAUDE.md` and `AGENTS.md` for different agents, copied external skills to `skills/`, and scaffolded the directory structure with echo definitions as starting points. This skill covers what was created and what to do next.
 
 ## Agent Protocol File
 
@@ -91,7 +91,7 @@ mkdir -p .claude/skills && cp -R skills/* .claude/skills/
 
 **For other agents** (Codex, Cursor, Windsurf, etc.) — copy to the equivalent directory (e.g., `.codex/skills/`, `.cursor/skills/`).
 
-After the initial copy, use the `maintenance` skill to keep them in sync after package updates.
+This step is the **bootstrap** — it creates the agent directory. From then on, use the `maintenance` skill to refresh it after package updates (Phase B). Maintenance only refreshes directories that already exist; it won't create a new agent directory on your behalf.
 
 ## Project Scaffolding
 
@@ -103,13 +103,11 @@ After installing dependencies (prefer `bun install`; `npm install` also works), 
 
 ## Checklist
 
-- [x] Agent protocol file selected — keep one authoritative file (`CLAUDE.md` or `AGENTS.md`)
-- [x] `{{PACKAGE_NAME}}` placeholders replaced in agent protocol file (if not auto-substituted by init)
-- [x] Core framework CLAUDE.md read (`node_modules/@cyanheads/mcp-ts-core/CLAUDE.md`)
-- [ ] Unused echo definitions cleaned up (and unregistered from `src/index.ts`) — deferred until `design-mcp-server` decides which surfaces (tools/resources/prompts/app-tools) the Mailchimp integration needs
-- [x] Skills copied to agent directory (`cp -R skills/* .claude/skills/` or equivalent)
-- [x] Project structure understood (definitions directories, entry point)
-- [x] `bun run devcheck` passes
+- [ ] Agent protocol file selected — keep one authoritative file (`CLAUDE.md` or `AGENTS.md`)
+- [ ] `{{PACKAGE_NAME}}` placeholders replaced in agent protocol file (if not auto-substituted by init)
+- [ ] Core framework CLAUDE.md read (`node_modules/@cyanheads/mcp-ts-core/CLAUDE.md`)
+- [ ] Unused echo definitions cleaned up (and unregistered from `src/index.ts`)
+- [ ] Skills copied to agent directory (`cp -R skills/* .claude/skills/` or equivalent)
+- [ ] Project structure understood (definitions directories, entry point)
+- [ ] `bun run devcheck` passes
 - [ ] If new server: proceed to `design-mcp-server` skill to plan the tool surface
-
-Completed: 2026-04-19
