@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.2.6
+**Version:** 0.2.7
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
 

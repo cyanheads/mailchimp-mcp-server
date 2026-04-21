@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-04-20 19:56:30
+Generated on: 2026-04-21 21:53:43
 
 ```text
 mailchimp-mcp-server/
@@ -46,6 +46,8 @@ mailchimp-mcp-server/
 │   │   └── SKILL.md
 │   ├── api-errors/
 │   │   └── SKILL.md
+│   ├── api-linter/
+│   │   └── SKILL.md
 │   ├── api-services/
 │   │   ├── references/
 │   │   │   ├── graph.md
@@ -63,8 +65,6 @@ mailchimp-mcp-server/
 │   ├── api-workers/
 │   │   └── SKILL.md
 │   ├── design-mcp-server/
-│   │   └── SKILL.md
-│   ├── devcheck/
 │   │   └── SKILL.md
 │   ├── field-test/
 │   │   └── SKILL.md
@@ -101,25 +101,27 @@ mailchimp-mcp-server/
 │   │   │       ├── mailchimp-campaign-report.resource.ts
 │   │   │       └── mailchimp-campaign.resource.ts
 │   │   └── tools/
-│   │       └── definitions/
-│   │           ├── index.ts
-│   │           ├── mailchimp-account.tool.ts
-│   │           ├── mailchimp-audience-overview.tool.ts
-│   │           ├── mailchimp-audiences.tool.ts
-│   │           ├── mailchimp-campaign-report.tool.ts
-│   │           ├── mailchimp-campaigns.tool.ts
-│   │           ├── mailchimp-find-subscriber.tool.ts
-│   │           ├── mailchimp-import-subscribers.tool.ts
-│   │           ├── mailchimp-merge-fields.tool.ts
-│   │           ├── mailchimp-playbook.tool.ts
-│   │           ├── mailchimp-replicate-campaign.tool.ts
-│   │           ├── mailchimp-reports.tool.ts
-│   │           ├── mailchimp-search.tool.ts
-│   │           ├── mailchimp-segments.tool.ts
-│   │           ├── mailchimp-send-campaign.tool.ts
-│   │           ├── mailchimp-subscribers.tool.ts
-│   │           ├── mailchimp-templates.tool.ts
-│   │           └── mailchimp-upsert-subscriber.tool.ts
+│   │       ├── definitions/
+│   │       │   ├── index.ts
+│   │       │   ├── mailchimp-account.tool.ts
+│   │       │   ├── mailchimp-audience-overview.tool.ts
+│   │       │   ├── mailchimp-audiences.tool.ts
+│   │       │   ├── mailchimp-campaign-report.tool.ts
+│   │       │   ├── mailchimp-campaigns.tool.ts
+│   │       │   ├── mailchimp-find-subscriber.tool.ts
+│   │       │   ├── mailchimp-import-subscribers.tool.ts
+│   │       │   ├── mailchimp-merge-fields.tool.ts
+│   │       │   ├── mailchimp-playbook.tool.ts
+│   │       │   ├── mailchimp-replicate-campaign.tool.ts
+│   │       │   ├── mailchimp-reports.tool.ts
+│   │       │   ├── mailchimp-search.tool.ts
+│   │       │   ├── mailchimp-segments.tool.ts
+│   │       │   ├── mailchimp-send-campaign.tool.ts
+│   │       │   ├── mailchimp-subscribers.tool.ts
+│   │       │   ├── mailchimp-templates.tool.ts
+│   │       │   └── mailchimp-upsert-subscriber.tool.ts
+│   │       └── shared/
+│   │           └── template-sections-doc.ts
 │   ├── services/
 │   │   └── mailchimp/
 │   │       ├── mailchimp-service.ts
@@ -137,8 +139,11 @@ mailchimp-mcp-server/
 │   │       ├── mailchimp-service.test.ts
 │   │       └── normalize.test.ts
 │   └── tools/
+│       ├── input-coercion.test.ts
 │       ├── mailchimp-campaign-report.test.ts
-│       └── mailchimp-playbook.test.ts
+│       ├── mailchimp-playbook.test.ts
+│       ├── mailchimp-templates.test.ts
+│       └── template-sections-doc.test.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore

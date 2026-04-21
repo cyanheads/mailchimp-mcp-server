@@ -2,6 +2,25 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.7 — 2026-04-21
+
+### Fixed
+
+- **Numeric tool inputs no longer reject string-encoded integers.** Every input-side `z.number().int()` is now `z.coerce.number().int()` across the ten tools that take numeric IDs, page counts, or offsets (`mailchimp_templates`, `mailchimp_merge_fields`, `mailchimp_segments`, `mailchimp_subscribers`, `mailchimp_reports`, `mailchimp_audiences`, `mailchimp_campaigns`, `mailchimp_send_campaign`, `mailchimp_replicate_campaign`, `mailchimp_search`). Clients that marshal integers as JSON strings (Claude Desktop and some bridges do this for int-shaped fields) previously hit `expected: "number", received: "string"` before the handler ran; now the value is coerced and validated normally. Output schemas are unchanged. ([#3](https://github.com/cyanheads/mailchimp-mcp-server/issues/3))
+- **`mailchimp_templates` (`operation: update`) now returns an actionable validation error** when no `name`/`html`/`folderId` is supplied. The previous message was a generic "At least one of …"; the new message explains the full-HTML-replacement model and points users to the `mailchimp_campaigns` / `mailchimp_send_campaign` `templateSections` workflow for per-section edits. ([#5](https://github.com/cyanheads/mailchimp-mcp-server/issues/5))
+
+### Changed
+
+- **`templateSections` field on the three campaign-content tools** (`mailchimp_send_campaign`, `mailchimp_campaigns` `set-content`, `mailchimp_replicate_campaign` `contentOverride`) now carries a single shared description that documents: keys (edit-region IDs from `mc:edit="…"` in the template HTML, or section IDs from `mailchimp_templates get-default-content`), values (HTML strings), applicability (`templateId` must also be set), a concrete example, and the "non-drag-and-drop templates often return an empty sections map — read the template HTML directly in that case" caveat. `mailchimp_replicate_campaign`'s `templateSections` previously had no `.describe()` at all. Extracted into `src/mcp-server/tools/shared/template-sections-doc.ts` so the three tools cannot drift. ([#4](https://github.com/cyanheads/mailchimp-mcp-server/issues/4))
+- **`mailchimp_templates` tool description** now explicitly states "Per-section editing is not supported here", explains the full-HTML replacement model, and cross-references the campaign workflow for per-section overrides. ([#5](https://github.com/cyanheads/mailchimp-mcp-server/issues/5))
+- **`mailchimp_templates get-default-content` `format()` output** now notes when the sections map is empty (common for user-uploaded HTML templates using `mc:edit`) and points the agent to read the template HTML directly. ([#5](https://github.com/cyanheads/mailchimp-mcp-server/issues/5))
+
+### Added
+
+- `tests/tools/mailchimp-templates.test.ts` — full handler + format + metadata coverage for the templates tool, including string-id coercion regression, name-only / html-only / empty-update paths, and the empty-sections format hint.
+- `tests/tools/input-coercion.test.ts` — pins `z.coerce.number()` behavior across every tool that was changed, so a future edit dropping the `.coerce` gets caught immediately.
+- `tests/tools/template-sections-doc.test.ts` — asserts the shared `TEMPLATE_SECTIONS_DOC` content (mc:edit, get-default-content, example, drag-and-drop caveat) and that all three campaign-content tools surface it in their emitted JSON Schema. 95 tests total (up from 50).
+
 ## 0.2.6 — 2026-04-21
 
 ### Changed
