@@ -18,7 +18,7 @@ const OperationSchema = z
 
 const InputSchema = z.object({
   operation: OperationSchema,
-  templateId: z
+  templateId: z.coerce
     .number()
     .int()
     .optional()
@@ -36,8 +36,14 @@ const InputSchema = z.object({
       'Filter by type for `list`. `user` = your saved templates; `base` = Mailchimp starter layouts; `gallery` = paid drag-and-drop designs.',
     ),
   category: z.string().optional().describe('Category filter for `list`.'),
-  count: z.number().int().min(1).max(1000).default(20).describe('Page size for `list`. Max 1000.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
+  count: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(20)
+    .describe('Page size for `list`. Max 1000.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const TemplateSummarySchema = z.object({
@@ -97,7 +103,7 @@ function requireTemplateId(input: z.infer<typeof InputSchema>): number {
 
 export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   description:
-    "Create, read, update, delete email templates. Free plan supports `base` (starter layouts) and `user` (your saved templates); `gallery` (paid drag-and-drop) will return a `Forbidden` error with `requiresPlan: 'standard'`. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose.",
+    "Create, read, update, delete email templates. Free plan supports `base` (starter layouts) and `user` (your saved templates); `gallery` (paid drag-and-drop) returns a `Forbidden` error with `requiresPlan: 'standard'`. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose. **Per-section editing is not supported here.** Mailchimp's templates PATCH endpoint only accepts `name`, `html`, and `folderId` — to change one block (e.g. the headline), GET the template, edit its HTML, then `update` with the full new HTML. Per-section overrides (by edit-region ID) live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`.",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -144,7 +150,9 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
         if (input.html) body.html = input.html;
         if (input.folderId) body.folder_id = input.folderId;
         if (Object.keys(body).length === 0)
-          throw validationError('At least one of name/html/folderId must be provided for update.');
+          throw validationError(
+            'Provide at least one of `name`, `html`, or `folderId`. To edit one block of the template, GET the template, modify its HTML, then call `update` with the full new HTML — Mailchimp does not support patching individual sections here. Per-section overrides live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`.',
+          );
         const t = await svc.templates.update(ctx, id, body);
         return { operation: 'update', template: summarize(t) };
       }
@@ -197,9 +205,16 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
     }
 
     if (result.defaultContent) {
-      lines.push('', '# Default content sections', '', '```json');
-      lines.push(JSON.stringify(result.defaultContent.sections ?? {}, null, 2));
-      lines.push('```');
+      const sections = result.defaultContent.sections ?? {};
+      const count = Object.keys(sections).length;
+      lines.push('', `# Default content sections (${count})`, '');
+      if (count === 0) {
+        lines.push(
+          '_No default sections recorded. Mailchimp only populates this map for drag-and-drop templates; for user-uploaded HTML templates that use `mc:edit`, read the HTML directly (`operation: get`) and pull the region names from the `mc:edit="…"` attributes. Use those names as the keys in `templateSections` when building a campaign from this template._',
+        );
+      } else {
+        lines.push('```json', JSON.stringify(sections, null, 2), '```');
+      }
     }
 
     if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
