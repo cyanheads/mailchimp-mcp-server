@@ -191,6 +191,8 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
       lines.push(`**List rating:** ${result.listRating}/5  `);
     if (typeof result.doubleOptin === 'boolean')
       lines.push(`**Double opt-in:** ${result.doubleOptin ? 'yes' : 'no'}  `);
+    if (result.visibility)
+      lines.push(`**Visibility:** ${result.visibility === 'pub' ? 'public' : 'private'}  `);
     if (result.subscribeUrl) lines.push(`**Subscribe URL:** ${result.subscribeUrl}  `);
 
     if (result.stats) {
@@ -208,9 +210,27 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
         lines.push(`| Open rate | ${(s.openRate * 100).toFixed(2)}% |`);
       if (typeof s.clickRate === 'number')
         lines.push(`| Click rate | ${(s.clickRate * 100).toFixed(2)}% |`);
+      if (typeof s.avgSubRate === 'number')
+        lines.push(`| Avg subscribe rate | ${s.avgSubRate.toFixed(2)}/mo |`);
+      if (typeof s.avgUnsubRate === 'number')
+        lines.push(`| Avg unsubscribe rate | ${s.avgUnsubRate.toFixed(2)}/mo |`);
       if (s.campaignLastSent) lines.push(`| Last campaign | ${s.campaignLastSent} |`);
       if (s.lastSubDate) lines.push(`| Last subscribe | ${s.lastSubDate} |`);
       if (s.lastUnsubDate) lines.push(`| Last unsubscribe | ${s.lastUnsubDate} |`);
+    }
+
+    if (result.contact) {
+      const c = result.contact;
+      const parts: string[] = [];
+      if (c.company) parts.push(c.company);
+      if (c.address1) parts.push(c.address1);
+      const cityLine = [c.city, c.state, c.zip].filter(Boolean).join(', ');
+      if (cityLine) parts.push(cityLine);
+      if (c.country) parts.push(c.country);
+      if (parts.length > 0) {
+        lines.push('', '## Contact (CAN-SPAM footer)', '');
+        for (const p of parts) lines.push(`- ${p}`);
+      }
     }
 
     if (result.campaignDefaults) {
@@ -224,11 +244,11 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
 
     if (result.growth.length > 0) {
       lines.push('', `## Growth (${result.growth.length} months)`, '');
-      lines.push('| Month | Subs | Unsubs | Cleaned |');
-      lines.push('|:------|-----:|-------:|--------:|');
+      lines.push('| Month | Subs | Unsubs | Existing | Cleaned |');
+      lines.push('|:------|-----:|-------:|---------:|--------:|');
       for (const g of result.growth) {
         lines.push(
-          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.cleaned ?? 0} |`,
+          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.existing ?? 0} | ${g.cleaned ?? 0} |`,
         );
       }
     }

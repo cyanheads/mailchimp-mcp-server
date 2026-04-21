@@ -172,10 +172,11 @@ export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber',
 
   format: (result) => {
     const lines: string[] = [
-      `# Subscriber ${result.isNew ? 'created' : 'updated'}: ${result.email}`,
+      `# Subscriber ${result.isNew ? 'created (new record)' : 'updated'}: ${result.email}`,
       '',
       `**Status:** ${result.status}  `,
       `**ID:** ${result.subscriberId}  `,
+      `**New record:** ${result.isNew}  `,
     ];
     if (result.mergeFieldsApplied > 0)
       lines.push(`**Merge fields applied:** ${result.mergeFieldsApplied}  `);

@@ -160,17 +160,22 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
   },
 
   format: (result) => {
-    if (result.operation === 'info') {
-      const lines: string[] = [
+    const lines: string[] = [];
+    const hasInfo = result.operation === 'info' || result.accountId !== undefined;
+    if (hasInfo) {
+      lines.push(
         `# Account: ${result.accountName ?? '(unnamed)'}`,
         '',
+        `**Operation:** ${result.operation}  `,
         `**ID:** ${result.accountId ?? '—'}  `,
         `**Data center:** ${result.dataCenter ?? '—'}  `,
-      ];
+      );
       if (result.email) lines.push(`**Email:** ${result.email}  `);
       if (result.username) lines.push(`**Username:** ${result.username}  `);
       if (result.role) lines.push(`**Role:** ${result.role}  `);
       if (result.pricingPlanType) lines.push(`**Plan:** ${result.pricingPlanType}  `);
+      if (typeof result.proEnabled === 'boolean')
+        lines.push(`**Pro enabled:** ${result.proEnabled}  `);
       if (typeof result.totalSubscribers === 'number')
         lines.push(`**Total subscribers:** ${result.totalSubscribers}  `);
       if (result.industry) lines.push(`**Industry:** ${result.industry}  `);
@@ -186,21 +191,25 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
         if (typeof result.industryStats.bounceRate === 'number')
           lines.push(`- Bounce rate: ${(result.industryStats.bounceRate * 100).toFixed(2)}%`);
       }
-      return [{ type: 'text', text: lines.join('\n') }];
     }
 
-    const items = result.items ?? [];
-    const total = result.totalItems ?? items.length;
-    const lines: string[] = [`# Activity feed (${items.length} of ${total})`, ''];
-    if (items.length === 0) {
-      lines.push('_No activity in the requested window._');
-    } else {
-      for (const item of items) {
-        lines.push(`**${item.updateTime}** — ${item.type}`);
-        lines.push(`  ${item.activity}`);
-        if (item.title) lines.push(`  _${item.title}_`);
-        if (item.url) lines.push(`  <${item.url}>`);
-        lines.push('');
+    if (result.items !== undefined) {
+      const items = result.items;
+      const total = result.totalItems ?? items.length;
+      if (hasInfo) lines.push('');
+      lines.push(`# Activity feed (${items.length} of ${total}, offset ${result.offset ?? 0})`, '');
+      if (items.length === 0) {
+        lines.push('_No activity in the requested window._');
+      } else {
+        for (const item of items) {
+          lines.push(`**${item.updateTime}** — type: ${item.type}`);
+          lines.push(`  ${item.activity}`);
+          if (item.title) lines.push(`  _${item.title}_`);
+          if (item.url) lines.push(`  <${item.url}>`);
+          if (item.campaignId) lines.push(`  campaign: \`${item.campaignId}\``);
+          if (item.listId) lines.push(`  list: \`${item.listId}\``);
+          lines.push('');
+        }
       }
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];

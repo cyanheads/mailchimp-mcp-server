@@ -141,27 +141,32 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
       lines.push(`**Exact matches:** ${m.totalExact} (showing ${m.exact.length})`);
       for (const r of m.exact) {
         lines.push(
-          `- \`${r.email}\` — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
+          `- \`${r.email}\` [${r.subscriberId}] — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
         );
       }
       if (m.fuzzy.length > 0) {
         lines.push('', `**Fuzzy matches:** ${m.totalFuzzy} (showing ${m.fuzzy.length})`);
         for (const r of m.fuzzy) {
           lines.push(
-            `- \`${r.email}\` — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
+            `- \`${r.email}\` [${r.subscriberId}] — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
           );
         }
       }
       if (m.exact.length === 0 && m.fuzzy.length === 0) lines.push('_No matches._');
-    } else if (result.campaigns) {
+    }
+    if (result.campaigns) {
       const c = result.campaigns;
       lines.push(
+        '',
         `**${c.totalMatches} campaign match${c.totalMatches === 1 ? '' : 'es'}** (showing ${c.matches.length})`,
         '',
       );
       for (const r of c.matches) {
+        const titleLabel = r.subjectLine ?? r.title ?? r.campaignId;
+        const titleAlt = r.title && r.title !== titleLabel ? ` / title: ${r.title}` : '';
+        const typeTag = r.type ? ` [${r.type}]` : '';
         lines.push(
-          `- **${r.subjectLine ?? r.title ?? r.campaignId}** (\`${r.campaignId}\`)${r.status ? ` — ${r.status}` : ''}${r.sendTime ? ` · ${r.sendTime}` : ''}`,
+          `- **${titleLabel}**${titleAlt} (\`${r.campaignId}\`)${typeTag}${r.status ? ` — ${r.status}` : ''}${r.sendTime ? ` · ${r.sendTime}` : ''}`,
         );
         if (r.snippet) lines.push(`  _${r.snippet}_`);
       }

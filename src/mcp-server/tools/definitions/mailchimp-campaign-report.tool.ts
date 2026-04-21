@@ -234,6 +234,7 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       `**ID:** ${result.campaignId}  `,
     ];
     if (result.subjectLine) lines.push(`**Subject:** "${result.subjectLine}"  `);
+    if (result.type) lines.push(`**Type:** ${result.type}  `);
     if (result.sendTime) lines.push(`**Sent:** ${result.sendTime}  `);
     if (result.audienceName) lines.push(`**Audience:** ${result.audienceName}  `);
     if (typeof result.recipientsCount === 'number')
@@ -276,20 +277,29 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
         lines.push(`- Bounce rate: ${pct(ib.bounceRate)} (industry avg)`);
       if (typeof ib.unsubRate === 'number')
         lines.push(`- Unsub rate: ${pct(ib.unsubRate)} (industry avg)`);
+      if (typeof ib.abuseRate === 'number')
+        lines.push(`- Abuse rate: ${pct(ib.abuseRate)} (industry avg)`);
     }
 
     if (result.topClickedLinks.length > 0) {
       lines.push('', `## Top clicked links (${result.topClickedLinks.length})`, '');
       for (const link of result.topClickedLinks) {
-        lines.push(`- ${link.totalClicks} clicks (${link.uniqueClicks} unique) — ${link.url}`);
+        const pctSuffix =
+          typeof link.clickPercentage === 'number'
+            ? ` [${pct(link.clickPercentage)} of clicks]`
+            : '';
+        lines.push(
+          `- ${link.totalClicks} clicks (${link.uniqueClicks} unique)${pctSuffix} — ${link.url}`,
+        );
       }
     }
 
     if (result.topLocations.length > 0) {
       lines.push('', `## Top locations by opens`, '');
       for (const loc of result.topLocations) {
-        const region = loc.regionName ?? loc.region ?? '';
-        lines.push(`- ${loc.countryCode}${region ? ` (${region})` : ''}: ${loc.opens} opens`);
+        const regionParts = [loc.regionName, loc.region].filter(Boolean);
+        const regionSuffix = regionParts.length > 0 ? ` (${regionParts.join(' / ')})` : '';
+        lines.push(`- ${loc.countryCode}${regionSuffix}: ${loc.opens} opens`);
       }
     }
 

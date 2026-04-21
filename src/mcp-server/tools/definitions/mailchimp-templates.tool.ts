@@ -163,32 +163,47 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.templates) {
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+
+    const renderSummary = (t: z.infer<typeof TemplateSummarySchema>, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
+      lines.push(
+        `${prefix}**${t.name}** (\`${t.id}\`) — ${t.type ?? 'unknown'}${t.category ? ` · ${t.category}` : ''}`,
+      );
+      const meta: string[] = [];
+      if (t.createdBy) meta.push(`createdBy ${t.createdBy}`);
+      if (t.dateCreated) meta.push(`dateCreated ${t.dateCreated}`);
+      if (t.dateEdited) meta.push(`dateEdited ${t.dateEdited}`);
+      if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
+      const flags: string[] = [];
+      if (typeof t.active === 'boolean') flags.push(`active ${t.active}`);
+      if (typeof t.dragAndDrop === 'boolean') flags.push(`dragAndDrop ${t.dragAndDrop}`);
+      if (typeof t.responsive === 'boolean') flags.push(`responsive ${t.responsive}`);
+      if (flags.length > 0) lines.push(`${indent}${flags.join(' · ')}`);
+      if (t.thumbnail) lines.push(`${indent}thumbnail: ${t.thumbnail}`);
+      if (t.shareUrl) lines.push(`${indent}shareUrl: ${t.shareUrl}`);
+    };
+
+    if (result.templates) {
       lines.push(`# Templates (${result.templates.length} of ${result.totalItems ?? '?'})`, '');
-      for (const t of result.templates) {
-        lines.push(
-          `- **${t.name}** (\`${t.id}\`) — ${t.type ?? 'unknown'}${t.category ? ` · ${t.category}` : ''}`,
-        );
-      }
-    } else if (result.template) {
-      const t = result.template;
-      lines.push(`# ${t.name}`, '', `**ID:** ${t.id}  `);
-      if (t.type) lines.push(`**Type:** ${t.type}  `);
-      if (t.category) lines.push(`**Category:** ${t.category}  `);
-      if (t.dateCreated) lines.push(`**Created:** ${t.dateCreated}  `);
-      if (t.dateEdited) lines.push(`**Edited:** ${t.dateEdited}  `);
-      if (typeof t.active === 'boolean') lines.push(`**Active:** ${t.active}  `);
-      if (t.shareUrl) lines.push(`**Share URL:** ${t.shareUrl}  `);
-    } else if (result.operation === 'delete') {
-      lines.push('Template deleted.');
-    } else if (result.operation === 'get-default-content') {
-      lines.push('# Default content sections', '', '```json');
-      lines.push(JSON.stringify(result.defaultContent?.sections ?? {}, null, 2));
-      lines.push('```');
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
+      for (const t of result.templates) renderSummary(t, true);
     }
+
+    if (result.template) {
+      if (result.templates) lines.push('');
+      lines.push(`# ${result.template.name}`, '');
+      renderSummary(result.template, false);
+    }
+
+    if (result.defaultContent) {
+      lines.push('', '# Default content sections', '', '```json');
+      lines.push(JSON.stringify(result.defaultContent.sections ?? {}, null, 2));
+      lines.push('```');
+    }
+
+    if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

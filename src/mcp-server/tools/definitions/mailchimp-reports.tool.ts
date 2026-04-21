@@ -303,44 +303,55 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.reports) {
+    const lines: string[] = [`_Operation: ${result.operation}_`];
+    if (result.dimension) lines.push(`_Dimension: ${result.dimension}_`);
+    if (result.campaignId) lines.push(`_campaignId: ${result.campaignId}_`);
+    lines.push('');
+
+    const renderSummary = (r: z.infer<typeof ReportSummarySchema>, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
+      const title = r.campaignTitle ?? r.subjectLine ?? r.id;
+      const subj =
+        r.subjectLine && r.subjectLine !== title ? ` subjectLine: "${r.subjectLine}"` : '';
+      const aud = r.audienceName ? ` audience:${r.audienceName}` : '';
+      lines.push(`${prefix}**${title}** (\`${r.id}\`)${subj}${aud}`);
+      const metrics: string[] = [];
+      if (typeof r.emailsSent === 'number') metrics.push(`emailsSent ${r.emailsSent}`);
+      if (typeof r.openRate === 'number')
+        metrics.push(`openRate ${(r.openRate * 100).toFixed(2)}%`);
+      if (typeof r.clickRate === 'number')
+        metrics.push(`clickRate ${(r.clickRate * 100).toFixed(2)}%`);
+      if (typeof r.unsubscribed === 'number') metrics.push(`unsubscribed ${r.unsubscribed}`);
+      if (typeof r.abuseReports === 'number') metrics.push(`abuseReports ${r.abuseReports}`);
+      if (metrics.length > 0) lines.push(`${indent}${metrics.join(' · ')}`);
+      if (r.sendTime) lines.push(`${indent}sendTime ${r.sendTime}`);
+    };
+
+    if (result.reports) {
       lines.push(`# Reports (${result.reports.length} of ${result.totalItems ?? '?'})`, '');
-      for (const r of result.reports) {
-        const title = r.campaignTitle ?? r.subjectLine ?? r.id;
-        const open = typeof r.openRate === 'number' ? `${(r.openRate * 100).toFixed(1)}%` : '—';
-        const click = typeof r.clickRate === 'number' ? `${(r.clickRate * 100).toFixed(1)}%` : '—';
-        lines.push(
-          `- **${title}** (\`${r.id}\`) — ${r.emailsSent ?? 0} sent · open ${open} · click ${click}`,
-        );
-      }
-    } else if (result.operation === 'get' && result.report) {
+      for (const r of result.reports) renderSummary(r, true);
+    }
+
+    if (result.report) {
+      if (result.reports) lines.push('');
       const r = result.report;
       lines.push(`# ${r.campaignTitle ?? r.subjectLine ?? r.id}`, '');
-      lines.push(`**ID:** ${r.id}  `);
-      if (r.sendTime) lines.push(`**Sent:** ${r.sendTime}  `);
-      if (typeof r.emailsSent === 'number') lines.push(`**Emails sent:** ${r.emailsSent}  `);
-      if (typeof r.openRate === 'number')
-        lines.push(`**Open rate:** ${(r.openRate * 100).toFixed(2)}%  `);
-      if (typeof r.clickRate === 'number')
-        lines.push(`**Click rate:** ${(r.clickRate * 100).toFixed(2)}%  `);
-      if (typeof r.unsubscribed === 'number') lines.push(`**Unsubscribed:** ${r.unsubscribed}  `);
-      if (typeof r.abuseReports === 'number') lines.push(`**Abuse reports:** ${r.abuseReports}  `);
-      if (r.audienceName) lines.push(`**Audience:** ${r.audienceName}  `);
-    } else if (result.operation === 'slice' && result.rows) {
+      renderSummary(r, false);
+    }
+
+    if (result.rows) {
       lines.push(
-        `# ${result.dimension} (${result.rows.length}${result.totalItems ? ` of ${result.totalItems}` : ''})`,
+        '',
+        `# Rows (${result.rows.length}${result.totalItems ? ` of ${result.totalItems}` : ''})`,
         '',
       );
       const sample = result.rows.slice(0, 30);
-      for (const row of sample) {
-        lines.push(`- ${JSON.stringify(row)}`);
-      }
+      for (const row of sample) lines.push(`- ${JSON.stringify(row)}`);
       if (result.rows.length > sample.length)
         lines.push(`- …and ${result.rows.length - sample.length} more.`);
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
     }
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

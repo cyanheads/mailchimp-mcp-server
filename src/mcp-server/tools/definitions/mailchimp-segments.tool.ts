@@ -216,41 +216,59 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.segments) {
-      lines.push(`# Segments (${result.segments.length} of ${result.totalItems ?? '?'})`, '');
-      for (const s of result.segments) {
-        lines.push(
-          `- **${s.name}** (\`${s.id}\`) — ${s.type}${typeof s.memberCount === 'number' ? `, ${s.memberCount} members` : ''}`,
-        );
-      }
-    } else if (result.segment) {
-      const s = result.segment;
-      lines.push(`# ${s.name}`, '', `**ID:** ${s.id} · **Type:** ${s.type}  `);
-      if (typeof s.memberCount === 'number') lines.push(`**Members:** ${s.memberCount}  `);
-      if (s.match) lines.push(`**Match:** ${s.match}  `);
-      if (typeof s.conditionCount === 'number') lines.push(`**Conditions:** ${s.conditionCount}  `);
-      if (s.createdAt) lines.push(`**Created:** ${s.createdAt}  `);
-      if (s.updatedAt) lines.push(`**Updated:** ${s.updatedAt}  `);
-    } else if (result.operation === 'list-members' && result.members) {
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+
+    const renderSummary = (s: z.infer<typeof SegmentSummarySchema>, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
       lines.push(
+        `${prefix}**${s.name}** (\`${s.id}\`) — type:${s.type}${typeof s.memberCount === 'number' ? `, memberCount ${s.memberCount}` : ''}`,
+      );
+      const meta: string[] = [];
+      if (s.match) meta.push(`match ${s.match}`);
+      if (typeof s.conditionCount === 'number') meta.push(`conditionCount ${s.conditionCount}`);
+      if (s.createdAt) meta.push(`createdAt ${s.createdAt}`);
+      if (s.updatedAt) meta.push(`updatedAt ${s.updatedAt}`);
+      if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
+    };
+
+    if (result.segments) {
+      lines.push(`# Segments (${result.segments.length} of ${result.totalItems ?? '?'})`, '');
+      for (const s of result.segments) renderSummary(s, true);
+    }
+
+    if (result.segment) {
+      if (result.segments) lines.push('');
+      lines.push(`# ${result.segment.name}`, '');
+      renderSummary(result.segment, false);
+    }
+
+    if (result.members) {
+      lines.push(
+        '',
         `# Members in segment (${result.members.length} of ${result.totalItems ?? '?'})`,
         '',
       );
-      for (const m of result.members) lines.push(`- ${m.email} — ${m.status}`);
-    } else if (result.operation === 'batch-update-members') {
-      lines.push('# Segment membership updated');
-      lines.push(`- Added: ${result.added?.length ?? 0}`);
-      lines.push(`- Removed: ${result.removed?.length ?? 0}`);
-      if (result.errors && result.errors.length > 0) {
-        lines.push('', `## Errors (${result.errors.length})`, '');
-        for (const e of result.errors) lines.push(`- \`${e.email}\`: ${e.error}`);
-      }
-    } else if (result.operation === 'delete') {
-      lines.push('Segment deleted.');
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
+      for (const m of result.members) lines.push(`- [${m.id}] ${m.email} — status:${m.status}`);
     }
+
+    if (result.added !== undefined || result.removed !== undefined) {
+      lines.push('', '# Segment membership updated');
+      lines.push(
+        `- added: ${result.added?.length ?? 0}${result.added?.length ? ` (${result.added.join(', ')})` : ''}`,
+      );
+      lines.push(
+        `- removed: ${result.removed?.length ?? 0}${result.removed?.length ? ` (${result.removed.join(', ')})` : ''}`,
+      );
+    }
+
+    if (result.errors && result.errors.length > 0) {
+      lines.push('', `## Errors (${result.errors.length})`, '');
+      for (const e of result.errors) lines.push(`- \`${e.email}\`: ${e.error}`);
+    }
+
+    if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

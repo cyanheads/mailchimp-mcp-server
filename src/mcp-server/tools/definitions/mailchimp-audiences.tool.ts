@@ -434,70 +434,110 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.audiences) {
-      lines.push(`# Audiences (${result.audiences.length} of ${result.totalItems ?? '?'})`, '');
-      for (const a of result.audiences) {
-        lines.push(
-          `- **${a.name}** (\`${a.id}\`) — ${a.stats?.memberCount ?? '?'} members, rating ${a.listRating ?? '—'}`,
-        );
-      }
-    } else if (result.audience && ['get', 'create', 'update'].includes(result.operation)) {
-      const a = result.audience;
-      lines.push(`# ${a.name}`, '', `**ID:** ${a.id}  `);
-      if (a.dateCreated) lines.push(`**Created:** ${a.dateCreated}  `);
-      if (typeof a.listRating === 'number') lines.push(`**List rating:** ${a.listRating}/5  `);
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+
+    const renderSummary = (a: AudienceSummary, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
+      const webId = typeof a.webId === 'number' ? ` webId:${a.webId}` : '';
+      const visLabel = a.visibility
+        ? ` visibility:${a.visibility === 'pub' ? 'public' : 'private'}`
+        : '';
+      const dOpt = typeof a.doubleOptin === 'boolean' ? ` doubleOptin:${a.doubleOptin}` : '';
+      lines.push(`${prefix}**${a.name}** (\`${a.id}\`)${webId}${visLabel}${dOpt}`);
+      const meta: string[] = [];
+      if (a.dateCreated) meta.push(`dateCreated ${a.dateCreated}`);
+      if (typeof a.listRating === 'number') meta.push(`listRating ${a.listRating}/5`);
+      if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
       if (a.stats) {
-        lines.push('', '**Stats**');
-        for (const [k, v] of Object.entries(a.stats)) {
-          if (v !== undefined && v !== null) lines.push(`- ${k}: ${v}`);
-        }
+        const s = a.stats;
+        const parts: string[] = [];
+        if (typeof s.memberCount === 'number') parts.push(`memberCount ${s.memberCount}`);
+        if (typeof s.unsubscribeCount === 'number')
+          parts.push(`unsubscribeCount ${s.unsubscribeCount}`);
+        if (typeof s.cleanedCount === 'number') parts.push(`cleanedCount ${s.cleanedCount}`);
+        if (typeof s.campaignCount === 'number') parts.push(`campaignCount ${s.campaignCount}`);
+        if (typeof s.openRate === 'number')
+          parts.push(`openRate ${(s.openRate * 100).toFixed(2)}%`);
+        if (typeof s.clickRate === 'number')
+          parts.push(`clickRate ${(s.clickRate * 100).toFixed(2)}%`);
+        if (parts.length > 0) lines.push(`${indent}Stats: ${parts.join(', ')}`);
+        const stamps: string[] = [];
+        if (s.campaignLastSent) stamps.push(`campaignLastSent ${s.campaignLastSent}`);
+        if (s.lastSubDate) stamps.push(`lastSubDate ${s.lastSubDate}`);
+        if (s.lastUnsubDate) stamps.push(`lastUnsubDate ${s.lastUnsubDate}`);
+        if (stamps.length > 0) lines.push(`${indent}${stamps.join(' · ')}`);
       }
-    } else if (result.operation === 'list-growth' && result.growth) {
-      lines.push(`# Growth history (${result.growth.length} months)`, '');
-      lines.push('| Month | Subscribed | Unsubscribed | Cleaned |');
-      lines.push('|:------|-----------:|-------------:|--------:|');
+    };
+
+    if (result.audiences) {
+      lines.push(`# Audiences (${result.audiences.length} of ${result.totalItems ?? '?'})`, '');
+      for (const a of result.audiences) renderSummary(a, true);
+    }
+
+    if (result.audience) {
+      if (result.audiences) lines.push('');
+      lines.push(`# ${result.audience.name}`, '');
+      renderSummary(result.audience, false);
+    }
+
+    if (result.growth) {
+      lines.push('', `# Growth history (${result.growth.length} months)`, '');
+      lines.push('| Month | Subscribed | Unsubscribed | Existing | Imports | Optins | Cleaned |');
+      lines.push('|:------|-----------:|-------------:|---------:|--------:|-------:|--------:|');
       for (const g of result.growth) {
         lines.push(
-          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.cleaned ?? 0} |`,
+          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.existing ?? 0} | ${g.imports ?? 0} | ${g.optins ?? 0} | ${g.cleaned ?? 0} |`,
         );
       }
-    } else if (result.operation === 'list-clients' && result.clients) {
-      lines.push(`# Email clients (${result.clients.length})`, '');
-      for (const c of result.clients) lines.push(`- ${c.client}: ${c.members}`);
-    } else if (result.operation === 'list-abuse-reports' && result.abuseReports) {
-      lines.push(`# Abuse reports (${result.abuseReports.length})`, '');
+    }
+
+    if (result.clients) {
+      lines.push('', `# Email clients (${result.clients.length})`, '');
+      for (const c of result.clients) lines.push(`- ${c.client}: ${c.members} members`);
+    }
+
+    if (result.abuseReports) {
+      lines.push('', `# Abuse reports (${result.abuseReports.length})`, '');
       if (result.abuseReports.length === 0) lines.push('_None — deliverability is healthy._');
       for (const r of result.abuseReports) {
-        lines.push(`- \`${r.email}\` (campaign ${r.campaignId})${r.date ? ` at ${r.date}` : ''}`);
-      }
-    } else if (result.operation === 'list-locations' && result.locations) {
-      lines.push(`# Top subscriber locations`, '');
-      for (const l of result.locations)
         lines.push(
-          `- ${l.country}${l.cc ? ` (${l.cc})` : ''}: ${l.total ?? 0}${l.percent !== undefined ? ` (${(l.percent * 100).toFixed(1)}%)` : ''}`,
+          `- [id:${r.id}] \`${r.email}\` (campaignId: ${r.campaignId})${r.date ? ` at ${r.date}` : ''}`,
         );
-    } else if (result.operation === 'list-activity' && result.activity) {
-      lines.push(`# Per-day activity (${result.activity.length} days)`, '');
-      for (const row of result.activity) {
-        lines.push(`- ${JSON.stringify(row)}`);
       }
-    } else if (result.operation === 'get-signup-forms' && result.signupForms) {
-      lines.push(`# Signup forms (${result.signupForms.length})`, '');
-      for (const f of result.signupForms) {
-        lines.push(`- type=${String((f as { type?: string }).type ?? 'unknown')}`);
+    }
+
+    if (result.locations) {
+      lines.push('', '# Top subscriber locations', '');
+      for (const l of result.locations) {
+        const ccPart = l.cc ? ` (cc: ${l.cc})` : '';
+        const totalPart = typeof l.total === 'number' ? ` total ${l.total}` : '';
+        const pctPart = typeof l.percent === 'number' ? ` (${(l.percent * 100).toFixed(1)}%)` : '';
+        lines.push(`- ${l.country}${ccPart}:${totalPart}${pctPart}`);
       }
-    } else if (result.operation === 'customize-signup-forms') {
+    }
+
+    if (result.activity) {
+      lines.push('', `# Per-day activity (${result.activity.length} days)`, '');
+      for (const row of result.activity) lines.push(`- ${JSON.stringify(row)}`);
+    }
+
+    if (result.signupForms) {
+      lines.push('', `# Signup forms (${result.signupForms.length})`, '');
+      for (const f of result.signupForms) lines.push(`- ${JSON.stringify(f)}`);
+    }
+
+    if (result.signupForm) {
       lines.push(
+        '',
         'Signup form updated.',
         '',
         '```json',
         JSON.stringify(result.signupForm, null, 2),
         '```',
       );
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
     }
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

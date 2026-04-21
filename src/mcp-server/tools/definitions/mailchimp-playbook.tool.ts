@@ -613,7 +613,10 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   },
 
   format: (result) => {
-    const lines: string[] = [result.instructions, ''];
+    const lines: string[] = [`_Topic: ${result.topic}_`, '', result.instructions, ''];
+    if (Object.keys(result.liveState).length > 0) {
+      lines.push('', '## Live state', '```json', JSON.stringify(result.liveState, null, 2), '```');
+    }
     if (result.nextToolSuggestions.length > 0) {
       lines.push('', '## Suggested next calls', '');
       for (const s of result.nextToolSuggestions) {

@@ -404,73 +404,116 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.subscribers) {
-      lines.push(`# Subscribers (${result.subscribers.length} of ${result.totalItems ?? '?'})`, '');
-      for (const s of result.subscribers) {
-        lines.push(`- **${s.email}** — ${s.status}${s.fullName ? ` (${s.fullName})` : ''}`);
-      }
-    } else if (result.subscriber && ['get', 'update'].includes(result.operation)) {
-      const s = result.subscriber;
-      lines.push(`# ${s.email}`, '', `**Status:** ${s.status}  `);
-      if (s.fullName) lines.push(`**Name:** ${s.fullName}  `);
-      if (typeof s.memberRating === 'number') lines.push(`**Rating:** ${s.memberRating}/5  `);
-      if (s.language) lines.push(`**Language:** ${s.language}  `);
-      if (s.vip) lines.push(`**VIP:** yes  `);
-      if (s.timestampSignup) lines.push(`**Signed up:** ${s.timestampSignup}  `);
-      if (s.timestampOpt) lines.push(`**Opted in:** ${s.timestampOpt}  `);
-      if (s.lastChanged) lines.push(`**Last changed:** ${s.lastChanged}  `);
-      if (s.mergeFields && Object.keys(s.mergeFields).length > 0) {
-        lines.push('', '**Merge fields**');
-        for (const [k, v] of Object.entries(s.mergeFields)) {
-          if (v === '' || v === null || v === undefined) continue;
-          lines.push(`- ${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
-        }
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+
+    const renderSummary = (s: z.infer<typeof SubscriberSummarySchema>, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
+      lines.push(
+        `${prefix}**${s.email}** [${s.id}] — ${s.status}${s.fullName ? ` (${s.fullName})` : ''}`,
+      );
+      const meta: string[] = [];
+      if (typeof s.memberRating === 'number') meta.push(`rating ${s.memberRating}/5`);
+      if (s.language) meta.push(`lang ${s.language}`);
+      if (typeof s.vip === 'boolean') meta.push(`vip ${s.vip}`);
+      if (s.source) meta.push(`source ${s.source}`);
+      if (typeof s.tagsCount === 'number') meta.push(`tagsCount ${s.tagsCount}`);
+      if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
+      const stamps: string[] = [];
+      if (s.timestampSignup) stamps.push(`signed up ${s.timestampSignup}`);
+      if (s.timestampOpt) stamps.push(`opted in ${s.timestampOpt}`);
+      if (s.lastChanged) stamps.push(`last changed ${s.lastChanged}`);
+      if (stamps.length > 0) lines.push(`${indent}${stamps.join(' · ')}`);
+      if (s.stats) {
+        const st: string[] = [];
+        if (typeof s.stats.avgOpenRate === 'number')
+          st.push(`avgOpenRate ${(s.stats.avgOpenRate * 100).toFixed(2)}%`);
+        if (typeof s.stats.avgClickRate === 'number')
+          st.push(`avgClickRate ${(s.stats.avgClickRate * 100).toFixed(2)}%`);
+        if (st.length > 0) lines.push(`${indent}Stats: ${st.join(', ')}`);
       }
       if (s.tags && s.tags.length > 0) {
-        lines.push('', `**Tags:** ${s.tags.map((t) => t.name).join(', ')}`);
+        lines.push(`${indent}Tags: ${s.tags.map((t) => `${t.name} [id:${t.id}]`).join(', ')}`);
       }
-      if (s.stats) {
-        lines.push('', '**Engagement**');
-        if (typeof s.stats.avgOpenRate === 'number')
-          lines.push(`- Avg open rate: ${(s.stats.avgOpenRate * 100).toFixed(2)}%`);
-        if (typeof s.stats.avgClickRate === 'number')
-          lines.push(`- Avg click rate: ${(s.stats.avgClickRate * 100).toFixed(2)}%`);
+      if (s.mergeFields) {
+        const entries = Object.entries(s.mergeFields)
+          .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+          .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+        lines.push(
+          `${indent}Merge fields: ${entries.length > 0 ? entries.join(', ') : '(none populated)'}`,
+        );
       }
-    } else if (result.operation === 'archive') {
-      lines.push('Subscriber archived. The record is preserved; they can resubscribe later.');
-    } else if (result.operation === 'list-tags' && result.tagsActive) {
-      lines.push(`# Tags (${result.tagsActive.length})`, '');
-      for (const t of result.tagsActive)
-        lines.push(`- ${t.name}${t.dateAdded ? ` (since ${t.dateAdded})` : ''}`);
-    } else if (result.operation === 'set-tags') {
-      lines.push('Tags synced.');
-      if (result.tagsAdded?.length) lines.push(`**Added:** ${result.tagsAdded.join(', ')}`);
-      if (result.tagsRemoved?.length) lines.push(`**Removed:** ${result.tagsRemoved.join(', ')}`);
-      if (!result.tagsAdded?.length && !result.tagsRemoved?.length)
-        lines.push('_No changes — the provided tag set was already active._');
-    } else if (result.operation === 'list-notes' && result.notes) {
-      lines.push(`# Notes (${result.notes.length})`, '');
+    };
+
+    if (result.subscribers) {
+      lines.push(`# Subscribers (${result.subscribers.length} of ${result.totalItems ?? '?'})`, '');
+      for (const s of result.subscribers) renderSummary(s, true);
+    }
+
+    if (result.subscriber) {
+      if (result.subscribers) lines.push('');
+      lines.push(`# ${result.subscriber.email}`, '');
+      renderSummary(result.subscriber, false);
+    }
+
+    if (result.tagsActive) {
+      lines.push('', `# Tags active (${result.tagsActive.length})`, '');
+      for (const t of result.tagsActive) {
+        const idPart = typeof t.id === 'number' ? ` [id:${t.id}]` : '';
+        lines.push(`- ${t.name}${idPart}${t.dateAdded ? ` (since ${t.dateAdded})` : ''}`);
+      }
+    }
+
+    if (result.tagsAdded !== undefined || result.tagsRemoved !== undefined) {
+      lines.push('', 'Tags sync:');
+      if (result.tagsAdded) {
+        lines.push(
+          `**tagsAdded:** ${result.tagsAdded.length > 0 ? result.tagsAdded.join(', ') : '(none)'}`,
+        );
+      }
+      if (result.tagsRemoved) {
+        lines.push(
+          `**tagsRemoved:** ${result.tagsRemoved.length > 0 ? result.tagsRemoved.join(', ') : '(none)'}`,
+        );
+      }
+    }
+
+    if (result.notes) {
+      lines.push('', `# Notes (${result.notes.length})`, '');
       for (const n of result.notes) {
-        lines.push(`**#${n.id}** ${n.createdAt ?? ''}${n.createdBy ? ` — ${n.createdBy}` : ''}`);
+        const meta: string[] = [];
+        if (n.createdAt) meta.push(`createdAt ${n.createdAt}`);
+        if (n.updatedAt) meta.push(`updatedAt ${n.updatedAt}`);
+        if (n.createdBy) meta.push(`createdBy ${n.createdBy}`);
+        lines.push(`**#${n.id}** ${meta.join(' · ')}`);
         lines.push(`> ${n.note}`, '');
       }
-    } else if (['add-note', 'update-note'].includes(result.operation) && result.note) {
-      lines.push(`Note #${result.note.id} saved.`, '', `> ${result.note.note}`);
-    } else if (result.operation === 'delete-note') {
-      lines.push('Note deleted.');
-    } else if (result.operation === 'list-activity' && result.activity) {
-      lines.push(`# Activity (${result.activity.length} events)`, '');
-      for (const a of result.activity) lines.push(`- ${JSON.stringify(a)}`);
-    } else if (result.operation === 'list-events' && result.events) {
-      lines.push(`# Events (${result.events.length})`, '');
-      for (const e of result.events) lines.push(`- ${JSON.stringify(e)}`);
-    } else if (result.operation === 'list-goals' && result.goals) {
-      lines.push(`# Goals (${result.goals.length})`, '');
-      for (const g of result.goals) lines.push(`- ${JSON.stringify(g)}`);
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
     }
+
+    if (result.note) {
+      lines.push('', `Note #${result.note.id} saved.`);
+      if (result.note.createdAt) lines.push(`_createdAt: ${result.note.createdAt}_`);
+      lines.push('', `> ${result.note.note}`);
+    }
+
+    if (result.activity) {
+      lines.push('', `# Activity (${result.activity.length} events)`, '');
+      for (const a of result.activity) lines.push(`- ${JSON.stringify(a)}`);
+    }
+
+    if (result.events) {
+      lines.push('', `# Events (${result.events.length})`, '');
+      for (const e of result.events) lines.push(`- ${JSON.stringify(e)}`);
+    }
+
+    if (result.goals) {
+      lines.push('', `# Goals (${result.goals.length})`, '');
+      for (const g of result.goals) lines.push(`- ${JSON.stringify(g)}`);
+    }
+
+    if (typeof result.archived === 'boolean') lines.push('', `_Archived: ${result.archived}_`);
+    if (typeof result.deleted === 'boolean') lines.push(`_Deleted: ${result.deleted}_`);
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

@@ -185,19 +185,24 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.mergeFields) {
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    if (result.mergeFields) {
       lines.push(
         `# Merge fields (${result.mergeFields.length} of ${result.totalItems ?? '?'})`,
         '',
       );
       for (const m of result.mergeFields) {
         const req = m.required ? ' (required)' : '';
-        lines.push(`- \`${m.tag}\` — ${m.name} [${m.type}]${req}`);
+        const pub = typeof m.public === 'boolean' ? ` public: ${m.public}` : '';
+        const def = m.defaultValue ? ` default: "${m.defaultValue}"` : '';
+        const ord = typeof m.displayOrder === 'number' ? ` order: ${m.displayOrder}` : '';
+        lines.push(`- [${m.mergeId}] \`${m.tag}\` — ${m.name} [${m.type}]${req}${pub}${def}${ord}`);
         if (m.helpText) lines.push(`  _${m.helpText}_`);
       }
-    } else if (result.mergeField) {
+    }
+    if (result.mergeField) {
       const m = result.mergeField;
+      if (result.mergeFields) lines.push('');
       lines.push(
         `# \`${m.tag}\` — ${m.name}`,
         '',
@@ -206,11 +211,10 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
       );
       if (typeof m.required === 'boolean')
         lines.push(`**Required:** ${m.required ? 'yes' : 'no'}  `);
-      if (typeof m.public === 'boolean') lines.push(`**Public:** ${m.public ? 'yes' : 'no'}  `);
-      if (m.defaultValue) lines.push(`**Default:** ${m.defaultValue}  `);
-      if (m.helpText) lines.push('', `> ${m.helpText}`);
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
+      if (typeof m.public === 'boolean') lines.push(`**Public:** ${m.public}  `);
+      if (m.defaultValue) lines.push(`**Default value:** ${m.defaultValue}  `);
+      if (typeof m.displayOrder === 'number') lines.push(`**Display order:** ${m.displayOrder}  `);
+      if (m.helpText) lines.push(`**Help text:** ${m.helpText}  `);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

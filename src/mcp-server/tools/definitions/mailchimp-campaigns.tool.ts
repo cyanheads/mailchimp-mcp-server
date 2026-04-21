@@ -362,36 +362,55 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   },
 
   format: (result) => {
-    const lines: string[] = [];
-    if (result.operation === 'list' && result.campaigns) {
+    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+
+    const renderSummary = (c: z.infer<typeof CampaignSummarySchema>, bullet: boolean): void => {
+      const prefix = bullet ? '- ' : '';
+      const indent = bullet ? '  ' : '';
+      const subj = c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? '(untitled)');
+      const titleAlt =
+        c.subjectLine && c.title && c.title !== c.subjectLine ? ` [title: ${c.title}]` : '';
+      const webIdPart = typeof c.webId === 'number' ? ` webId:${c.webId}` : '';
+      lines.push(
+        `${prefix}**${subj}**${titleAlt} (\`${c.id}\`)${webIdPart} — type:${c.type}, status:${c.status}`,
+      );
+      const meta: string[] = [];
+      if (c.fromName) meta.push(`from ${c.fromName}`);
+      if (c.audienceName) meta.push(`audience ${c.audienceName} (\`${c.audienceId ?? ''}\`)`);
+      else if (c.audienceId) meta.push(`audienceId ${c.audienceId}`);
+      if (c.segmentText) meta.push(`segment: ${c.segmentText}`);
+      if (typeof c.recipientCount === 'number') meta.push(`recipientCount ${c.recipientCount}`);
+      if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
+      const times: string[] = [];
+      if (c.createTime) times.push(`created ${c.createTime}`);
+      if (c.sendTime) times.push(`sent ${c.sendTime}`);
+      if (typeof c.emailsSent === 'number') times.push(`emailsSent ${c.emailsSent}`);
+      if (times.length > 0) lines.push(`${indent}${times.join(' · ')}`);
+      const rates: string[] = [];
+      if (typeof c.openRate === 'number') rates.push(`openRate ${(c.openRate * 100).toFixed(2)}%`);
+      if (typeof c.clickRate === 'number')
+        rates.push(`clickRate ${(c.clickRate * 100).toFixed(2)}%`);
+      if (rates.length > 0) lines.push(`${indent}${rates.join(' · ')}`);
+      if (c.archiveUrl) lines.push(`${indent}archiveUrl: ${c.archiveUrl}`);
+    };
+
+    if (result.campaigns) {
       lines.push(`# Campaigns (${result.campaigns.length} of ${result.totalItems ?? '?'})`, '');
-      for (const c of result.campaigns) {
-        const subj = c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? '(untitled)');
-        lines.push(
-          `- **${subj}** (\`${c.id}\`) — ${c.type}, ${c.status}${c.sendTime ? `, sent ${c.sendTime}` : ''}`,
-        );
-      }
-    } else if (result.campaign) {
+      for (const c of result.campaigns) renderSummary(c, true);
+    }
+
+    if (result.campaign) {
+      if (result.campaigns) lines.push('');
       const c = result.campaign;
       lines.push(`# ${c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? 'Campaign')}`, '');
-      lines.push(`**ID:** ${c.id} · **Type:** ${c.type} · **Status:** ${c.status}  `);
-      if (c.fromName) lines.push(`**From:** ${c.fromName}  `);
-      if (c.audienceName)
-        lines.push(`**Audience:** ${c.audienceName} (\`${c.audienceId ?? ''}\`)  `);
-      if (c.segmentText) lines.push(`**Segment:** ${c.segmentText}  `);
-      if (typeof c.recipientCount === 'number') lines.push(`**Recipients:** ${c.recipientCount}  `);
-      if (c.sendTime) lines.push(`**Sent:** ${c.sendTime}  `);
-      if (typeof c.emailsSent === 'number') lines.push(`**Emails sent:** ${c.emailsSent}  `);
-      if (typeof c.openRate === 'number')
-        lines.push(`**Open rate:** ${(c.openRate * 100).toFixed(2)}%  `);
-      if (typeof c.clickRate === 'number')
-        lines.push(`**Click rate:** ${(c.clickRate * 100).toFixed(2)}%  `);
-      if (c.archiveUrl) lines.push('', `[Archive](${c.archiveUrl})`);
-    } else if (result.content) {
-      lines.push('# Campaign content', '');
+      renderSummary(c, false);
+    }
+
+    if (result.content) {
+      lines.push('', '# Campaign content', '');
       if (result.content.plainText) {
         lines.push(
-          '**Plaintext preview:**',
+          '**plainText preview:**',
           '```',
           result.content.plainText.slice(0, 1000),
           '```',
@@ -399,18 +418,28 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
         );
       }
       if (result.content.html) {
-        lines.push(`**HTML size:** ${result.content.html.length} chars`);
-        lines.push('(HTML body omitted from inline preview.)');
+        const h = result.content.html;
+        lines.push(`**html** (${h.length} chars preview):`, '```html', h.slice(0, 500), '```', '');
       }
-    } else if (result.checklist) {
-      lines.push(`# Send checklist — ${result.checklist.isReady ? '✅ ready' : '⚠️ not ready'}`, '');
+      if (result.content.archiveHtml) {
+        const a = result.content.archiveHtml;
+        lines.push(`**archiveHtml** (${a.length} chars preview):`, '```', a.slice(0, 200), '```');
+      }
+    }
+
+    if (result.checklist) {
+      lines.push(
+        '',
+        `# Send checklist — isReady: ${result.checklist.isReady ? '✅ ready' : '⚠️ not ready'}`,
+        '',
+      );
       for (const item of result.checklist.items) {
         const icon = item.type === 'success' ? '✓' : item.type === 'warning' ? '⚠' : '✗';
-        lines.push(`- ${icon} **${item.heading}** — ${item.details}`);
+        const idPart = typeof item.id === 'number' ? ` [id:${item.id}]` : '';
+        lines.push(`- ${icon} [${item.type}]${idPart} **${item.heading}** — ${item.details}`);
       }
-    } else {
-      lines.push(`Operation \`${result.operation}\` completed.`);
     }
+
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
 });

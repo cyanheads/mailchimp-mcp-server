@@ -185,7 +185,9 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
       lines.push('', `## Succeeded (${result.succeeded.length})`, '');
       const sample = result.succeeded.slice(0, 25);
       for (const s of sample) {
-        lines.push(`- \`${s.email}\` — ${s.status}${s.isNew ? ' (new)' : ' (updated)'}`);
+        lines.push(
+          `- \`${s.email}\` [${s.subscriberId}] — ${s.status}${s.isNew ? ' (new)' : ' (updated)'}`,
+        );
       }
       if (result.succeeded.length > sample.length)
         lines.push(`- …and ${result.succeeded.length - sample.length} more.`);

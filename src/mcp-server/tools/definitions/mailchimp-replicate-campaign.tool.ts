@@ -343,13 +343,20 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     if (result.testsSentTo && result.testsSentTo.length > 0)
       lines.push(`**Test sent to:** ${result.testsSentTo.join(', ')}  `);
     if (result.archiveUrl) lines.push(`**Archive:** ${result.archiveUrl}  `);
+    if (typeof result.webId === 'number') lines.push(`**Web ID:** ${result.webId}  `);
     if (result.webUrl) lines.push(`**Mailchimp UI:** ${result.webUrl}  `);
     if (result.checklistWarnings.length > 0) {
       lines.push('', `## Checklist warnings (${result.checklistWarnings.length})`, '');
       for (const w of result.checklistWarnings) {
         const icon = w.type === 'warning' ? '⚠' : w.type === 'error' ? '✗' : '·';
-        lines.push(`- ${icon} **${w.heading}** — ${w.details}`);
+        lines.push(`- ${icon} [${w.type}] **${w.heading}** — ${w.details}`);
       }
+    }
+    if (result.cleanedUp) {
+      lines.push(
+        '',
+        '> Replica draft was deleted after a mid-flow failure (`cleanupOnError: true`).',
+      );
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

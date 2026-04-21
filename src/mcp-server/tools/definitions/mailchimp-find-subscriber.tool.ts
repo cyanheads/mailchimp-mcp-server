@@ -134,7 +134,12 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
   },
 
   format: (result) => {
-    const lines: string[] = [`# \`${result.email}\``, '', `Searched: ${result.searchedAcross}`];
+    const lines: string[] = [
+      `# \`${result.email}\``,
+      '',
+      `Searched: ${result.searchedAcross}`,
+      `Total matches: ${result.totalMatches}`,
+    ];
     if (result.totalMatches === 0) {
       lines.push('', '_No matches._');
       return [{ type: 'text', text: lines.join('\n') }];
@@ -145,13 +150,26 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
         `  Audience: \`${m.audienceId}\` · Subscriber: \`${m.subscriberId}\``,
       ];
       if (typeof m.memberRating === 'number') sub.push(`  Rating: ${m.memberRating}/5`);
+      if (m.language) sub.push(`  Language: ${m.language}`);
+      if (typeof m.vip === 'boolean') sub.push(`  VIP: ${m.vip}`);
+      if (m.source) sub.push(`  Source: ${m.source}`);
+      if (m.timestampSignup) sub.push(`  Signed up: ${m.timestampSignup}`);
       if (m.timestampOpt) sub.push(`  Opted in: ${m.timestampOpt}`);
+      if (m.lastChanged) sub.push(`  Last changed: ${m.lastChanged}`);
+      if (m.stats) {
+        const parts: string[] = [];
+        if (typeof m.stats.avgOpenRate === 'number')
+          parts.push(`avgOpenRate ${(m.stats.avgOpenRate * 100).toFixed(2)}%`);
+        if (typeof m.stats.avgClickRate === 'number')
+          parts.push(`avgClickRate ${(m.stats.avgClickRate * 100).toFixed(2)}%`);
+        if (parts.length > 0) sub.push(`  Stats: ${parts.join(', ')}`);
+      }
       if (m.tags && m.tags.length > 0) sub.push(`  Tags: ${m.tags.join(', ')}`);
-      if (m.mergeFields && Object.keys(m.mergeFields).length > 0) {
+      if (m.mergeFields) {
         const kv = Object.entries(m.mergeFields)
           .filter(([, v]) => v !== '' && v !== null && v !== undefined)
           .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
-        if (kv.length > 0) sub.push(`  Merge: ${kv.join(', ')}`);
+        sub.push(`  Merge fields: ${kv.length > 0 ? kv.join(', ') : '(none populated)'}`);
       }
       return sub;
     };
