@@ -9,6 +9,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const ModeSchema = z
@@ -21,13 +22,8 @@ const ContentSchema = z
   .object({
     html: z.string().optional().describe('Full HTML body. Mailchimp renders as-is.'),
     plainText: z.string().optional().describe('Plaintext body. Required for `type: plaintext`.'),
-    templateId: z.number().int().optional().describe('Template ID to use as the base.'),
-    templateSections: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe(
-        'Per-section overrides when using `templateId` (Mailchimp drag-and-drop sections).',
-      ),
+    templateId: z.coerce.number().int().optional().describe('Template ID to use as the base.'),
+    templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
   })
   .describe('Campaign content. Provide at least one of html / plainText / templateId.');
 
@@ -45,7 +41,7 @@ const InputSchema = z.object({
     .enum(['regular', 'plaintext', 'rss'])
     .default('regular')
     .describe('Campaign type. Only `regular`/`plaintext`/`rss` are supported (A/B is paid).'),
-  segmentId: z
+  segmentId: z.coerce
     .number()
     .int()
     .optional()

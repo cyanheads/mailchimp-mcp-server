@@ -9,6 +9,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Campaign } from '@/services/mailchimp/types.js';
 
@@ -37,7 +38,7 @@ const CampaignTypeSchema = z
 
 const RecipientsSchema = z.object({
   listId: z.string().describe('Audience (list) ID.'),
-  savedSegmentId: z
+  savedSegmentId: z.coerce
     .number()
     .int()
     .optional()
@@ -54,17 +55,22 @@ const SettingsSchema = z.object({
   authenticate: z.boolean().optional(),
   autoFooter: z.boolean().optional(),
   inlineCss: z.boolean().optional(),
-  templateId: z.number().int().optional(),
+  templateId: z.coerce
+    .number()
+    .int()
+    .optional()
+    .describe('Saved-template ID to base this campaign on.'),
 });
 
 const ContentSchema = z.object({
   html: z.string().optional(),
   plainText: z.string().optional(),
-  templateId: z.number().int().optional(),
-  templateSections: z
-    .record(z.string(), z.unknown())
+  templateId: z.coerce
+    .number()
+    .int()
     .optional()
-    .describe('Per-section overrides when using `templateId`.'),
+    .describe('Saved-template ID to render this campaign from.'),
+  templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
   archiveContent: z.string().optional().describe('Base64-encoded zip or HTML archive.'),
   archiveType: z.string().optional(),
   url: z.string().optional().describe('Fetch HTML from a URL.'),
@@ -96,8 +102,14 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('Filter `list` to campaigns sent before this ISO 8601 timestamp.'),
-  count: z.number().int().min(1).max(1000).default(10).describe('Page size for `list`. Max 1000.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
+  count: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(1000)
+    .default(10)
+    .describe('Page size for `list`. Max 1000.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
 const CampaignSummarySchema = z.object({
