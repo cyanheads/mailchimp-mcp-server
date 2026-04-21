@@ -2,6 +2,30 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.5 — 2026-04-21
+
+### Changed
+
+- **Bumped `@cyanheads/mcp-ts-core` `^0.5.0` → `^0.5.2`.** 0.5.2 adds a `format-parity` definition-lint rule that fails startup when a tool's `output` schema contains any terminal field not rendered by `format()` — since most LLM clients only forward `content[]` (not `structuredContent`), fields in the schema but absent from `format()` are invisible to the model. Full framework CHANGELOG: [cyanheads/mcp-ts-core](https://github.com/cyanheads/mcp-ts-core/blob/main/CHANGELOG.md).
+- **Rewrote `format()` for every tool to satisfy `format-parity` the right way — enriching the rendered text, not loosening the schema.** Zero uses of `z.object({}).passthrough()` or schema-field deletions (the "escape hatch" called out in [cyanheads/mcp-ts-core#37](https://github.com/cyanheads/mcp-ts-core/issues/37)). All Zod `output` shapes are unchanged; only the rendering layer was expanded.
+  - **Presence-based rendering for operation-enum tools.** `mailchimp_account`, `mailchimp_audiences`, `mailchimp_campaigns`, `mailchimp_merge_fields`, `mailchimp_reports`, `mailchimp_segments`, `mailchimp_subscribers`, `mailchimp_templates` — the old `if (result.operation === 'X') { ... } else if (result.operation === 'Y') { ... }` branching satisfied the lint rule's synthetic sample for only the first branch, hiding every other branch's fields. Each `format()` is now driven by field presence (`if (result.subscribers) { ... } if (result.subscriber) { ... }`), so all declared fields render when populated. Factored out a local `renderSummary(item, bullet)` helper per tool to render list-item and detail-view shapes consistently.
+  - **`mailchimp_audience_overview`:** now surfaces `visibility`, the `contact.*` CAN-SPAM block, `stats.avgSubRate`/`avgUnsubRate`, and an `existing` column in the growth table.
+  - **`mailchimp_campaign_report`:** now renders `type`, `industryBenchmarks.abuseRate`, `topClickedLinks[].clickPercentage`, and both `region` and `regionName` on top locations (previously `regionName ?? region` silently dropped one).
+  - **`mailchimp_search`:** changed `if (members) ... else if (campaigns)` to render both branches when present, added `subscriberId` to member match lines and `type` / title-alt fallback to campaign match lines.
+  - **`mailchimp_playbook`:** `format()` now echoes `topic` and appends a `## Live state` JSON block so the agent can verify the data the walkthrough was built from.
+  - **`mailchimp_campaigns`:** `content.html`/`content.archiveHtml` now render a fenced-code preview with explicit size, satisfying the rule's strict string-sentinel match (length-only rendering was dropping the sentinel).
+  - **`mailchimp_send_campaign`, `mailchimp_replicate_campaign`:** checklist warning lines now include the `[type]` severity tag (success/warning/error); replicate adds the `cleanedUp` post-failure blurb; both render `webId` alongside the UI deep link.
+  - **`mailchimp_find_subscriber`, `mailchimp_subscribers`, `mailchimp_upsert_subscriber`, `mailchimp_import_subscribers`:** expanded match / summary lines to cover every member field declared in the output schema — `language`, `vip`, `source`, `lastChanged`, `timestampSignup`, `stats.avgOpenRate`/`avgClickRate`, tag `id`s, and merge-field key=value pairs (with an explicit `(none populated)` marker so the `mergeFields` key name survives when the record is empty).
+- **Skills synced from `@cyanheads/mcp-ts-core` 0.5.2:** `add-tool` v1.4→v1.5, `api-config` v1.1→v1.2, `field-test` v1.1→v1.2, `polish-docs-meta` v1.3→v1.4 (substantial README-reference rewrite), `setup` v1.2→v1.3. Also refreshed `.claude/skills/` (Phase B propagation).
+
+### Removed
+
+- **`skills/devcheck/`** deleted — the upstream skill was dropped in mcp-ts-core 0.5.2 (["The skill was a thin restatement of CLAUDE.md's Commands table"](https://github.com/cyanheads/mcp-ts-core/blob/main/CHANGELOG.md)). Removed from both `skills/` and `.claude/skills/` to match the new package shape.
+
+### Fixed
+
+- **`mailchimp_campaigns` no longer renders a redundant `[title: X]` tag when `title` equals `subjectLine`.** The comparison was against the quote-wrapped display string (`"subjectLine"`), so it always mismatched even when title and subject were the same. Now compares raw `c.title` against raw `c.subjectLine`.
+
 ## 0.2.4 — 2026-04-20
 
 ### Fixed
