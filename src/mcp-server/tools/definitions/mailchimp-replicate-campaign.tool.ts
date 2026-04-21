@@ -7,6 +7,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const ModeSchema = z
@@ -17,10 +18,14 @@ const ModeSchema = z
 
 const ContentOverrideSchema = z
   .object({
-    html: z.string().optional(),
-    plainText: z.string().optional(),
-    templateId: z.number().int().optional(),
-    templateSections: z.record(z.string(), z.unknown()).optional(),
+    html: z.string().optional().describe('Full HTML body replacement.'),
+    plainText: z.string().optional().describe('Plaintext body replacement.'),
+    templateId: z.coerce
+      .number()
+      .int()
+      .optional()
+      .describe('Saved-template ID to render the replica from instead of the original content.'),
+    templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
   })
   .describe("Content replacement. Omit to keep the source campaign's content.");
 
@@ -54,7 +59,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('New audience ID. Omit to keep the source audience.'),
-  segmentOverride: z
+  segmentOverride: z.coerce
     .number()
     .int()
     .optional()
