@@ -64,14 +64,14 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('Filter `list` to reports for campaigns sent after this ISO 8601 timestamp.'),
-  count: z
+  count: z.coerce
     .number()
     .int()
     .min(1)
     .max(1000)
     .default(20)
     .describe('Page size for list-style reads. Max 1000.'),
-  offset: z.number().int().min(0).default(0).describe('Offset for list-style pagination.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style pagination.'),
 });
 
 const ReportSummarySchema = z.object({

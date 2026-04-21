@@ -83,14 +83,14 @@ const InputSchema = z.object({
   notifyOnSubscribe: z.string().optional().describe('Email to notify on subscribe.'),
   notifyOnUnsubscribe: z.string().optional().describe('Email to notify on unsubscribe.'),
   visibility: z.enum(['pub', 'prv']).optional().describe('`pub` (public) or `prv` (private).'),
-  count: z
+  count: z.coerce
     .number()
     .int()
     .min(1)
     .max(1000)
     .default(10)
     .describe('Page size for list-style reads. Max 1000 (Mailchimp cap).'),
-  offset: z.number().int().min(0).default(0).describe('Offset for list-style reads.'),
+  offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
   signupFormConfig: z
     .object({
       type: z
