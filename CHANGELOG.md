@@ -2,6 +2,20 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.6 — 2026-04-21
+
+### Changed
+
+- **Bumped `@cyanheads/mcp-ts-core` `^0.5.2` → `^0.6.3`.** Six upstream releases of polish, additive features, and no breaking changes for consumers. Highlights: HTTP-mode servers now auto-serve an HTML landing page at `/` and a SEP-1649 Server Card at `/.well-known/mcp.json` ([0.6.0](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.6.x/0.6.0.md)); definition-linter diagnostics now embed a `See: skills/api-linter/SKILL.md#<rule>` breadcrumb ([0.5.4](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.5.x/0.5.4.md)); `ToolDefinition` / `ResourceDefinition` / `PromptDefinition` gained an optional `sourceUrl` field for landing-page view-source overrides ([0.6.3](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.6.x/0.6.3.md)). Full per-version notes in `node_modules/@cyanheads/mcp-ts-core/changelog/`.
+- **Bumped `vitest` `^4.1.4` → `^4.1.5`.** Pure bug-fix patch.
+- **`CLAUDE.md` `format()` checklist item** rewritten to the dual-surface framing ("Claude Code → `structuredContent`, Claude Desktop → `content[]`; both must carry the same data"), replacing the older "`content[]` is the only field most clients forward" wording — see framework [0.5.3](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.5.x/0.5.3.md).
+- **Skills synced from `@cyanheads/mcp-ts-core` 0.6.3:** `add-app-tool` v1.2→v1.3, `add-prompt` v1.1→v1.2, `add-resource` v1.2→v1.3, `add-service` v1.2→v1.3, `add-tool` v1.5→v1.7, `api-context` v1.0→v1.1, `api-services` v1.2→v1.3, `api-utils` v2.0→v2.1, `design-mcp-server` v2.3→v2.5, `maintenance` v1.3→v1.4, `polish-docs-meta` v1.4→v1.6, `setup` v1.3→v1.4. `.claude/skills/` refreshed (Phase B).
+
+### Added
+
+- **`landing.envExample` in `createApp()` (`src/index.ts`).** Surfaces `MAILCHIMP_API_KEY` in the auto-generated STDIO / Claude CLI connect snippets on the landing page so new users see the one required env var without digging into docs. Feature from framework [0.6.1](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.6.x/0.6.1.md).
+- **New `api-linter` skill (v1.0)** — reference for every definition-linter rule ID (`format-parity`, `schema-*`, `name-*`, `server-json-*`, …). Added to both `skills/` and `.claude/skills/`, and registered in the CLAUDE.md skills table alongside the previously unlisted `migrate-mcp-ts-template`.
+
 ## 0.2.5 — 2026-04-21
 
 ### Changed

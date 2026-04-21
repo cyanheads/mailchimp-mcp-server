@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.2.5
+**Version:** 0.2.6
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
 
@@ -264,12 +264,14 @@ Available skills:
 | `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
+| `migrate-mcp-ts-template` | Migrate a legacy mcp-ts-template fork to use `@cyanheads/mcp-ts-core` as a package |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
 | `api-auth` | Auth modes, scopes, JWT/OAuth |
 | `api-config` | AppConfig, parseConfig, env vars |
 | `api-context` | Context interface, logger, state, progress |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
+| `api-linter` | MCP definition lint rules — every `format-parity`, `schema-*`, `name-*`, `server-json-*` rule ID the linter emits |
 | `api-services` | LLM, Speech, Graph services |
 | `api-testing` | createMockContext, test patterns |
 | `api-utils` | Formatting, parsing, security, pagination, scheduling |
@@ -335,7 +337,7 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 - [ ] JSDoc `@fileoverview` + `@module` on every file
 - [ ] `ctx.log` for logging — no `console`
 - [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch (except workflow tools that need to clean up drafts on failure)
-- [ ] `format()` renders all data the LLM needs — `content[]` is the only field most clients forward to the model
+- [ ] `format()` renders all data the LLM needs — different clients forward different surfaces (Claude Code → `structuredContent`, Claude Desktop → `content[]`); both must carry the same data
 - [ ] Mailchimp raw/domain/output schemas reviewed against real upstream sparsity/nullability (many fields are `null` or absent on free-tier accounts)
 - [ ] Normalization and `format()` preserve uncertainty — never fabricate metrics, counts, or timestamps from missing upstream data
 - [ ] Tests include at least one sparse payload case (empty audience, un-sent campaign, missing `industry_stats`, etc.)

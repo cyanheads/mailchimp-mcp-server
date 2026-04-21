@@ -15,6 +15,11 @@ await createApp({
   tools: allToolDefinitions,
   resources: allResourceDefinitions,
   prompts: allPromptDefinitions,
+  landing: {
+    envExample: {
+      MAILCHIMP_API_KEY: 'your-api-key-us21',
+    },
+  },
   async setup(core) {
     const serverConfig = getServerConfig();
     await initMailchimpService(serverConfig, core.logger);
