@@ -83,17 +83,22 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
-const MergeFieldSummarySchema = z.object({
-  mergeId: z.number(),
-  tag: z.string(),
-  name: z.string(),
-  type: z.string(),
-  required: z.boolean().optional(),
-  public: z.boolean().optional(),
-  defaultValue: z.string().optional(),
-  displayOrder: z.number().optional(),
-  helpText: z.string().optional(),
-});
+const MergeFieldSummarySchema = z
+  .object({
+    mergeId: z.number().describe('Merge-field ID.'),
+    tag: z.string().describe('Merge tag (e.g. `FNAME`, `EMAIL`).'),
+    name: z.string().describe('Human-readable name.'),
+    type: z.string().describe('Field type (`text`, `number`, `date`, `address`, …).'),
+    required: z.boolean().optional().describe('Whether the field is required at signup.'),
+    public: z.boolean().optional().describe('Whether the field is shown on public signup forms.'),
+    defaultValue: z.string().optional().describe('Default value when the subscriber has none.'),
+    displayOrder: z
+      .number()
+      .optional()
+      .describe('Display order on signup forms (lower is earlier).'),
+    helpText: z.string().optional().describe('Help text displayed next to the field.'),
+  })
+  .describe('Summary view of one merge-field definition.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,

@@ -74,18 +74,20 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style pagination.'),
 });
 
-const ReportSummarySchema = z.object({
-  id: z.string(),
-  campaignTitle: z.string().optional(),
-  subjectLine: z.string().optional(),
-  sendTime: z.string().optional(),
-  emailsSent: z.number().optional(),
-  openRate: z.number().optional(),
-  clickRate: z.number().optional(),
-  unsubscribed: z.number().optional(),
-  abuseReports: z.number().optional(),
-  audienceName: z.string().optional(),
-});
+const ReportSummarySchema = z
+  .object({
+    id: z.string().describe('Campaign ID the report is for.'),
+    campaignTitle: z.string().optional().describe('Internal campaign title.'),
+    subjectLine: z.string().optional().describe('Subject line as sent to recipients.'),
+    sendTime: z.string().optional().describe('ISO 8601 send timestamp.'),
+    emailsSent: z.number().optional().describe('Emails actually delivered.'),
+    openRate: z.number().optional().describe('Mean open rate (0–1).'),
+    clickRate: z.number().optional().describe('Mean click rate (0–1).'),
+    unsubscribed: z.number().optional().describe('Unsubscribes attributable to this campaign.'),
+    abuseReports: z.number().optional().describe('Abuse reports filed against this campaign.'),
+    audienceName: z.string().optional().describe('Human-readable audience (list) name.'),
+  })
+  .describe('Headline summary of one campaign report.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,

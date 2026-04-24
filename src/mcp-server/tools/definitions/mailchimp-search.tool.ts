@@ -29,23 +29,27 @@ const InputSchema = z.object({
     .describe('Max results to return.'),
 });
 
-const MemberMatchSchema = z.object({
-  audienceId: z.string(),
-  subscriberId: z.string(),
-  email: z.string(),
-  status: z.string(),
-  fullName: z.string().optional(),
-});
+const MemberMatchSchema = z
+  .object({
+    audienceId: z.string().describe('Audience (list) ID the match belongs to.'),
+    subscriberId: z.string().describe('Mailchimp subscriber ID (member hash).'),
+    email: z.string().describe('Subscriber email address.'),
+    status: z.string().describe('Current subscription status.'),
+    fullName: z.string().optional().describe('Full name from merge fields, if available.'),
+  })
+  .describe('One member hit from the global search.');
 
-const CampaignMatchSchema = z.object({
-  campaignId: z.string(),
-  type: z.string().optional(),
-  status: z.string().optional(),
-  subjectLine: z.string().optional(),
-  title: z.string().optional(),
-  sendTime: z.string().optional(),
-  snippet: z.string().optional(),
-});
+const CampaignMatchSchema = z
+  .object({
+    campaignId: z.string().describe('Campaign ID.'),
+    type: z.string().optional().describe('Campaign type (`regular`, `plaintext`, `rss`).'),
+    status: z.string().optional().describe('Campaign status (`save`, `sent`, …).'),
+    subjectLine: z.string().optional().describe('Subject line as sent.'),
+    title: z.string().optional().describe('Internal campaign title.'),
+    sendTime: z.string().optional().describe('ISO 8601 send timestamp.'),
+    snippet: z.string().optional().describe('Context snippet showing where the hit occurred.'),
+  })
+  .describe('One campaign hit from the global search.');
 
 const OutputSchema = z.object({
   scope: ScopeSchema,

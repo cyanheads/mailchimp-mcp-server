@@ -39,14 +39,16 @@ const InputSchema = z.object({
   email: z.string().optional().describe('Subscriber email. Needed for `subscriber-triage`.'),
 });
 
-const NextToolSchema = z.object({
-  tool: z.string().describe('Tool name to call next.'),
-  reason: z.string().describe('Why this tool, in the current context.'),
-  suggestedInput: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe('Prefilled input you can pass to the tool.'),
-});
+const NextToolSchema = z
+  .object({
+    tool: z.string().describe('Tool name to call next.'),
+    reason: z.string().describe('Why this tool, in the current context.'),
+    suggestedInput: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Prefilled input you can pass to the tool.'),
+  })
+  .describe('A recommended follow-up tool call, with reason and pre-filled arguments.');
 
 const OutputSchema = z.object({
   topic: TopicSchema,

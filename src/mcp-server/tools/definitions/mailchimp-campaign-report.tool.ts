@@ -67,41 +67,47 @@ const OutputSchema = z.object({
     .describe('Engagement metrics.'),
   topClickedLinks: z
     .array(
-      z.object({
-        url: z.string(),
-        totalClicks: z.number(),
-        uniqueClicks: z.number(),
-        clickPercentage: z.number().optional(),
-      }),
+      z
+        .object({
+          url: z.string().describe('Clicked URL.'),
+          totalClicks: z.number().describe('Total clicks (includes repeats).'),
+          uniqueClicks: z.number().describe('Unique clickers.'),
+          clickPercentage: z.number().optional().describe('Share of total clicks (0–1).'),
+        })
+        .describe('One clicked-link row.'),
     )
     .describe('Top clicked links, sorted by total clicks.'),
   topLocations: z
     .array(
-      z.object({
-        countryCode: z.string(),
-        region: z.string().optional(),
-        regionName: z.string().optional(),
-        opens: z.number(),
-      }),
+      z
+        .object({
+          countryCode: z.string().describe('Two-letter ISO country code.'),
+          region: z.string().optional().describe('Region code (e.g. US state abbreviation).'),
+          regionName: z.string().optional().describe('Full region name.'),
+          opens: z.number().describe('Opens from this location.'),
+        })
+        .describe('One per-location opens row.'),
     )
     .describe('Top subscriber locations by opens.'),
   recentUnsubscribes: z
     .array(
-      z.object({
-        email: z.string(),
-        reason: z.string().optional(),
-        timestamp: z.string().optional(),
-      }),
+      z
+        .object({
+          email: z.string().describe('Unsubscribing email address.'),
+          reason: z.string().optional().describe('Reason text the subscriber provided, if any.'),
+          timestamp: z.string().optional().describe('ISO 8601 timestamp of the unsubscribe.'),
+        })
+        .describe('One recent unsubscribe event.'),
     )
     .describe('Most recent unsubscribes with the reason subscribers gave, if any.'),
   industryBenchmarks: z
     .object({
-      type: z.string().optional(),
-      openRate: z.number().optional(),
-      clickRate: z.number().optional(),
-      bounceRate: z.number().optional(),
-      unsubRate: z.number().optional(),
-      abuseRate: z.number().optional(),
+      type: z.string().optional().describe('Industry label Mailchimp used for the benchmark.'),
+      openRate: z.number().optional().describe('Industry mean open rate (0–1).'),
+      clickRate: z.number().optional().describe('Industry mean click rate (0–1).'),
+      bounceRate: z.number().optional().describe('Industry mean bounce rate (0–1).'),
+      unsubRate: z.number().optional().describe('Industry mean unsubscribe rate (0–1).'),
+      abuseRate: z.number().optional().describe('Industry mean abuse rate (0–1).'),
     })
     .optional()
     .describe('Industry benchmarks Mailchimp reports alongside this campaign, when available.'),

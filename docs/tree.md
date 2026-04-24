@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-04-21 21:53:43
+Generated on: 2026-04-24 16:18:56
 
 ```text
 mailchimp-mcp-server/
@@ -20,7 +20,10 @@ mailchimp-mcp-server/
 │   ├── design.md
 │   └── email-design-playbook.md
 ├── scripts/
+│   ├── build-changelog.ts
 │   ├── build.ts
+│   ├── check-docs-sync.ts
+│   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
@@ -79,9 +82,13 @@ mailchimp-mcp-server/
 │   │   │   ├── readme.md
 │   │   │   └── server-json.md
 │   │   └── SKILL.md
+│   ├── release-and-publish/
+│   │   └── SKILL.md
 │   ├── report-issue-framework/
 │   │   └── SKILL.md
 │   ├── report-issue-local/
+│   │   └── SKILL.md
+│   ├── security-pass/
 │   │   └── SKILL.md
 │   └── setup/
 │       └── SKILL.md

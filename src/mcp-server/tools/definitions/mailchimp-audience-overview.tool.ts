@@ -34,62 +34,73 @@ const OutputSchema = z.object({
   listRating: z.number().optional().describe('Mailchimp list rating 0-5.'),
   stats: z
     .object({
-      memberCount: z.number().optional(),
-      unsubscribeCount: z.number().optional(),
-      cleanedCount: z.number().optional(),
-      campaignCount: z.number().optional(),
-      campaignLastSent: z.string().optional(),
-      openRate: z.number().optional(),
-      clickRate: z.number().optional(),
-      avgSubRate: z.number().optional(),
-      avgUnsubRate: z.number().optional(),
-      lastSubDate: z.string().optional(),
-      lastUnsubDate: z.string().optional(),
+      memberCount: z.number().optional().describe('Active subscribed members.'),
+      unsubscribeCount: z.number().optional().describe('Total members who have unsubscribed.'),
+      cleanedCount: z.number().optional().describe('Bounced/invalid emails cleaned from the list.'),
+      campaignCount: z.number().optional().describe('Campaigns ever sent to this audience.'),
+      campaignLastSent: z.string().optional().describe('ISO 8601 timestamp of the last send.'),
+      openRate: z.number().optional().describe('Mean open rate across campaigns (0–1).'),
+      clickRate: z.number().optional().describe('Mean click rate across campaigns (0–1).'),
+      avgSubRate: z.number().optional().describe('Mean monthly subscribes.'),
+      avgUnsubRate: z.number().optional().describe('Mean monthly unsubscribes.'),
+      lastSubDate: z.string().optional().describe('ISO 8601 of the most recent subscribe.'),
+      lastUnsubDate: z.string().optional().describe('ISO 8601 of the most recent unsubscribe.'),
     })
     .optional()
     .describe('Audience-level aggregated stats.'),
   contact: z
     .object({
-      company: z.string().optional(),
-      address1: z.string().optional(),
-      city: z.string().optional(),
-      state: z.string().optional(),
-      zip: z.string().optional(),
-      country: z.string().optional(),
+      company: z.string().optional().describe('Company or organization name.'),
+      address1: z.string().optional().describe('Street address line 1.'),
+      city: z.string().optional().describe('City.'),
+      state: z.string().optional().describe('State / province / region.'),
+      zip: z.string().optional().describe('Postal code.'),
+      country: z.string().optional().describe('Two-letter ISO country code.'),
     })
     .optional()
     .describe('Physical contact info required by CAN-SPAM (appears in the email footer).'),
   campaignDefaults: z
     .object({
-      fromName: z.string().optional(),
-      fromEmail: z.string().optional(),
-      subject: z.string().optional(),
-      language: z.string().optional(),
+      fromName: z.string().optional().describe('Default "From" display name.'),
+      fromEmail: z.string().optional().describe('Default "From" email address.'),
+      subject: z.string().optional().describe('Default subject line.'),
+      language: z.string().optional().describe('Default language code (e.g. `en`).'),
     })
     .optional()
     .describe('Default From/subject/language settings for new campaigns on this audience.'),
   growth: z
     .array(
-      z.object({
-        month: z.string(),
-        subscribed: z.number().optional(),
-        unsubscribed: z.number().optional(),
-        existing: z.number().optional(),
-        cleaned: z.number().optional(),
-      }),
+      z
+        .object({
+          month: z.string().describe('Year-month (`YYYY-MM`) for this bucket.'),
+          subscribed: z.number().optional().describe('New subscribers in the month.'),
+          unsubscribed: z.number().optional().describe('Unsubscribes in the month.'),
+          existing: z.number().optional().describe('Existing members carried in.'),
+          cleaned: z.number().optional().describe('Members cleaned (bounced) in the month.'),
+        })
+        .describe('One month of growth history.'),
     )
     .describe('Monthly growth history, most recent first.'),
   emailClients: z
-    .array(z.object({ client: z.string(), members: z.number() }))
+    .array(
+      z
+        .object({
+          client: z.string().describe('Email client name (e.g. `Apple Mail`, `Gmail`).'),
+          members: z.number().describe('Members using this client.'),
+        })
+        .describe('One email-client usage row.'),
+    )
     .describe('Top email clients used by subscribers.'),
   mergeFields: z
     .array(
-      z.object({
-        tag: z.string().describe('Merge-field tag (e.g. `FNAME`, `EMAIL`).'),
-        name: z.string().describe('Human-readable name.'),
-        type: z.string().describe('Field type (`text`, `number`, `date`, `address`, etc.).'),
-        required: z.boolean().optional(),
-      }),
+      z
+        .object({
+          tag: z.string().describe('Merge-field tag (e.g. `FNAME`, `EMAIL`).'),
+          name: z.string().describe('Human-readable name.'),
+          type: z.string().describe('Field type (`text`, `number`, `date`, `address`, etc.).'),
+          required: z.boolean().optional().describe('Whether this field is required at signup.'),
+        })
+        .describe('One merge-field definition.'),
     )
     .describe('Custom subscriber attributes defined on this audience.'),
   subscribeUrl: z.string().optional().describe('Long-form subscribe URL for sharing.'),

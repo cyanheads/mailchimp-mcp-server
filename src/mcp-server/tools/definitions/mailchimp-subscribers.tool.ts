@@ -83,28 +83,54 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
 });
 
-const SubscriberSummarySchema = z.object({
-  id: z.string().describe('Mailchimp subscriber ID (the member hash).'),
-  email: z.string(),
-  status: z.string(),
-  fullName: z.string().optional(),
-  vip: z.boolean().optional(),
-  language: z.string().optional(),
-  memberRating: z.number().optional(),
-  lastChanged: z.string().optional(),
-  source: z.string().optional(),
-  tagsCount: z.number().optional(),
-  timestampSignup: z.string().optional(),
-  timestampOpt: z.string().optional(),
-  mergeFields: z.record(z.string(), z.unknown()).optional(),
-  tags: z.array(z.object({ id: z.number(), name: z.string() })).optional(),
-  stats: z
-    .object({
-      avgOpenRate: z.number().optional(),
-      avgClickRate: z.number().optional(),
-    })
-    .optional(),
-});
+const SubscriberSummarySchema = z
+  .object({
+    id: z.string().describe('Mailchimp subscriber ID (the member hash).'),
+    email: z.string().describe('Subscriber email address.'),
+    status: z
+      .string()
+      .describe(
+        'Current status: `subscribed`, `unsubscribed`, `cleaned`, `pending`, or `transactional`.',
+      ),
+    fullName: z.string().optional().describe('Full name from merge fields, if available.'),
+    vip: z.boolean().optional().describe('Whether the subscriber is flagged as VIP.'),
+    language: z.string().optional().describe('ISO 639-1 language code.'),
+    memberRating: z.number().optional().describe('Mailchimp engagement rating 0–5.'),
+    lastChanged: z.string().optional().describe('ISO 8601 timestamp of the last profile change.'),
+    source: z.string().optional().describe('How the subscriber was added (e.g. `API`, `Import`).'),
+    tagsCount: z.number().optional().describe('Number of tags currently on the subscriber.'),
+    timestampSignup: z
+      .string()
+      .optional()
+      .describe('ISO 8601 timestamp when the subscriber signed up.'),
+    timestampOpt: z
+      .string()
+      .optional()
+      .describe('ISO 8601 timestamp when the subscriber opted in.'),
+    mergeFields: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Merge-field values keyed by tag (e.g. `FNAME`, `LNAME`).'),
+    tags: z
+      .array(
+        z
+          .object({
+            id: z.number().describe('Mailchimp tag ID.'),
+            name: z.string().describe('Tag name.'),
+          })
+          .describe('One tag currently attached to the subscriber.'),
+      )
+      .optional()
+      .describe('Tags currently on the subscriber.'),
+    stats: z
+      .object({
+        avgOpenRate: z.number().optional().describe('Subscriber mean open rate (0–1).'),
+        avgClickRate: z.number().optional().describe('Subscriber mean click rate (0–1).'),
+      })
+      .optional()
+      .describe('Per-subscriber engagement averages.'),
+  })
+  .describe('Summary view of one subscriber.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,
@@ -113,12 +139,14 @@ const OutputSchema = z.object({
   totalItems: z.number().optional().describe('Total items from Mailchimp (for list-style reads).'),
   tagsActive: z
     .array(
-      z.object({
-        /** Mailchimp tag ID. Omitted when the upstream response doesn't provide one (e.g. the `set-tags` sync endpoint returns names only). */
-        id: z.number().optional(),
-        name: z.string(),
-        dateAdded: z.string().optional(),
-      }),
+      z
+        .object({
+          /** Mailchimp tag ID. Omitted when the upstream response doesn't provide one (e.g. the `set-tags` sync endpoint returns names only). */
+          id: z.number().optional().describe('Mailchimp tag ID (omitted on `set-tags` responses).'),
+          name: z.string().describe('Tag name.'),
+          dateAdded: z.string().optional().describe('ISO 8601 timestamp the tag was added.'),
+        })
+        .describe('One active tag on the subscriber.'),
     )
     .optional()
     .describe(
@@ -128,21 +156,23 @@ const OutputSchema = z.object({
   tagsRemoved: z.array(z.string()).optional().describe('Tag names removed by `set-tags`.'),
   notes: z
     .array(
-      z.object({
-        id: z.number(),
-        note: z.string(),
-        createdAt: z.string().optional(),
-        updatedAt: z.string().optional(),
-        createdBy: z.string().optional(),
-      }),
+      z
+        .object({
+          id: z.number().describe('Note ID.'),
+          note: z.string().describe('Note body.'),
+          createdAt: z.string().optional().describe('ISO 8601 creation timestamp.'),
+          updatedAt: z.string().optional().describe('ISO 8601 last-updated timestamp.'),
+          createdBy: z.string().optional().describe('User who created the note.'),
+        })
+        .describe('One CRM-style note attached to the subscriber.'),
     )
     .optional()
     .describe('Populated for `list-notes`.'),
   note: z
     .object({
-      id: z.number(),
-      note: z.string(),
-      createdAt: z.string().optional(),
+      id: z.number().describe('Note ID.'),
+      note: z.string().describe('Note body.'),
+      createdAt: z.string().optional().describe('ISO 8601 creation timestamp.'),
     })
     .optional()
     .describe('Populated for `add-note`, `update-note`.'),

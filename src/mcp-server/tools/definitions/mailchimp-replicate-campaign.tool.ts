@@ -84,11 +84,13 @@ const InputSchema = z.object({
     .describe('Delete the replicated draft if the workflow fails mid-flight.'),
 });
 
-const ChecklistItemSchema = z.object({
-  type: z.enum(['success', 'warning', 'error']).describe('Severity of the checklist entry.'),
-  heading: z.string().describe('Short title of the checklist item.'),
-  details: z.string().describe('Full description of the checklist finding.'),
-});
+const ChecklistItemSchema = z
+  .object({
+    type: z.enum(['success', 'warning', 'error']).describe('Severity of the checklist entry.'),
+    heading: z.string().describe('Short title of the checklist item.'),
+    details: z.string().describe('Full description of the checklist finding.'),
+  })
+  .describe('One entry from the Mailchimp campaign send-checklist.');
 
 const OutputSchema = z.object({
   sourceCampaignId: z.string().describe('Source campaign ID that was replicated.'),

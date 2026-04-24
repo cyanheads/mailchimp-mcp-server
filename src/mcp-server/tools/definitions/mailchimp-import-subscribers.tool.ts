@@ -17,19 +17,21 @@ const StatusSchema = z
     "Status applied to every row. Defaults to `pending` — Mailchimp will email each recipient for double-opt-in confirmation. Pass `'subscribed'` ONLY when you have a clean record of consent.",
   );
 
-const SubscriberRowSchema = z.object({
-  email: z.string().describe('Email address.'),
-  status: StatusSchema.optional().describe(
-    'Per-row override. Falls back to the top-level `status`.',
-  ),
-  mergeFields: z
-    .record(z.string(), z.unknown())
-    .optional()
-    .describe('Merge-field values (e.g. `{ FNAME: "Ada" }`).'),
-  tags: z.array(z.string()).optional().describe('Tags to apply when `syncTags: true` (default).'),
-  language: z.string().optional(),
-  vip: z.boolean().optional(),
-});
+const SubscriberRowSchema = z
+  .object({
+    email: z.string().describe('Email address.'),
+    status: StatusSchema.optional().describe(
+      'Per-row override. Falls back to the top-level `status`.',
+    ),
+    mergeFields: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Merge-field values (e.g. `{ FNAME: "Ada" }`).'),
+    tags: z.array(z.string()).optional().describe('Tags to apply when `syncTags: true` (default).'),
+    language: z.string().optional().describe('ISO 639-1 language code for this subscriber.'),
+    vip: z.boolean().optional().describe('Mark this subscriber as VIP.'),
+  })
+  .describe('One subscriber row to upsert.');
 
 const InputSchema = z.object({
   audienceId: z.string().describe('Audience (list) ID.'),
@@ -71,21 +73,25 @@ const OutputSchema = z.object({
   statusApplied: z.string().describe('Top-level status applied to rows that did not override.'),
   succeeded: z
     .array(
-      z.object({
-        email: z.string(),
-        subscriberId: z.string(),
-        status: z.string(),
-        isNew: z.boolean(),
-      }),
+      z
+        .object({
+          email: z.string().describe('Email address.'),
+          subscriberId: z.string().describe('Mailchimp subscriber ID (member hash).'),
+          status: z.string().describe('Resulting status after import.'),
+          isNew: z.boolean().describe('True for newly-created rows; false when updating existing.'),
+        })
+        .describe('One successful upsert result.'),
     )
     .describe('Per-row result for successful upserts.'),
   failed: z
     .array(
-      z.object({
-        email: z.string(),
-        error: z.string(),
-        errorCode: z.string().optional(),
-      }),
+      z
+        .object({
+          email: z.string().describe('Email that failed.'),
+          error: z.string().describe('Human-readable error message from Mailchimp.'),
+          errorCode: z.string().optional().describe('Machine-readable Mailchimp error code.'),
+        })
+        .describe('One per-row failure.'),
     )
     .describe('Per-row failures with Mailchimp error code + message.'),
 });

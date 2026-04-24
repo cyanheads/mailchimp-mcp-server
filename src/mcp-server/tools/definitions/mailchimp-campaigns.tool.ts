@@ -46,15 +46,18 @@ const RecipientsSchema = z.object({
 });
 
 const SettingsSchema = z.object({
-  subjectLine: z.string().optional(),
-  previewText: z.string().optional(),
+  subjectLine: z.string().optional().describe('Email subject line as recipients see it.'),
+  previewText: z.string().optional().describe('Inbox preview / preheader text.'),
   title: z.string().optional().describe('Internal campaign title (not seen by recipients).'),
-  fromName: z.string().optional(),
-  replyTo: z.string().optional(),
+  fromName: z.string().optional().describe('Display name for the "From" field.'),
+  replyTo: z.string().optional().describe('Reply-To email address.'),
   toName: z.string().optional().describe('Personalization merge tag for the To field.'),
-  authenticate: z.boolean().optional(),
-  autoFooter: z.boolean().optional(),
-  inlineCss: z.boolean().optional(),
+  authenticate: z.boolean().optional().describe('Enable SPF/DKIM authentication on send.'),
+  autoFooter: z
+    .boolean()
+    .optional()
+    .describe('Automatically append the Mailchimp CAN-SPAM footer.'),
+  inlineCss: z.boolean().optional().describe('Inline CSS into HTML at render time.'),
   templateId: z.coerce
     .number()
     .int()
@@ -63,8 +66,8 @@ const SettingsSchema = z.object({
 });
 
 const ContentSchema = z.object({
-  html: z.string().optional(),
-  plainText: z.string().optional(),
+  html: z.string().optional().describe('Full campaign HTML body.'),
+  plainText: z.string().optional().describe('Plaintext body for the campaign.'),
   templateId: z.coerce
     .number()
     .int()
@@ -72,7 +75,7 @@ const ContentSchema = z.object({
     .describe('Saved-template ID to render this campaign from.'),
   templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
   archiveContent: z.string().optional().describe('Base64-encoded zip or HTML archive.'),
-  archiveType: z.string().optional(),
+  archiveType: z.string().optional().describe('MIME type of the archive (e.g. `zip`, `tar.gz`).'),
   url: z.string().optional().describe('Fetch HTML from a URL.'),
 });
 
@@ -112,32 +115,41 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
-const CampaignSummarySchema = z.object({
-  id: z.string(),
-  webId: z.number().optional(),
-  type: z.string(),
-  status: z.string(),
-  title: z.string().optional(),
-  subjectLine: z.string().optional(),
-  fromName: z.string().optional(),
-  createTime: z.string().optional(),
-  sendTime: z.string().optional(),
-  emailsSent: z.number().optional(),
-  archiveUrl: z.string().optional(),
-  audienceId: z.string().optional(),
-  audienceName: z.string().optional(),
-  recipientCount: z.number().optional(),
-  segmentText: z.string().optional(),
-  openRate: z.number().optional(),
-  clickRate: z.number().optional(),
-});
+const CampaignSummarySchema = z
+  .object({
+    id: z.string().describe('Campaign ID.'),
+    webId: z.number().optional().describe('Mailchimp numeric web-id (for UI deep links).'),
+    type: z.string().describe('Campaign type (`regular`, `plaintext`, `rss`).'),
+    status: z
+      .string()
+      .describe('Mailchimp campaign status (`save`, `schedule`, `sending`, `sent`, …).'),
+    title: z.string().optional().describe('Internal campaign title.'),
+    subjectLine: z.string().optional().describe('Subject line as recipients see it.'),
+    fromName: z.string().optional().describe('Display name for the "From" field.'),
+    createTime: z
+      .string()
+      .optional()
+      .describe('ISO 8601 timestamp the campaign draft was created.'),
+    sendTime: z.string().optional().describe('ISO 8601 send timestamp (past or scheduled).'),
+    emailsSent: z.number().optional().describe('Emails actually delivered.'),
+    archiveUrl: z.string().optional().describe('Public archive URL (populated after send).'),
+    audienceId: z.string().optional().describe('Audience (list) ID the campaign targets.'),
+    audienceName: z.string().optional().describe('Human-readable audience name.'),
+    recipientCount: z.number().optional().describe('Number of recipients the send targeted.'),
+    segmentText: z.string().optional().describe('Human-readable segment description.'),
+    openRate: z.number().optional().describe('Mean open rate from the report summary (0–1).'),
+    clickRate: z.number().optional().describe('Mean click rate from the report summary (0–1).'),
+  })
+  .describe('Summary view of one campaign: identity, settings, recipients, headline rates.');
 
-const ChecklistItemSchema = z.object({
-  type: z.enum(['success', 'warning', 'error']),
-  heading: z.string(),
-  details: z.string(),
-  id: z.number().optional(),
-});
+const ChecklistItemSchema = z
+  .object({
+    type: z.enum(['success', 'warning', 'error']).describe('Severity of the checklist entry.'),
+    heading: z.string().describe('Short title of the checklist item.'),
+    details: z.string().describe('Full description of the checklist finding.'),
+    id: z.number().optional().describe('Mailchimp checklist item ID when provided.'),
+  })
+  .describe('One entry in the campaign send-checklist.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,

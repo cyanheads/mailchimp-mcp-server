@@ -32,12 +32,12 @@ const OperationSchema = z
 const ContactSchema = z.object({
   company: z.string().describe('Organization name (required by CAN-SPAM).'),
   address1: z.string().describe('Physical mailing address line 1.'),
-  address2: z.string().optional(),
+  address2: z.string().optional().describe('Physical mailing address line 2.'),
   city: z.string().describe('City.'),
   state: z.string().describe('State/region.'),
   zip: z.string().describe('Postal code.'),
   country: z.string().describe('Two-letter country code (e.g. `US`).'),
-  phone: z.string().optional(),
+  phone: z.string().optional().describe('Contact phone number.'),
 });
 
 const CampaignDefaultsSchema = z.object({
@@ -114,28 +114,35 @@ const InputSchema = z.object({
     .describe('Signup-form customization payload. Required for `customize-signup-forms`.'),
 });
 
-const AudienceStatsSchema = z.object({
-  memberCount: z.number().optional(),
-  unsubscribeCount: z.number().optional(),
-  cleanedCount: z.number().optional(),
-  campaignCount: z.number().optional(),
-  campaignLastSent: z.string().optional(),
-  openRate: z.number().optional(),
-  clickRate: z.number().optional(),
-  lastSubDate: z.string().optional(),
-  lastUnsubDate: z.string().optional(),
-});
+const AudienceStatsSchema = z
+  .object({
+    memberCount: z.number().optional().describe('Active subscribed members.'),
+    unsubscribeCount: z.number().optional().describe('Total unsubscribes.'),
+    cleanedCount: z.number().optional().describe('Bounced/invalid emails cleaned from the list.'),
+    campaignCount: z.number().optional().describe('Campaigns ever sent.'),
+    campaignLastSent: z.string().optional().describe('ISO 8601 timestamp of the last send.'),
+    openRate: z.number().optional().describe('Mean open rate (0–1).'),
+    clickRate: z.number().optional().describe('Mean click rate (0–1).'),
+    lastSubDate: z.string().optional().describe('ISO 8601 of the most recent subscribe.'),
+    lastUnsubDate: z.string().optional().describe('ISO 8601 of the most recent unsubscribe.'),
+  })
+  .describe('Audience-level aggregated stats.');
 
-const AudienceSummarySchema = z.object({
-  id: z.string(),
-  webId: z.number().optional(),
-  name: z.string(),
-  dateCreated: z.string().optional(),
-  listRating: z.number().optional(),
-  visibility: z.enum(['pub', 'prv']).optional(),
-  doubleOptin: z.boolean().optional(),
-  stats: AudienceStatsSchema.optional(),
-});
+const AudienceSummarySchema = z
+  .object({
+    id: z.string().describe('Audience (list) ID.'),
+    webId: z.number().optional().describe('Mailchimp numeric web-id (for UI deep links).'),
+    name: z.string().describe('Audience display name.'),
+    dateCreated: z.string().optional().describe('ISO 8601 timestamp of audience creation.'),
+    listRating: z.number().optional().describe('Mailchimp list quality rating 0–5.'),
+    visibility: z
+      .enum(['pub', 'prv'])
+      .optional()
+      .describe('`pub` = publicly searchable, `prv` = private.'),
+    doubleOptin: z.boolean().optional().describe('Whether double opt-in is required.'),
+    stats: AudienceStatsSchema.optional(),
+  })
+  .describe('Summary view of one audience: identity + top-level stats.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,
@@ -148,41 +155,54 @@ const OutputSchema = z.object({
     .describe('Raw per-day subscribe/unsubscribe counts. Populated for `list-activity`.'),
   growth: z
     .array(
-      z.object({
-        month: z.string(),
-        subscribed: z.number().optional(),
-        unsubscribed: z.number().optional(),
-        existing: z.number().optional(),
-        imports: z.number().optional(),
-        optins: z.number().optional(),
-        cleaned: z.number().optional(),
-      }),
+      z
+        .object({
+          month: z.string().describe('Year-month (`YYYY-MM`) for this bucket.'),
+          subscribed: z.number().optional().describe('New subscribers in the month.'),
+          unsubscribed: z.number().optional().describe('Unsubscribes in the month.'),
+          existing: z.number().optional().describe('Existing members carried in.'),
+          imports: z.number().optional().describe('Members added via import.'),
+          optins: z.number().optional().describe('Members added via opt-in form.'),
+          cleaned: z.number().optional().describe('Members cleaned (bounced) in the month.'),
+        })
+        .describe('One month of growth history.'),
     )
     .optional()
     .describe('Monthly growth history. Populated for `list-growth`.'),
   clients: z
-    .array(z.object({ client: z.string(), members: z.number() }))
+    .array(
+      z
+        .object({
+          client: z.string().describe('Email client name (e.g. `Apple Mail`, `Gmail`).'),
+          members: z.number().describe('Members using this client.'),
+        })
+        .describe('One email-client usage row.'),
+    )
     .optional()
     .describe('Email client mix. Populated for `list-clients`.'),
   abuseReports: z
     .array(
-      z.object({
-        id: z.number(),
-        campaignId: z.string(),
-        email: z.string(),
-        date: z.string().optional(),
-      }),
+      z
+        .object({
+          id: z.number().describe('Abuse report ID.'),
+          campaignId: z.string().describe('Campaign the report is against.'),
+          email: z.string().describe('Reporting subscriber email.'),
+          date: z.string().optional().describe('ISO 8601 timestamp of the report.'),
+        })
+        .describe('One subscriber-submitted abuse report.'),
     )
     .optional()
     .describe('Abuse reports. Populated for `list-abuse-reports`.'),
   locations: z
     .array(
-      z.object({
-        country: z.string(),
-        cc: z.string().optional(),
-        total: z.number().optional(),
-        percent: z.number().optional(),
-      }),
+      z
+        .object({
+          country: z.string().describe('Country name.'),
+          cc: z.string().optional().describe('Two-letter ISO country code.'),
+          total: z.number().optional().describe('Subscribers in this country.'),
+          percent: z.number().optional().describe('Share of total subscribers (0–1).'),
+        })
+        .describe('One subscriber-location row.'),
     )
     .optional()
     .describe('Top subscriber locations. Populated for `list-locations`.'),

@@ -68,11 +68,13 @@ const InputSchema = z.object({
     ),
 });
 
-const ChecklistItemSchema = z.object({
-  type: z.enum(['success', 'warning', 'error']),
-  heading: z.string(),
-  details: z.string(),
-});
+const ChecklistItemSchema = z
+  .object({
+    type: z.enum(['success', 'warning', 'error']).describe('Severity of the checklist entry.'),
+    heading: z.string().describe('Short title of the checklist item.'),
+    details: z.string().describe('Full description of the checklist finding.'),
+  })
+  .describe('One entry from the Mailchimp campaign send-checklist.');
 
 const OutputSchema = z.object({
   campaignId: z.string().describe('Mailchimp campaign ID — use for follow-up tool calls.'),

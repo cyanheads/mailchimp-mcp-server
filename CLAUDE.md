@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.2.7
+**Version:** 0.2.8
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
 
@@ -20,8 +20,10 @@ When the user asks what to do next, what's left, or needs direction, suggest rel
 5. **Add tests** — scaffold tests for existing definitions using the `add-test` skill
 6. **Field-test definitions** — exercise tools/resources/prompts with real inputs using the `field-test` skill, get a report of issues and pain points
 7. **Run `devcheck`** — lint, format, typecheck, and security audit
-8. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
-9. **Run the `maintenance` skill** — investigate changelogs, adopt upstream changes, and sync skills after `bun update --latest`
+8. **Run the `security-pass` skill** — audit handlers for MCP-specific security gaps: output injection, scope blast radius, input sinks, tenant isolation
+9. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
+10. **Run the `maintenance` skill** — investigate changelogs, adopt upstream changes, and sync skills after `bun update --latest`
+11. **Run the `release-and-publish` skill** — post-wrapup ship workflow: verification gate, push, publish to npm + GHCR
 
 Tailor suggestions to what's actually missing or stale — don't recite the full list every time.
 
@@ -261,9 +263,11 @@ Available skills:
 | `add-service` | Scaffold a new service integration |
 | `add-test` | Scaffold test file for a tool, resource, or service |
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
+| `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
+| `release-and-publish` | Post-wrapup ship workflow: verification gate, push, publish to npm / MCP Registry / GHCR |
 | `migrate-mcp-ts-template` | Migrate a legacy mcp-ts-template fork to use `@cyanheads/mcp-ts-core` as a package |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
@@ -288,7 +292,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run build` | Compile TypeScript |
 | `bun run rebuild` | Clean + build |
 | `bun run clean` | Remove build artifacts |
-| `bun run devcheck` | Lint + format + typecheck + security |
+| `bun run devcheck` | Lint + format + typecheck + security + docs/skills sync checks |
 | `bun run lint:mcp` | Validate MCP definitions against spec |
 | `bun run tree` | Generate directory structure doc |
 | `bun run format` | Auto-fix formatting |
@@ -302,7 +306,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Publishing
 
-After a version bump and final commit, publish to both npm and GHCR:
+Run the `release-and-publish` skill — it runs the verification gate (`devcheck`, `rebuild`, `test`), pushes commits and tags, and publishes to every applicable destination with transient-failure retries. Reference commands:
 
 ```bash
 bun publish --access public
@@ -312,8 +316,6 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/cyanheads/mailchimp-mcp-server:latest \
   --push .
 ```
-
-Remind the user to run these after completing a release flow.
 
 ---
 

@@ -39,15 +39,17 @@ const IndustryStatsSchema = z
   })
   .describe('Industry-average benchmarks for the declared vertical.');
 
-const ActivityFeedItemSchema = z.object({
-  type: z.string().describe('Event type (e.g. `campaign_sent`, `list_subscribe`).'),
-  updateTime: z.string().describe('ISO 8601 timestamp of the event.'),
-  activity: z.string().describe('Human-readable description of the event.'),
-  title: z.string().optional().describe('Subject or item title when applicable.'),
-  url: z.string().optional().describe('Deep link into Mailchimp UI.'),
-  campaignId: z.string().optional().describe('Campaign ID when the event is campaign-related.'),
-  listId: z.string().optional().describe('Audience ID when the event is list-related.'),
-});
+const ActivityFeedItemSchema = z
+  .object({
+    type: z.string().describe('Event type (e.g. `campaign_sent`, `list_subscribe`).'),
+    updateTime: z.string().describe('ISO 8601 timestamp of the event.'),
+    activity: z.string().describe('Human-readable description of the event.'),
+    title: z.string().optional().describe('Subject or item title when applicable.'),
+    url: z.string().optional().describe('Deep link into Mailchimp UI.'),
+    campaignId: z.string().optional().describe('Campaign ID when the event is campaign-related.'),
+    listId: z.string().optional().describe('Audience ID when the event is list-related.'),
+  })
+  .describe('One event from the account-level Chimp Chatter activity stream.');
 
 /**
  * Flat output schema — fields populated depend on `operation`. `info`-only fields

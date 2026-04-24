@@ -22,28 +22,44 @@ const InputSchema = z.object({
     .describe('Fetch the full active tag list for each match. Adds one upstream call per match.'),
 });
 
-const MatchSchema = z.object({
-  audienceId: z.string(),
-  subscriberId: z.string(),
-  email: z.string(),
-  status: z.string(),
-  fullName: z.string().optional(),
-  memberRating: z.number().optional(),
-  language: z.string().optional(),
-  vip: z.boolean().optional(),
-  source: z.string().optional(),
-  lastChanged: z.string().optional(),
-  timestampSignup: z.string().optional(),
-  timestampOpt: z.string().optional(),
-  mergeFields: z.record(z.string(), z.unknown()).optional(),
-  tags: z.array(z.string()).optional(),
-  stats: z
-    .object({
-      avgOpenRate: z.number().optional(),
-      avgClickRate: z.number().optional(),
-    })
-    .optional(),
-});
+const MatchSchema = z
+  .object({
+    audienceId: z.string().describe('Audience (list) ID the match belongs to.'),
+    subscriberId: z.string().describe('Mailchimp subscriber ID (member hash).'),
+    email: z.string().describe('Subscriber email address.'),
+    status: z
+      .string()
+      .describe(
+        'Current status (`subscribed`, `unsubscribed`, `cleaned`, `pending`, `transactional`).',
+      ),
+    fullName: z.string().optional().describe('Full name from merge fields, if available.'),
+    memberRating: z.number().optional().describe('Mailchimp engagement rating 0–5.'),
+    language: z.string().optional().describe('ISO 639-1 language code.'),
+    vip: z.boolean().optional().describe('Whether the subscriber is flagged as VIP.'),
+    source: z.string().optional().describe('How the subscriber was added (e.g. `API`, `Import`).'),
+    lastChanged: z.string().optional().describe('ISO 8601 timestamp of the last profile change.'),
+    timestampSignup: z
+      .string()
+      .optional()
+      .describe('ISO 8601 timestamp when the subscriber signed up.'),
+    timestampOpt: z
+      .string()
+      .optional()
+      .describe('ISO 8601 timestamp when the subscriber opted in.'),
+    mergeFields: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Merge-field values keyed by tag (e.g. `FNAME`, `LNAME`).'),
+    tags: z.array(z.string()).optional().describe('Active tag names on the subscriber.'),
+    stats: z
+      .object({
+        avgOpenRate: z.number().optional().describe('Subscriber mean open rate (0–1).'),
+        avgClickRate: z.number().optional().describe('Subscriber mean click rate (0–1).'),
+      })
+      .optional()
+      .describe('Per-subscriber engagement averages.'),
+  })
+  .describe('One subscriber match across the searched audience(s).');
 
 const OutputSchema = z.object({
   email: z.string().describe('Email address that was searched for, echoed back.'),

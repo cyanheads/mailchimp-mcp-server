@@ -46,20 +46,25 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for `list` pagination.'),
 });
 
-const TemplateSummarySchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.string().optional(),
-  category: z.string().optional(),
-  createdBy: z.string().optional(),
-  dateCreated: z.string().optional(),
-  dateEdited: z.string().optional(),
-  active: z.boolean().optional(),
-  dragAndDrop: z.boolean().optional(),
-  responsive: z.boolean().optional(),
-  thumbnail: z.string().optional(),
-  shareUrl: z.string().optional(),
-});
+const TemplateSummarySchema = z
+  .object({
+    id: z.number().describe('Template ID.'),
+    name: z.string().describe('Template display name.'),
+    type: z.string().optional().describe('`user`, `base`, or `gallery`.'),
+    category: z
+      .string()
+      .optional()
+      .describe('Mailchimp category (e.g. `Newsletter`, `Notification`).'),
+    createdBy: z.string().optional().describe('Username of the template creator.'),
+    dateCreated: z.string().optional().describe('ISO 8601 creation timestamp.'),
+    dateEdited: z.string().optional().describe('ISO 8601 last-edited timestamp.'),
+    active: z.boolean().optional().describe('Whether the template is active (undeleted).'),
+    dragAndDrop: z.boolean().optional().describe('True for Mailchimp drag-and-drop templates.'),
+    responsive: z.boolean().optional().describe('Whether the template renders responsively.'),
+    thumbnail: z.string().optional().describe('URL of the template thumbnail image.'),
+    shareUrl: z.string().optional().describe('Public share URL for the template.'),
+  })
+  .describe('Summary view of one template.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,

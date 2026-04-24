@@ -2,6 +2,19 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.2.8 — 2026-04-24
+
+### Changed
+
+- **Bumped `@cyanheads/mcp-ts-core` to `^0.7.0`.** Issue-cleanup release with no runtime breaking changes. Flattened `ZodError` message shape, structured `issues` on `McpError.data`, locale-aware digit-group separators in the `format-parity` linter, and a `devcheck` changelog guard. See upstream `0.7.0.md` for detail.
+- **Synced framework scripts.** `scripts/devcheck.ts` and `scripts/tree.ts` updated from the package; `scripts/build-changelog.ts`, `scripts/check-docs-sync.ts`, and `scripts/check-skills-sync.ts` added. `devcheck` now runs Docs Sync + Skills Sync + Changelog Sync steps alongside the existing checks.
+- **Synced project skills** from the package: `add-tool` 1.7→1.8, `api-linter` 1.0→1.1, `design-mcp-server` 2.5→2.7, `field-test` 1.2→2.0, `maintenance` 1.4→1.5, `polish-docs-meta` 1.6→1.7, `report-issue-framework` 1.1→1.3, `report-issue-local` 1.1→1.3, `setup` 1.4→1.5. Added `security-pass` (1.1) and `release-and-publish` (2.1). Agent mirror `.claude/skills/` refreshed.
+- **Agent protocol (`CLAUDE.md`)**: added `security-pass` and `release-and-publish` entries to the skills table and "What's Next?" list; Publishing section now points at the `release-and-publish` skill; `devcheck` command description updated.
+
+### Fixed
+
+- **Cleared 380 `describe-on-fields` linter warnings** across all 16 tool definitions. Every nested object element, array element, and previously-undocumented field now carries a `.describe()` — this ships to the MCP client as JSON Schema, so both `structuredContent` and `content[]` surfaces explain every field to the LLM. No runtime behavior change; tool I/O shapes are identical.
+
 ## 0.2.7 — 2026-04-21
 
 ### Fixed

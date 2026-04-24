@@ -16,17 +16,25 @@ const OperationSchema = z
     'Segment operation. `batch-update-members` adds/removes many subscribers from a static segment in one call — use deliberately, it can mutate a large number of memberships.',
   );
 
-const SegmentConditionSchema = z.object({
-  condition_type: z.string().describe('Condition family (e.g. `TextMerge`, `StaticSegment`).'),
-  field: z.string().describe('Field to match (e.g. `merge1`, `FNAME`).'),
-  op: z.string().describe('Comparison operator (e.g. `is`, `contains`, `greater`).'),
-  value: z.unknown().optional(),
-  extra: z.string().optional(),
-});
+const SegmentConditionSchema = z
+  .object({
+    condition_type: z.string().describe('Condition family (e.g. `TextMerge`, `StaticSegment`).'),
+    field: z.string().describe('Field to match (e.g. `merge1`, `FNAME`).'),
+    op: z.string().describe('Comparison operator (e.g. `is`, `contains`, `greater`).'),
+    value: z.unknown().optional().describe('Comparison value; shape depends on `condition_type`.'),
+    extra: z
+      .string()
+      .optional()
+      .describe('Condition-specific extra parameter (e.g. unit for date math).'),
+  })
+  .describe('One saved-segment condition row.');
 
 const SegmentOptionsSchema = z.object({
   match: z.enum(['any', 'all']).optional().describe('Match ANY or ALL conditions.'),
-  conditions: z.array(SegmentConditionSchema).optional(),
+  conditions: z
+    .array(SegmentConditionSchema)
+    .optional()
+    .describe('Saved-segment conditions (empty for static segments).'),
 });
 
 const InputSchema = z.object({
@@ -69,16 +77,21 @@ const InputSchema = z.object({
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
 });
 
-const SegmentSummarySchema = z.object({
-  id: z.number(),
-  name: z.string(),
-  type: z.string(),
-  memberCount: z.number().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
-  match: z.enum(['any', 'all']).optional(),
-  conditionCount: z.number().optional(),
-});
+const SegmentSummarySchema = z
+  .object({
+    id: z.number().describe('Segment ID.'),
+    name: z.string().describe('Segment display name.'),
+    type: z.string().describe('Segment type (`saved`, `static`, `fuzzy`).'),
+    memberCount: z.number().optional().describe('Members currently in the segment.'),
+    createdAt: z.string().optional().describe('ISO 8601 creation timestamp.'),
+    updatedAt: z.string().optional().describe('ISO 8601 last-updated timestamp.'),
+    match: z
+      .enum(['any', 'all'])
+      .optional()
+      .describe('Whether segment matches ANY or ALL conditions.'),
+    conditionCount: z.number().optional().describe('Number of saved-segment conditions.'),
+  })
+  .describe('Summary view of one segment.');
 
 const OutputSchema = z.object({
   operation: OperationSchema,
@@ -86,13 +99,28 @@ const OutputSchema = z.object({
   segments: z.array(SegmentSummarySchema).optional().describe('Populated for `list`.'),
   totalItems: z.number().optional().describe('Total items for `list` / `list-members`.'),
   members: z
-    .array(z.object({ id: z.string(), email: z.string(), status: z.string() }))
+    .array(
+      z
+        .object({
+          id: z.string().describe('Mailchimp subscriber ID (member hash).'),
+          email: z.string().describe('Subscriber email address.'),
+          status: z.string().describe('Current subscription status.'),
+        })
+        .describe('One subscriber currently in the segment.'),
+    )
     .optional()
     .describe('Subscribers in the segment. Populated for `list-members`.'),
   added: z.array(z.string()).optional().describe('Emails added by `batch-update-members`.'),
   removed: z.array(z.string()).optional().describe('Emails removed by `batch-update-members`.'),
   errors: z
-    .array(z.object({ email: z.string(), error: z.string() }))
+    .array(
+      z
+        .object({
+          email: z.string().describe('Email that failed the batch update.'),
+          error: z.string().describe('Mailchimp error message.'),
+        })
+        .describe('One per-row failure from a batch update.'),
+    )
     .optional()
     .describe('Per-row errors from `batch-update-members`.'),
   deleted: z.boolean().optional().describe('True when the segment was deleted (for `delete`).'),
