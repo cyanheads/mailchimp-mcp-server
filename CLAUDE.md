@@ -1,9 +1,9 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.2.8
+**Version:** 0.3.0
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
-**Surface:** 17 tools · 4 resources · 1 prompt · 1 service (`mailchimp`)
+**Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -200,26 +200,40 @@ src/
     mailchimp/
       mailchimp-service.ts              # HTTP client, retries, normalization, typed endpoint methods
       types.ts                          # Raw + domain types shared across tools
+    assets/                             # L1 — Node-only, conditional on MAILCHIMP_ASSETS_DIR
+      asset-service.ts                  # Discovery, hashing, upload-via-mailchimp, rewrite
+      asset-cache.ts                    # SHA-256 → upload metadata, atomic JSON file
+      rewrite.ts                        # Pure HTML scan + URL rewrite for @assets/* refs
+    templates/                          # L2 — Node-only, conditional on MAILCHIMP_TEMPLATES_DIR
+      template-service.ts               # Eta render, sidecar parsing, seed-from-mailchimp
   mcp-server/
-    tools/definitions/
-      index.ts                          # allToolDefinitions barrel
-      mailchimp-account.tool.ts
-      mailchimp-audience-overview.tool.ts
-      mailchimp-audiences.tool.ts
-      mailchimp-campaign-report.tool.ts
-      mailchimp-campaigns.tool.ts
-      mailchimp-find-subscriber.tool.ts
-      mailchimp-import-subscribers.tool.ts
-      mailchimp-merge-fields.tool.ts
-      mailchimp-playbook.tool.ts
-      mailchimp-replicate-campaign.tool.ts
-      mailchimp-reports.tool.ts
-      mailchimp-search.tool.ts
-      mailchimp-segments.tool.ts
-      mailchimp-send-campaign.tool.ts
-      mailchimp-subscribers.tool.ts
-      mailchimp-templates.tool.ts
-      mailchimp-upsert-subscriber.tool.ts
+    tools/
+      shared/
+        asset-rewrite.ts                # Helper used by send-campaign / campaigns / replicate to rewrite @assets/* before set-content
+        resolve-local-template.ts       # Helper that resolves content.localTemplate → rendered HTML before asset rewrite
+        template-sections-doc.ts        # Shared description for the templateSections field
+      definitions/
+        index.ts                        # allToolDefinitions barrel (alwaysOn + conditional)
+        mailchimp-account.tool.ts
+        mailchimp-assets.tool.ts        # Conditional (L1)
+        mailchimp-audience-overview.tool.ts
+        mailchimp-audiences.tool.ts
+        mailchimp-campaign-report.tool.ts
+        mailchimp-campaigns.tool.ts
+        mailchimp-files.tool.ts
+        mailchimp-find-subscriber.tool.ts
+        mailchimp-import-subscribers.tool.ts
+        mailchimp-local-templates.tool.ts # Conditional (L2)
+        mailchimp-merge-fields.tool.ts
+        mailchimp-playbook.tool.ts
+        mailchimp-replicate-campaign.tool.ts
+        mailchimp-reports.tool.ts
+        mailchimp-search.tool.ts
+        mailchimp-segments.tool.ts
+        mailchimp-send-campaign.tool.ts
+        mailchimp-subscribers.tool.ts
+        mailchimp-templates.tool.ts
+        mailchimp-upsert-subscriber.tool.ts
     resources/definitions/
       index.ts                          # allResourceDefinitions barrel
       mailchimp-account.resource.ts

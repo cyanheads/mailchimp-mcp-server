@@ -50,11 +50,11 @@ function jsonSchemaDescription(schema: unknown, path: readonly string[]): string
   const resolve = (node: unknown): unknown => {
     if (!node || typeof node !== 'object') return node;
     const n = node as Record<string, unknown>;
-    if (Array.isArray(n['allOf']) && n['allOf'].length > 0) {
-      return { ...n, ...resolve(n['allOf'][0]) };
+    if (Array.isArray(n.allOf) && n.allOf.length > 0) {
+      return { ...n, ...resolve(n.allOf[0]) };
     }
-    if (Array.isArray(n['anyOf']) && n['anyOf'].length > 0) {
-      return { ...n, ...resolve(n['anyOf'][0]) };
+    if (Array.isArray(n.anyOf) && n.anyOf.length > 0) {
+      return { ...n, ...resolve(n.anyOf[0]) };
     }
     return n;
   };
@@ -63,12 +63,12 @@ function jsonSchemaDescription(schema: unknown, path: readonly string[]): string
     | undefined;
   for (const segment of path) {
     if (!node) return;
-    const props = node['properties'];
+    const props = node.properties;
     if (!props || typeof props !== 'object') return;
     const next = (props as Record<string, unknown>)[segment];
     node = resolve(next) as Record<string, unknown> | undefined;
   }
-  const desc = node?.['description'];
+  const desc = node?.description;
   return typeof desc === 'string' ? desc : undefined;
 }
 

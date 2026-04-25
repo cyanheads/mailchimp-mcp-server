@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-04-24 16:18:56
+Generated on: 2026-04-25 00:24:14
 
 ```text
 mailchimp-mcp-server/
@@ -18,11 +18,13 @@ mailchimp-mcp-server/
 │   │   └── README.md
 │   ├── api-key.md
 │   ├── design.md
-│   └── email-design-playbook.md
+│   ├── email-design-playbook.md
+│   └── plan-local-authoring.md
 ├── scripts/
 │   ├── build-changelog.ts
 │   ├── build.ts
 │   ├── check-docs-sync.ts
+│   ├── check-framework-antipatterns.ts
 │   ├── check-skills-sync.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
@@ -111,12 +113,15 @@ mailchimp-mcp-server/
 │   │       ├── definitions/
 │   │       │   ├── index.ts
 │   │       │   ├── mailchimp-account.tool.ts
+│   │       │   ├── mailchimp-assets.tool.ts
 │   │       │   ├── mailchimp-audience-overview.tool.ts
 │   │       │   ├── mailchimp-audiences.tool.ts
 │   │       │   ├── mailchimp-campaign-report.tool.ts
 │   │       │   ├── mailchimp-campaigns.tool.ts
+│   │       │   ├── mailchimp-files.tool.ts
 │   │       │   ├── mailchimp-find-subscriber.tool.ts
 │   │       │   ├── mailchimp-import-subscribers.tool.ts
+│   │       │   ├── mailchimp-local-templates.tool.ts
 │   │       │   ├── mailchimp-merge-fields.tool.ts
 │   │       │   ├── mailchimp-playbook.tool.ts
 │   │       │   ├── mailchimp-replicate-campaign.tool.ts
@@ -128,26 +133,46 @@ mailchimp-mcp-server/
 │   │       │   ├── mailchimp-templates.tool.ts
 │   │       │   └── mailchimp-upsert-subscriber.tool.ts
 │   │       └── shared/
+│   │           ├── asset-rewrite.ts
+│   │           ├── resolve-local-template.ts
 │   │           └── template-sections-doc.ts
 │   ├── services/
-│   │   └── mailchimp/
-│   │       ├── mailchimp-service.ts
-│   │       ├── normalize.ts
-│   │       └── types.ts
+│   │   ├── assets/
+│   │   │   ├── asset-cache.ts
+│   │   │   ├── asset-service.ts
+│   │   │   └── rewrite.ts
+│   │   ├── mailchimp/
+│   │   │   ├── mailchimp-service.ts
+│   │   │   ├── normalize.ts
+│   │   │   └── types.ts
+│   │   └── templates/
+│   │       └── template-service.ts
 │   └── index.ts
 ├── tests/
 │   ├── config/
 │   │   └── server-config.test.ts
+│   ├── mcp-server/
+│   │   └── tools/
+│   │       └── shared/
+│   │           └── resolve-local-template.test.ts
 │   ├── prompts/
 │   │   └── newsletter-from-source.test.ts
 │   ├── resources/
 │   ├── services/
-│   │   └── mailchimp/
-│   │       ├── mailchimp-service.test.ts
-│   │       └── normalize.test.ts
+│   │   ├── assets/
+│   │   │   ├── asset-service.test.ts
+│   │   │   └── rewrite.test.ts
+│   │   ├── mailchimp/
+│   │   │   ├── mailchimp-service.test.ts
+│   │   │   └── normalize.test.ts
+│   │   └── templates/
+│   │       └── template-service.test.ts
 │   └── tools/
 │       ├── input-coercion.test.ts
+│       ├── mailchimp-assets.test.ts
 │       ├── mailchimp-campaign-report.test.ts
+│       ├── mailchimp-files.test.ts
+│       ├── mailchimp-local-templates.test.ts
 │       ├── mailchimp-playbook.test.ts
 │       ├── mailchimp-templates.test.ts
 │       └── template-sections-doc.test.ts

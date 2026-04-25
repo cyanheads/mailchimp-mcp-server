@@ -7,6 +7,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
@@ -26,6 +28,16 @@ const ContentOverrideSchema = z
       .optional()
       .describe('Saved-template ID to render the replica from instead of the original content.'),
     templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
+    localTemplate: z
+      .string()
+      .optional()
+      .describe(
+        'Name of a local template to render (without the `.eta` extension). Requires `MAILCHIMP_TEMPLATES_DIR` on the server. Mutually exclusive with `html` and `templateId`.',
+      ),
+    localTemplateVars: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Variables passed to Eta when rendering `localTemplate`.'),
   })
   .describe("Content replacement. Omit to keep the source campaign's content.");
 
@@ -210,24 +222,23 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
 
       // 3. Content override.
       if (input.contentOverride) {
+        const override = await resolveLocalTemplate(ctx, input.contentOverride);
         const contentBody: Parameters<typeof svc.campaigns.setContent>[2] = {};
-        if (input.contentOverride.html) contentBody.html = input.contentOverride.html;
-        if (input.contentOverride.plainText)
-          contentBody.plain_text = input.contentOverride.plainText;
-        if (typeof input.contentOverride.templateId === 'number') {
+        if (override.html) contentBody.html = override.html;
+        if (override.plainText) contentBody.plain_text = override.plainText;
+        if (typeof override.templateId === 'number') {
           contentBody.template = {
-            id: input.contentOverride.templateId,
-            ...(input.contentOverride.templateSections
-              ? { sections: input.contentOverride.templateSections }
-              : {}),
+            id: override.templateId,
+            ...(override.templateSections ? { sections: override.templateSections } : {}),
           };
         }
         if (Object.keys(contentBody).length === 0) {
           throw validationError(
-            'contentOverride must include at least one of html/plainText/templateId.',
+            'contentOverride must include at least one of html/plainText/templateId/localTemplate.',
           );
         }
-        await svc.campaigns.setContent(ctx, newCampaignId, contentBody);
+        const rewritten = await rewriteAssetsInContent(ctx, contentBody);
+        await svc.campaigns.setContent(ctx, newCampaignId, rewritten);
         overridesApplied.push('content');
       }
 

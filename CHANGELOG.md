@@ -2,6 +2,87 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0 — 2026-04-24
+
+Big release: full local-authoring stack landed in three layers — `mailchimp_files` polish (L0), local-assets auto-upload pipeline (L1), and local-templates Eta-based authoring with `localTemplate` campaign integration (L2). Designed and probed against a free-tier account; all three layers verified working without paid plan.
+
+### Added
+
+#### L1 — Local assets
+
+- **`mailchimp_assets` tool (conditional)** and full local-asset auto-upload pipeline. Set `MAILCHIMP_ASSETS_DIR` to an absolute directory path on the server and `@assets/<relative-path>` references in campaign HTML are auto-uploaded to Mailchimp File Manager and rewritten to public CDN URLs at send time (covers `mailchimp_send_campaign`, `mailchimp_campaigns set-content`, and `mailchimp_replicate_campaign contentOverride`). Cache lives at `<assetsDir>/.mailchimp-cache.json`, keyed by SHA-256 — content change ⇒ new key, no invalidation needed. Tool exposes `list`, `info`, `sync` (pre-warm), and `clear-cache`.
+- **`src/services/assets/`** — `asset-service.ts` (orchestrator), `asset-cache.ts` (atomic JSON cache with unique tmp filenames to handle concurrent saves), `rewrite.ts` (pure HTML scan + URL rewrite). Path-traversal guard (`..` and absolute paths throw `Forbidden`); client-side size validation against Mailchimp's 1 MB image / 10 MB other caps before round-tripping; concurrency dedup on identical content hashes so parallel campaign sends don't double-upload.
+- **`src/mcp-server/tools/shared/asset-rewrite.ts`** — single helper that all three campaign-content paths call before passing to Mailchimp. No-op when the assets service is not configured.
+
+#### L2 — Local templates
+
+- **`mailchimp_local_templates` tool (conditional)** and full Eta-based template-rendering pipeline. Set `MAILCHIMP_TEMPLATES_DIR` to an absolute directory path on the server. Templates are `.eta` files (Eta v4 — partials, conditionals, loops, includes), with optional `<name>.meta.yaml` sidecars for `subject` / `previewText` defaults plus declared `vars`. Tool exposes `list`, `get`, `render-preview` (no send), and `seed-from-mailchimp` (read a Mailchimp `base`/`user` template and write it to disk as a starting point — bridges the read-only Mailchimp templates API on free).
+- **`content.localTemplate` + `content.localTemplateVars`** on `mailchimp_send_campaign`, `mailchimp_campaigns set-content`, and `mailchimp_replicate_campaign contentOverride`. Mutually exclusive with `html` and `templateId`. Templates can reference `@assets/<path>` — render runs first, then L1's asset rewrite runs over the rendered HTML, so the two layers compose cleanly.
+- **`src/services/templates/template-service.ts`** — Eta wrapper, sidecar parsing via `@cyanheads/mcp-ts-core`'s `yamlParser`, traversal guard, `seed-from-mailchimp` that writes upstream `default-content` sections as `<%# section: name %>` fragments (or a stub for empty maps).
+- **`src/mcp-server/tools/shared/resolve-local-template.ts`** — single helper that all three campaign tools call to resolve `localTemplate` to rendered HTML before the asset rewrite runs. Mutual-exclusion validation lives here.
+- **`eta` ^4.5.1** dependency.
+
+#### L0 polish — `mailchimp_files`
+
+- **`update` operation.** PATCH-renames a file and/or moves it between folders. Pass `folderId: 0` to move to root. Verified working on free.
+
+#### Configuration
+
+- **`MAILCHIMP_ASSETS_DIR` and `MAILCHIMP_TEMPLATES_DIR`** env vars wired through `src/config/server-config.ts`, `.env.example`, `server.json` (both stdio + http packages), and `setup()` in `src/index.ts`. Both are optional; tools register conditionally when set.
+
+#### Documentation
+
+- **README "Local assets" section** documenting the L1 workflow, caps, allowed extensions, traversal guard, and Workers caveat.
+- **README "Local templates" section** documenting the L2 workflow, Eta syntax, sidecar format, and `seed-from-mailchimp` bootstrapping.
+- **`docs/plan-local-authoring.md`** updated to mark L0/L1/L2 status.
+
+#### Tests
+
+- **75 new tests** (191 total across 16 files; was 116/10):
+  - `tests/services/assets/rewrite.test.ts` (15) — pure HTML scan + URL rewrite.
+  - `tests/services/assets/asset-service.test.ts` (16) — tmp-dir fixtures, cache hit/miss, concurrent-upload dedup, oversize rejection, traversal guard.
+  - `tests/tools/mailchimp-assets.test.ts` (15) — every operation against the live AssetService + mocked fetch.
+  - `tests/services/templates/template-service.test.ts` (13) — discovery, render with vars, partials, meta sidecar parsing, traversal guard, seed-from-mailchimp.
+  - `tests/tools/mailchimp-local-templates.test.ts` (10) — every operation end-to-end.
+  - `tests/mcp-server/tools/shared/resolve-local-template.test.ts` (6) — pass-through, mutual exclusion, render integration.
+
+### Changed
+
+- **`mailchimp_files` description and `@fileoverview`** rewritten to reflect actual Mailchimp constraints discovered during free-tier probing: **images are capped at 1 MB**, other files at 10 MB. Allowed-extension list now embedded in `fileData` field description so the LLM doesn't try to upload `.webp`/`.avif`/`.exe`. Documented that image URLs use a hash (filename not preserved) while non-image URLs preserve the filename for sensible downloads. Added `update` to the operation enum and clarified `folderId`'s role on `update` (rename / move semantics).
+- **`mailchimp_templates` tool description and `@fileoverview`** rewritten to point at `mailchimp_local_templates` as the canonical write path on every plan tier. The Mailchimp-side templates tool is now framed as read + paid-only sync, with explicit cross-references to L2 for authoring and `seed-from-mailchimp` for bootstrapping.
+- **Conditional tool registration** in `src/mcp-server/tools/definitions/index.ts` — `alwaysOn` array plus a filtered `conditional` array gated on `hasFilesystem() && hasAssetsDir()` for L1 and `hasFilesystem() && hasTemplatesDir()` for L2. No framework support needed; just runtime checks.
+
+### Fixed
+
+- **Concurrent cache writes** in the assets service — multiple parallel uploads previously raced on a shared `<dir>/.mailchimp-cache.json.tmp` filename, causing one rename to ENOENT and silently dropping that asset from the rewrite map. `AssetCache.save()` now uses a unique tmp filename per call.
+- **Double-read in asset upload pipeline** — `info()` and `ensureUploaded()` previously read+hashed the same file independently, then `doUpload()` re-read it a third time before base64-encoding. Factored a private `_readWithHash` helper shared by both public methods; `doUpload()` now consumes the already-read buffer. Cuts disk reads + SHA-256 compute by ~3× per non-cached upload.
+- **Two-pass tree walk in `TemplateService.list()`** — previously walked the templates directory once via `collectMetaPaths()` to build a meta-sidecar set, then walked it again to enumerate `.eta` files. Collapsed into a single recursive walk that collects both bodies and sidecars in one pass.
+- **Dead filter in `AssetService.list()`** — `.filter((e) => !e.relPath.startsWith('.mailchimp-cache'))` was unreachable; the directory walker already skips dotfiles. Removed.
+
+## 0.2.10 — 2026-04-24
+
+### Added
+
+- **`mailchimp_files` tool** — wraps Mailchimp's File Manager (Content Studio) API. Operations: `list`, `get`, `upload`, `delete`, `list-folders`, `get-folder`. The `upload` response surfaces `fullSizeUrl` — the public CDN URL to drop into campaign HTML `<img src="…">`. **Verified working on the free plan**, so this unblocks image embedding in campaigns regardless of plan tier. Service additions: `svc.files.*` namespace and `File`/`FileFolder`/`FileType` domain types. Tool surface goes from 17 → 18 tools.
+- **`tests/tools/mailchimp-files.test.ts`** — 21 tests covering input coercion, per-operation validation, the `file_data` (snake_case) upload payload mapping, the 204-on-delete service path, and `format()` surfacing of `fullSizeUrl` for HTML embedding.
+- **`docs/plan-local-authoring.md`** — forward-looking design for the three-layer local-authoring system (L0 `mailchimp_files` shipped here; L1 local assets dir + auto-upload; L2 local templates with Eta render). Includes free-tier probe findings, conditional-registration approach, and the locked decisions on reference syntax / engine / cache strategy / Workers compatibility.
+
+### Changed
+
+- **`mailchimp_templates` tool description and `@fileoverview`** tightened to reflect that *all writes* (`create`/`update`/`delete`) require a paid plan regardless of `type` — not just `gallery`. Reads (`list`/`get`/`get-default-content`) work for `base` and `user` on free. The previous wording understated the gating and an LLM reading it would have assumed `create`/`update` worked for `user` templates on free, then 403'd. Stopgap fix; will be rewritten again when L2 (local templates) lands and becomes the canonical write path.
+
+
+
+### Changed
+
+- **Bumped `@cyanheads/mcp-ts-core` `^0.7.0` → `^0.7.3`.** Three non-breaking patch releases. Highlights: HTTP Origin guard now fails closed for remote browser origins (loopback-only default when `MCP_ALLOWED_ORIGINS` is unset, [0.7.1](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.7.x/0.7.1.md)); landing-page `requireAuth` validates the bearer token; default logs no longer persist raw caller payloads; new opt-in `LOG_LLM_INTERACTIONS` env var. `vitest.config` subpath export shipped as `.mjs` to unblock Node ≥22.7 type-stripping under `node_modules/` ([0.7.2](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.7.x/0.7.2.md)). `format-parity` numeric normalization tightened to reject lossy decimal-shift transforms while preserving en-US/de-DE/fr-FR/etc. locale grouping ([0.7.3](https://github.com/cyanheads/mcp-ts-core/blob/main/changelog/0.7.x/0.7.3.md)). Full per-version notes in `node_modules/@cyanheads/mcp-ts-core/changelog/0.7.x/`.
+- **Synced framework scripts.** `scripts/devcheck.ts` updated from the package; `scripts/check-framework-antipatterns.ts` added (new in 0.7.2 — guards the framework's tools/list schema advertising path against three SDK-coupling shortcuts; no-op on consumer code which doesn't call `server.registerTool()` directly). `devcheck` now runs Framework Antipatterns alongside MCP Definitions and Docs Sync.
+- **Synced `skills/api-utils/SKILL.md`** to pick up the 0.7.3 SSRF caveat clarification on `fetchWithTimeout`/`assertNotPrivateUrl`/`assertDnsNotPrivate` — the pre-validation DNS lookup is documented as best-effort with a DNS-rebinding/TOCTOU window, not strong isolation. Agent mirror `.claude/skills/` refreshed.
+
+### Added
+
+- **`MCP_PUBLIC_URL` and `MCP_ALLOWED_ORIGINS` documented in `.env.example`.** The Origin guard's behavior change in framework 0.7.1 — unset now means loopback-only — was material for HTTP-mode operators; explicit comments now surface the default and the `'*'` opt-out. `MCP_PUBLIC_URL` matches the upstream template's transport block.
+
 ## 0.2.8 — 2026-04-24
 
 ### Changed

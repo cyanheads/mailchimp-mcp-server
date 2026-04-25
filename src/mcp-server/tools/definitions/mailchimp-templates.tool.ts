@@ -1,9 +1,13 @@
 /**
- * @fileoverview `mailchimp_templates` — template CRUD. Free plan has access
- * to basic templates only (the `gallery` drag-and-drop builder is paid).
- * Delete IS exposed here (unlike merge-fields/campaigns/audiences) because
- * templates are non-destructive — deleting a template doesn't affect any
- * campaign that was already built from it.
+ * @fileoverview `mailchimp_templates` — Mailchimp-hosted template surface.
+ * **For authoring new templates, prefer `mailchimp_local_templates` (L2)** — it
+ * works on every plan tier (including free, where this tool's writes are
+ * forbidden) and templates live as `.eta` files under
+ * `MAILCHIMP_TEMPLATES_DIR`. This tool is for reading existing Mailchimp
+ * templates and (paid only) syncing changes upstream. Reads (`list`, `get`,
+ * `get-default-content`) work for `base` and `user` types on free; all writes
+ * (`create`, `update`, `delete`) require a paid plan regardless of `type`.
+ * `gallery` (paid drag-and-drop) is read-gated too.
  * @module mcp-server/tools/definitions/mailchimp-templates.tool
  */
 
@@ -108,7 +112,7 @@ function requireTemplateId(input: z.infer<typeof InputSchema>): number {
 
 export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   description:
-    "Create, read, update, delete email templates. Free plan supports `base` (starter layouts) and `user` (your saved templates); `gallery` (paid drag-and-drop) returns a `Forbidden` error with `requiresPlan: 'standard'`. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose. **Per-section editing is not supported here.** Mailchimp's templates PATCH endpoint only accepts `name`, `html`, and `folderId` — to change one block (e.g. the headline), GET the template, edit its HTML, then `update` with the full new HTML. Per-section overrides (by edit-region ID) live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`.",
+    "Mailchimp-hosted template surface. **For authoring new templates, prefer `mailchimp_local_templates` — that tool works on every plan tier (including free, where the writes here are forbidden) and templates live as `.eta` files under `MAILCHIMP_TEMPLATES_DIR`, git-versionable and composable via partials.** Use this tool for reading existing Mailchimp templates (`list`, `get`, `get-default-content` — work on free for `base`/`user` types) or, on paid plans, syncing changes upstream via `create`/`update`/`delete`. **All writes require a paid plan regardless of `type`** and return `Forbidden` with `requiresPlan: 'standard'`. `gallery` (paid drag-and-drop) is read-gated too. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose. **Per-section editing is not supported here** — Mailchimp's templates PATCH endpoint only accepts `name`, `html`, and `folderId`; to change one block, GET the template, edit its HTML, then `update` with the full new HTML. Per-section overrides (by edit-region ID) live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`. **To bootstrap a local template from a Mailchimp `base`/`user` starter, use `mailchimp_local_templates` with `operation: seed-from-mailchimp`.**",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,

@@ -9,7 +9,9 @@ import { getServerConfig } from '@/config/server-config.js';
 import { allPromptDefinitions } from '@/mcp-server/prompts/definitions/index.js';
 import { allResourceDefinitions } from '@/mcp-server/resources/definitions/index.js';
 import { allToolDefinitions } from '@/mcp-server/tools/definitions/index.js';
+import { initAssetService } from '@/services/assets/asset-service.js';
 import { initMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { initTemplateService } from '@/services/templates/template-service.js';
 
 await createApp({
   tools: allToolDefinitions,
@@ -23,5 +25,11 @@ await createApp({
   async setup(core) {
     const serverConfig = getServerConfig();
     await initMailchimpService(serverConfig, core.logger);
+    if (serverConfig.assetsDir) {
+      await initAssetService(serverConfig.assetsDir, serverConfig.concurrencyLimit, core.logger);
+    }
+    if (serverConfig.templatesDir) {
+      await initTemplateService(serverConfig.templatesDir, core.logger);
+    }
   },
 });

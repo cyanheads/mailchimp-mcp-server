@@ -6,14 +6,14 @@
     "url": "https://github.com/cyanheads/mailchimp-mcp-server",
     "source": "github"
   },
-  "version": "0.2.8",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/mailchimp-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.2.8",
+      "version": "0.3.0",
       "packageArguments": [
         { "type": "positional", "value": "run" },
         { "type": "positional", "value": "start:stdio" }
@@ -53,6 +53,18 @@
           "default": "4"
         },
         {
+          "name": "MAILCHIMP_ASSETS_DIR",
+          "description": "Absolute path to a local assets directory. When set (Node-only — Workers ignored), enables the `mailchimp_assets` tool and auto-uploads `@assets/<path>` references in campaign HTML to Mailchimp File Manager at send time. Cache at <dir>/.mailchimp-cache.json.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
+          "name": "MAILCHIMP_TEMPLATES_DIR",
+          "description": "Absolute path to a local templates directory. When set (Node-only), enables the `mailchimp_local_templates` tool and support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional `<name>.meta.yaml` sidecars. Canonical write path on free-tier Mailchimp.",
+          "format": "string",
+          "isRequired": false
+        },
+        {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
           "format": "string",
@@ -69,7 +81,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/mailchimp-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.2.8",
+      "version": "0.3.0",
       "packageArguments": [
         { "type": "positional", "value": "run" },
         { "type": "positional", "value": "start:http" }

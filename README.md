@@ -1,13 +1,13 @@
 <div align="center">
   <h1>@cyanheads/mailchimp-mcp-server</h1>
   <p><b>Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.</b>
-  <div>17 Tools • 4 Resources • 1 Prompt</div>
+  <div>18 Tools (+2 conditional) • 4 Resources • 1 Prompt</div>
   </p>
 </div>
 
 <div align="center">
 
-[![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![Version](https://img.shields.io/badge/Version-0.2.8-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) 
+[![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-259?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) 
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
@@ -17,7 +17,7 @@
 
 ## Tools
 
-Seventeen tools grouped by shape — workflow helpers orchestrate common flows end-to-end, primitive tools expose fine-grained CRUD, and the instruction tool returns procedural guidance merged with live account state.
+Eighteen always-on tools plus two conditional ones — `mailchimp_assets` (when `MAILCHIMP_ASSETS_DIR` is set) and `mailchimp_local_templates` (when `MAILCHIMP_TEMPLATES_DIR` is set). Workflow helpers orchestrate common flows end-to-end, primitive tools expose fine-grained CRUD, and the instruction tool returns procedural guidance merged with live account state.
 
 | Tool Name | Description |
 |:----------|:------------|
@@ -35,8 +35,11 @@ Seventeen tools grouped by shape — workflow helpers orchestrate common flows e
 | `mailchimp_replicate_campaign` | Duplicate a campaign with optional overrides, then draft/test/send/schedule. Same elicit + cleanup semantics. |
 | `mailchimp_reports` | Campaign reports — generic slicer across ten dimensions (clicks, opens, locations, etc.). |
 | `mailchimp_campaign_report` | Post-send analytics digest — headline metrics + top 5 slices in one response. |
-| `mailchimp_templates` | Email template CRUD (base, user; `gallery` requires a paid plan). |
+| `mailchimp_templates` | Email template read/write — reads (`list`/`get`) work on free for `base`/`user` types; writes (`create`/`update`/`delete`) and `gallery` require a paid plan. |
+| `mailchimp_files` | File Manager (Content Studio) — upload, list, fetch, rename, delete files on Mailchimp's CDN. Embed the returned `fullSizeUrl` in campaign HTML. Works on free; 1 MB per image / 10 MB per other file. |
 | `mailchimp_search` | Global search across members or campaigns. Lightweight discovery — use `find_subscriber` for detail. |
+| `mailchimp_assets` *(conditional — set `MAILCHIMP_ASSETS_DIR`)* | Local-assets surface. List your assets dir, inspect cache state, pre-warm uploads ahead of a send. Most workflows don't call this directly — `@assets/<path>` references in campaign HTML auto-upload via `mailchimp_send_campaign` and `mailchimp_campaigns set-content`. |
+| `mailchimp_local_templates` *(conditional — set `MAILCHIMP_TEMPLATES_DIR`)* | Local-template authoring surface. List/get/render-preview your `.eta` templates with optional `<name>.meta.yaml` sidecars. `seed-from-mailchimp` bootstraps a local template from a Mailchimp `base`/`user` starter. Use `content.localTemplate` on campaign tools to render at send time. **Canonical write path on free-tier Mailchimp**, where the upstream templates API is read-only. |
 | `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Advice-only, no writes. |
 
 ---
@@ -251,6 +254,8 @@ cp .env.example .env
 | `MAILCHIMP_TIMEOUT_MS` | Per-request timeout in milliseconds. | `60000` |
 | `MAILCHIMP_MAX_RETRIES` | Max retry attempts for transient upstream failures (0-10). | `3` |
 | `MAILCHIMP_CONCURRENCY_LIMIT` | Max in-flight upstream requests per workflow tool (1-10). | `4` |
+| `MAILCHIMP_ASSETS_DIR` | Absolute path to a local assets directory. When set (Node-only), enables the `mailchimp_assets` tool and auto-uploads `@assets/<path>` references in campaign HTML to Mailchimp File Manager. Cache at `<dir>/.mailchimp-cache.json`. | unset |
+| `MAILCHIMP_TEMPLATES_DIR` | Absolute path to a local templates directory. When set (Node-only), enables the `mailchimp_local_templates` tool and support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional `<name>.meta.yaml` sidecars. | unset |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_HOST` | HTTP server hostname. | `127.0.0.1` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
@@ -261,6 +266,102 @@ cp .env.example .env
 | `OTEL_ENABLED` | Enable OpenTelemetry. | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
+
+## Local assets (optional)
+
+Set `MAILCHIMP_ASSETS_DIR` to enable a local-image workflow on top of Mailchimp's File Manager. Drop image files into the directory, reference them in HTML as `@assets/<relative-path>`, and the server uploads + rewrites at send time.
+
+```sh
+export MAILCHIMP_ASSETS_DIR=/Users/me/Pictures/email-assets
+```
+
+Then in a campaign:
+
+```html
+<img src="@assets/hero.png" alt="Hero">
+<a href="@assets/whitepaper.pdf">Download</a>
+```
+
+When `mailchimp_send_campaign` (or `mailchimp_campaigns set-content` / `mailchimp_replicate_campaign contentOverride`) sees these references, it:
+
+1. Hashes each referenced file (SHA-256).
+2. Uploads cache misses to Mailchimp File Manager via the `mailchimp_files` tool surface.
+3. Caches `sha256 → file_id + URL` at `<assetsDir>/.mailchimp-cache.json` (atomic writes; safe to delete to force re-upload).
+4. Rewrites every `@assets/<path>` to the public CDN URL before passing content upstream.
+
+The `mailchimp_assets` tool exposes `list`, `info`, `sync` (pre-warm), and `clear-cache` for direct inspection — most workflows don't need it.
+
+**Caveats:**
+- Mailchimp caps images at **1 MB** and other files at **10 MB**. Oversize files fail before upload with an actionable error.
+- Allowed extensions: see the `mailchimp_files` tool description. **WebP and AVIF are NOT in the allowlist** — convert to PNG/JPG.
+- Path traversal is rejected (`../` and absolute paths throw `Forbidden`).
+- The `mailchimp_assets` tool is **Node-only**; on Cloudflare Workers it isn't registered.
+
+## Local templates (optional)
+
+Set `MAILCHIMP_TEMPLATES_DIR` to enable a local-template authoring workflow on top of [Eta](https://eta.js.org/) (v4 — fast, ESM-native, supports partials/conditionals/loops). **This is the canonical write path for templates on free-tier Mailchimp accounts**, where the upstream `/templates` API is read-only.
+
+```sh
+export MAILCHIMP_TEMPLATES_DIR=/Users/me/email-templates
+```
+
+```text
+email-templates/
+  welcome.eta              # body
+  welcome.meta.yaml        # optional sidecar (subject, previewText, vars)
+  newsletter.eta
+  partials/
+    header.eta
+    footer.eta
+```
+
+Template body (`welcome.eta`):
+
+```eta
+<%~ include('partials/header', it) %>
+<h1>Hello <%= it.firstName %></h1>
+<p>Welcome to <%= it.brand %>.</p>
+<img src="@assets/hero.png" alt="Hero">
+```
+
+Sidecar (`welcome.meta.yaml`, all fields optional):
+
+```yaml
+subject: "Welcome to {{brand}}"
+previewText: "Onboarding starts here"
+vars:
+  - firstName
+  - brand
+```
+
+Reference from any campaign tool:
+
+```jsonc
+{
+  "audienceId": "abc123",
+  "subject": "Welcome to Acme",
+  "fromName": "Casey",
+  "replyTo": "casey@acme.com",
+  "content": {
+    "localTemplate": "welcome",
+    "localTemplateVars": { "firstName": "Sam", "brand": "Acme" }
+  },
+  "mode": "draft"
+}
+```
+
+The render pipeline:
+1. Eta renders `welcome.eta` with `it = { firstName: 'Sam', brand: 'Acme' }`.
+2. If L1 is configured, `@assets/hero.png` is uploaded to Mailchimp File Manager and rewritten to a CDN URL.
+3. Final HTML is set on the campaign via Mailchimp's `set-content`.
+
+The `mailchimp_local_templates` tool exposes `list`, `get`, `render-preview` (returns HTML without sending), and `seed-from-mailchimp` (reads a Mailchimp `base`/`user` template by ID and writes it to disk as a starting point — useful on free where you can read but not write upstream).
+
+**Caveats:**
+- `localTemplate` is mutually exclusive with `html` and `templateId` on the same content block.
+- Var validation isn't enforced by the schema — missing/extra vars surface as Eta render errors at send time.
+- Path traversal is rejected.
+- Node-only; not available on Workers.
 
 ## Running the server
 

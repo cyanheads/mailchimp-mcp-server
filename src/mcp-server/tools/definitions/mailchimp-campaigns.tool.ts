@@ -9,6 +9,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Campaign } from '@/services/mailchimp/types.js';
@@ -77,6 +79,16 @@ const ContentSchema = z.object({
   archiveContent: z.string().optional().describe('Base64-encoded zip or HTML archive.'),
   archiveType: z.string().optional().describe('MIME type of the archive (e.g. `zip`, `tar.gz`).'),
   url: z.string().optional().describe('Fetch HTML from a URL.'),
+  localTemplate: z
+    .string()
+    .optional()
+    .describe(
+      'Name of a local template to render (without the `.eta` extension). Requires `MAILCHIMP_TEMPLATES_DIR` on the server. Mutually exclusive with `html` and `templateId`. Combine with `localTemplateVars` to pass variables.',
+    ),
+  localTemplateVars: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe('Variables passed to Eta when rendering `localTemplate`.'),
 });
 
 const InputSchema = z.object({
@@ -317,27 +329,29 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
       case 'set-content': {
         if (!input.content) throw validationError("'content' is required for 'set-content'.");
         const id = requireCampaignId(input);
+        const content = await resolveLocalTemplate(ctx, input.content);
         const body: Parameters<typeof svc.campaigns.setContent>[2] = {};
-        if (input.content.html) body.html = input.content.html;
-        if (input.content.plainText) body.plain_text = input.content.plainText;
-        if (typeof input.content.templateId === 'number') {
+        if (content.html) body.html = content.html;
+        if (content.plainText) body.plain_text = content.plainText;
+        if (typeof content.templateId === 'number') {
           body.template = {
-            id: input.content.templateId,
-            ...(input.content.templateSections ? { sections: input.content.templateSections } : {}),
+            id: content.templateId,
+            ...(content.templateSections ? { sections: content.templateSections } : {}),
           };
         }
-        if (input.content.archiveContent) {
+        if (content.archiveContent) {
           body.archive = {
-            archive_content: input.content.archiveContent,
-            ...(input.content.archiveType ? { archive_type: input.content.archiveType } : {}),
+            archive_content: content.archiveContent,
+            ...(content.archiveType ? { archive_type: content.archiveType } : {}),
           };
         }
-        if (input.content.url) body.url = input.content.url;
+        if (content.url) body.url = content.url;
         if (Object.keys(body).length === 0)
           throw validationError(
-            'Must provide at least one of: html, plainText, templateId, archiveContent, url.',
+            'Must provide at least one of: html, plainText, templateId, archiveContent, url, localTemplate.',
           );
-        const saved = await svc.campaigns.setContent(ctx, id, body);
+        const rewritten = await rewriteAssetsInContent(ctx, body);
+        const saved = await svc.campaigns.setContent(ctx, id, rewritten);
         const out: NonNullable<Output['content']> = {};
         if (saved.html) out.html = saved.html;
         if (saved.plain_text) out.plainText = saved.plain_text;

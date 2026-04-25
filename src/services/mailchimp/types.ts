@@ -628,6 +628,34 @@ export interface TemplateDefaultContent {
   sections?: Record<string, unknown>;
 }
 
+// ─── File Manager ────────────────────────────────────────────────────
+
+export type FileType = 'image' | 'file';
+
+export interface File {
+  _links?: MailchimpLink[];
+  created_at?: string;
+  created_by?: string;
+  folder_id?: number;
+  full_size_url: string;
+  height?: number;
+  id: number;
+  name: string;
+  size?: number;
+  thumbnail_url?: string;
+  type?: FileType;
+  width?: number;
+}
+
+export interface FileFolder {
+  _links?: MailchimpLink[];
+  created_at?: string;
+  created_by?: string;
+  file_count?: number;
+  id: number;
+  name: string;
+}
+
 // ─── Search ──────────────────────────────────────────────────────────
 
 export interface SearchMembersResponse {

@@ -37,10 +37,13 @@ import type {
   CampaignType,
   ClickDetail,
   EmailClient,
+  FileFolder,
+  FileType,
   GrowthHistoryEntry,
   LocationStat,
   MailchimpErrorBody,
   MailchimpErrorData,
+  File as MailchimpFile,
   MergeField,
   OpenDetail,
   Paged,
@@ -1130,6 +1133,97 @@ export class MailchimpService {
       id: number,
     ): Promise<TemplateDefaultContent> =>
       this.request('GET', `/templates/${id}/default-content`, {
+        signal: ctx.signal,
+        log: ctx.log,
+      }),
+  };
+
+  // ─── File Manager ─────────────────────────────────────────────────
+
+  files = {
+    list: (
+      ctx: Pick<Context, 'signal' | 'log'>,
+      params?: {
+        count?: number;
+        offset?: number;
+        type?: FileType;
+        folderId?: number;
+        beforeCreatedAt?: string;
+        sinceCreatedAt?: string;
+      },
+    ): Promise<{ files: MailchimpFile[]; total_file_size: number; total_items: number }> =>
+      this.request('GET', '/file-manager/files', {
+        signal: ctx.signal,
+        log: ctx.log,
+        query: {
+          count: params?.count,
+          offset: params?.offset,
+          type: params?.type,
+          folder_id: params?.folderId,
+          before_created_at: params?.beforeCreatedAt,
+          since_created_at: params?.sinceCreatedAt,
+        },
+      }),
+
+    get: (ctx: Pick<Context, 'signal' | 'log'>, id: number): Promise<MailchimpFile> =>
+      this.request('GET', `/file-manager/files/${id}`, {
+        signal: ctx.signal,
+        log: ctx.log,
+      }),
+
+    upload: (
+      ctx: Pick<Context, 'signal' | 'log'>,
+      body: { name: string; fileDataBase64: string; folderId?: number },
+    ): Promise<MailchimpFile> =>
+      this.request('POST', '/file-manager/files', {
+        signal: ctx.signal,
+        log: ctx.log,
+        noRetry: true,
+        body: {
+          name: body.name,
+          file_data: body.fileDataBase64,
+          ...(body.folderId !== undefined ? { folder_id: body.folderId } : {}),
+        },
+      }),
+
+    update: (
+      ctx: Pick<Context, 'signal' | 'log'>,
+      id: number,
+      body: { name?: string; folderId?: number },
+    ): Promise<MailchimpFile> =>
+      this.request('PATCH', `/file-manager/files/${id}`, {
+        signal: ctx.signal,
+        log: ctx.log,
+        body: {
+          ...(body.name !== undefined ? { name: body.name } : {}),
+          ...(body.folderId !== undefined ? { folder_id: body.folderId } : {}),
+        },
+      }),
+
+    delete: async (ctx: Pick<Context, 'signal' | 'log'>, id: number): Promise<void> => {
+      await this.request('DELETE', `/file-manager/files/${id}`, {
+        signal: ctx.signal,
+        log: ctx.log,
+        noRetry: true,
+      });
+    },
+
+    listFolders: (
+      ctx: Pick<Context, 'signal' | 'log'>,
+      params?: { count?: number; offset?: number; createdBy?: string },
+    ): Promise<{ folders: FileFolder[]; total_items: number }> =>
+      this.request('GET', '/file-manager/folders', {
+        signal: ctx.signal,
+        log: ctx.log,
+        query: {
+          count: params?.count,
+          offset: params?.offset,
+          created_by: params?.createdBy,
+        },
+      }),
+
+    getFolder: (ctx: Pick<Context, 'signal' | 'log'>, id: number): Promise<FileFolder> =>
+      this.request('GET', `/file-manager/folders/${id}`, {
         signal: ctx.signal,
         log: ctx.log,
       }),

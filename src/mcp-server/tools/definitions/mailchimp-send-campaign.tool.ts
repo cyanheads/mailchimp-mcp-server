@@ -9,6 +9,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
@@ -24,8 +26,22 @@ const ContentSchema = z
     plainText: z.string().optional().describe('Plaintext body. Required for `type: plaintext`.'),
     templateId: z.coerce.number().int().optional().describe('Template ID to use as the base.'),
     templateSections: z.record(z.string(), z.unknown()).optional().describe(TEMPLATE_SECTIONS_DOC),
+    localTemplate: z
+      .string()
+      .optional()
+      .describe(
+        'Name of a local template to render (without the `.eta` extension). Requires `MAILCHIMP_TEMPLATES_DIR` on the server. Mutually exclusive with `html` and `templateId` — the rendered template IS the body. Combine with `localTemplateVars` to pass variables. **Recommended write path on free-tier Mailchimp**, where the upstream templates API is read-only.',
+      ),
+    localTemplateVars: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        'Variables passed to Eta when rendering `localTemplate`. Reference inside the template via `<%= it.varName %>`.',
+      ),
   })
-  .describe('Campaign content. Provide at least one of html / plainText / templateId.');
+  .describe(
+    'Campaign content. Provide at least one of html / plainText / templateId / localTemplate.',
+  );
 
 const InputSchema = z.object({
   audienceId: z.string().describe('Audience (list) ID to send to.'),
@@ -112,14 +128,20 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
 
-    if (!input.content.html && !input.content.plainText && !input.content.templateId) {
+    if (
+      !input.content.html &&
+      !input.content.plainText &&
+      !input.content.templateId &&
+      !input.content.localTemplate
+    ) {
       throw validationError(
-        "'content' must provide at least one of `html`, `plainText`, or `templateId`.",
+        "'content' must provide at least one of `html`, `plainText`, `templateId`, or `localTemplate`.",
       );
     }
     if (input.type === 'plaintext' && !input.content.plainText) {
       throw validationError("'type: plaintext' requires `content.plainText`.");
     }
+    const content = await resolveLocalTemplate(ctx, input.content);
     if (input.mode === 'schedule' && !input.scheduleTime) {
       throw validationError("'scheduleTime' is required when mode=schedule.");
     }
@@ -153,17 +175,18 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
       campaignId = draft.id;
       ctx.log.info('draft created', { campaignId, subject: input.subject });
 
-      // 2. Set content.
+      // 2. Set content (with optional @assets/* rewrite).
       const contentBody: Parameters<typeof svc.campaigns.setContent>[2] = {};
-      if (input.content.html) contentBody.html = input.content.html;
-      if (input.content.plainText) contentBody.plain_text = input.content.plainText;
-      if (typeof input.content.templateId === 'number') {
+      if (content.html) contentBody.html = content.html;
+      if (content.plainText) contentBody.plain_text = content.plainText;
+      if (typeof content.templateId === 'number') {
         contentBody.template = {
-          id: input.content.templateId,
-          ...(input.content.templateSections ? { sections: input.content.templateSections } : {}),
+          id: content.templateId,
+          ...(content.templateSections ? { sections: content.templateSections } : {}),
         };
       }
-      await svc.campaigns.setContent(ctx, campaignId, contentBody);
+      const rewritten = await rewriteAssetsInContent(ctx, contentBody);
+      await svc.campaigns.setContent(ctx, campaignId, rewritten);
 
       // 3. Checklist.
       const checklist = await svc.campaigns.getChecklist(ctx, campaignId);
