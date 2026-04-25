@@ -1,9 +1,0 @@
-# Sidecar metadata for `welcome.eta`. All fields optional.
-# Subject and previewText act as defaults — campaign-tool inputs override them.
-subject: "Welcome to {{brand}}"
-previewText: "Quick hello from the team"
-vars:
-  - firstName
-  - brand
-  - ctaUrl
-  - ctaLabel

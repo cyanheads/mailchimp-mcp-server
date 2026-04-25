@@ -132,6 +132,94 @@ describe('TemplateService — list & get', () => {
   });
 });
 
+describe('TemplateService — frontmatter', () => {
+  let dir: string;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    ({ dir, cleanup } = await setupTmpTemplates());
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it('parses YAML frontmatter and strips it from source', async () => {
+    await writeFile(
+      join(dir, 'fm.eta'),
+      `---\nsubject: "Frontmatter Subject"\npreviewText: "Preview"\nvars:\n  - foo\n---\n<h1>Hi <%= it.foo %></h1>\n`,
+      'utf8',
+    );
+    const svc = new TemplateService(dir);
+    const detail = await svc.get('fm');
+    expect(detail.hasMeta).toBe(true);
+    expect(detail.meta?.subject).toBe('Frontmatter Subject');
+    expect(detail.meta?.previewText).toBe('Preview');
+    expect(detail.meta?.vars).toEqual(['foo']);
+    expect(detail.source.startsWith('---')).toBe(false);
+    expect(detail.source).toContain('<h1>Hi <%= it.foo %></h1>');
+  });
+
+  it('renders correctly after stripping frontmatter', async () => {
+    await writeFile(
+      join(dir, 'fm.eta'),
+      `---\nsubject: "X"\n---\n<h1>Hi <%= it.name %></h1>\n`,
+      'utf8',
+    );
+    const svc = new TemplateService(dir);
+    const result = await svc.render('fm', { name: 'Casey' });
+    expect(result.html).toContain('<h1>Hi Casey</h1>');
+    expect(result.html).not.toContain('---');
+    expect(result.subject).toBe('X');
+  });
+
+  it('frontmatter takes precedence over sidecar when both exist', async () => {
+    await writeFile(
+      join(dir, 'both.eta'),
+      `---\nsubject: "From Frontmatter"\n---\n<p>Body</p>\n`,
+      'utf8',
+    );
+    await writeFile(join(dir, 'both.meta.yaml'), `subject: "From Sidecar"\n`, 'utf8');
+    const svc = new TemplateService(dir);
+    const detail = await svc.get('both');
+    expect(detail.meta?.subject).toBe('From Frontmatter');
+  });
+
+  it('throws ValidationError on unterminated frontmatter', async () => {
+    await writeFile(join(dir, 'broken-fm.eta'), `---\nsubject: "no closer"\n<p>body</p>\n`, 'utf8');
+    const svc = new TemplateService(dir);
+    await expect(svc.get('broken-fm')).rejects.toMatchObject({
+      code: JsonRpcErrorCode.ValidationError,
+      message: expect.stringContaining("missing the closing '---'"),
+    });
+  });
+
+  it('throws ValidationError on malformed frontmatter YAML', async () => {
+    await writeFile(join(dir, 'bad-yaml.eta'), `---\n: : :\n---\n<p>body</p>\n`, 'utf8');
+    const svc = new TemplateService(dir);
+    await expect(svc.get('bad-yaml')).rejects.toMatchObject({
+      code: JsonRpcErrorCode.ValidationError,
+      message: expect.stringContaining('Failed to parse frontmatter'),
+    });
+  });
+
+  it('list reports hasMeta=true for frontmatter-only templates', async () => {
+    await writeFile(join(dir, 'fm-only.eta'), `---\nsubject: "X"\n---\n<p>body</p>\n`, 'utf8');
+    const svc = new TemplateService(dir);
+    const list = await svc.list();
+    const fmOnly = list.find((t) => t.name === 'fm-only');
+    expect(fmOnly?.hasMeta).toBe(true);
+  });
+
+  it('treats a body that just happens to start with `---` but has no terminator as malformed', async () => {
+    await writeFile(join(dir, 'three-dash.eta'), `---\nthis is not yaml\nstill body\n`, 'utf8');
+    const svc = new TemplateService(dir);
+    await expect(svc.get('three-dash')).rejects.toMatchObject({
+      code: JsonRpcErrorCode.ValidationError,
+    });
+  });
+});
+
 describe('TemplateService — render', () => {
   let dir: string;
   let cleanup: () => Promise<void>;

@@ -307,32 +307,32 @@ export MAILCHIMP_TEMPLATES_DIR=/Users/me/email-templates
 
 ```text
 email-templates/
-  welcome.eta              # body
-  welcome.meta.yaml        # optional sidecar (subject, previewText, vars)
+  welcome.eta              # body + optional YAML frontmatter
   newsletter.eta
   partials/
     header.eta
     footer.eta
 ```
 
-Template body (`welcome.eta`):
+Template (`welcome.eta`) — YAML frontmatter on top, Eta body below:
 
 ```eta
+---
+subject: "Welcome to {{brand}}"
+previewText: "Onboarding starts here"
+vars:
+  - firstName
+  - brand
+---
 <%~ include('partials/header', it) %>
 <h1>Hello <%= it.firstName %></h1>
 <p>Welcome to <%= it.brand %>.</p>
 <img src="@assets/hero.png" alt="Hero">
 ```
 
-Sidecar (`welcome.meta.yaml`, all fields optional):
+Frontmatter is optional — a body with no `---` block is treated as a meta-less template. All meta fields are optional too. The `vars:` list is informational only (declared variables aren't schema-enforced).
 
-```yaml
-subject: "Welcome to {{brand}}"
-previewText: "Onboarding starts here"
-vars:
-  - firstName
-  - brand
-```
+> **Sidecar fallback (legacy):** prior to v0.3.1, meta lived in a separate `<name>.meta.yaml` file next to the body. That form still works for backward compatibility — if a `.eta` has no frontmatter, the loader falls back to reading the sidecar. Frontmatter takes precedence when both exist.
 
 Reference from any campaign tool:
 
@@ -363,7 +363,7 @@ The [`templates/`](./templates) directory holds working examples — point `MAIL
 
 | Template | What it shows |
 |:---------|:--------------|
-| [`welcome.eta`](./templates/welcome.eta) | Minimal body — `<%= it.firstName %>` interpolation, `<% if %>` conditional CTA block, sidecar declaring vars |
+| [`welcome.eta`](./templates/welcome.eta) | Minimal body — frontmatter declaring `subject` / `previewText` / `vars`, `<%= it.firstName %>` interpolation, `<% if %>` conditional CTA block |
 | [`redden-gardens-april-2026.eta`](./templates/redden-gardens-april-2026.eta) | Full inline-styled HTML newsletter. Demonstrates the recommended split: **Mailchimp merge tags** (`*\|FNAME\|*`) for per-recipient personalization on real list sends, **Eta vars** (volume / issue / monthYear / URLs) for list-wide constants substituted at template-render time |
 
 **Caveats:**

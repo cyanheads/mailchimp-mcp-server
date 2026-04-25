@@ -2,6 +2,22 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.1 — 2026-04-25
+
+Single-file template format. Templates can now embed YAML frontmatter at the top of the `.eta` body instead of requiring a separate `<name>.meta.yaml` sidecar. Sidecars remain supported for backward compatibility — frontmatter takes precedence when both are present.
+
+### Added
+
+- **Frontmatter parsing in `TemplateService.get()`.** A `.eta` body that opens with `---\n` followed by YAML and a closing `---\n` now has the YAML parsed into the `meta` field and the source returned with the frontmatter block stripped (so it can be passed straight to Eta with no extra step). Same `subject` / `previewText` / `vars` shape as the sidecar.
+- **`peekFrontmatter()` probe in `TemplateService.list()`.** Reads the first 4 bytes of each `.eta` (parallel with `Promise.all`) so `hasMeta` reports correctly on frontmatter-only templates without reading every body in full.
+- **7 new tests** in `tests/services/templates/template-service.test.ts` covering frontmatter parsing, render-after-strip, frontmatter-wins-over-sidecar precedence, unterminated frontmatter, malformed YAML, list reporting `hasMeta` on frontmatter-only templates, and a body that opens with `---` but has no terminator (treated as malformed). Total now 198/198 across 16 files.
+
+### Changed
+
+- **`seedFromMailchimp` now emits a single file with frontmatter** (`---\nsubject: …\n---\n\n<body>`) instead of writing a `.eta` body plus a parallel `.meta.yaml` sidecar. Existing seed tests still pass — they assert on parsed `meta.subject`, which is plumbed identically through the new code path.
+- **Example templates migrated to single-file form.** `templates/welcome.eta` and `templates/redden-gardens-april-2026.eta` now embed their `subject` / `previewText` / `vars` as frontmatter; the corresponding `.meta.yaml` sidecars have been removed.
+- **README's Local templates section** updated to show frontmatter as the preferred form, with a note that the legacy sidecar still works.
+
 ## 0.3.0 — 2026-04-24
 
 Big release: full local-authoring stack landed in three layers — `mailchimp_files` polish (L0), local-assets auto-upload pipeline (L1), and local-templates Eta-based authoring with `localTemplate` campaign integration (L2). Designed and probed against a free-tier account; all three layers verified working without paid plan.

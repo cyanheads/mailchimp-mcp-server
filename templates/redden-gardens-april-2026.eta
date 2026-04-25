@@ -1,3 +1,16 @@
+---
+subject: "Redden Gardens — April 2026"
+previewText: "Peas are climbing, lettuce is up, and the blackberry near 10th is waking. Here's your April dispatch from 909 Scott."
+vars:
+  - volume
+  - issue
+  - monthYear
+  - requestPlotUrl
+  - websiteUrl
+  - instagramUrl
+  - facebookUrl
+  - volunteerUrl
+---
 <!doctype html>
 <html lang="en">
 <head>

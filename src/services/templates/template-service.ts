@@ -8,13 +8,16 @@
  * @module services/templates/template-service
  */
 
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { forbidden, notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { logger as globalLogger, yamlParser } from '@cyanheads/mcp-ts-core/utils';
 import { Eta } from 'eta';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+
+/** Frontmatter must open with this exact prefix on byte 0. */
+const FRONTMATTER_PREFIX = '---\n';
 
 interface Logger {
   debug(msg: string, ctx?: Record<string, unknown>): void;
@@ -99,7 +102,7 @@ export class TemplateService {
     return abs;
   }
 
-  /** Walk the templates directory and return one summary per `.eta` file. Partials are not excluded — they're templates too, and listing them is informative. */
+  /** Walk the templates directory and return one summary per `.eta` file. Partials are not excluded — they're templates too, and listing them is informative. `hasMeta` is true when either a sibling `.meta.yaml` sidecar exists OR the body opens with YAML frontmatter (`---\n…\n---\n`). */
   async list(): Promise<TemplateSummary[]> {
     const templates: { abs: string; rel: string; size: number }[] = [];
     const metaPaths = new Set<string>();
@@ -128,22 +131,35 @@ export class TemplateService {
 
     await walk(this.templatesDir);
 
+    /** Probe each `.eta` for the 4-byte frontmatter prefix in parallel so list() stays fast on large dirs. */
+    const frontmatterFlags = await Promise.all(templates.map((t) => peekFrontmatter(t.abs)));
+
     return templates
-      .map((t) => ({
+      .map((t, i) => ({
         name: t.rel.slice(0, -TEMPLATE_EXT.length),
         relPath: t.rel,
         size: t.size,
-        hasMeta: metaPaths.has(t.abs.slice(0, -TEMPLATE_EXT.length) + META_EXT),
+        hasMeta:
+          frontmatterFlags[i] === true ||
+          metaPaths.has(t.abs.slice(0, -TEMPLATE_EXT.length) + META_EXT),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** Get one template's source and parsed meta. Throws if the body file is missing. */
+  /**
+   * Get one template's body and parsed meta. Throws if the body file is missing.
+   *
+   * Meta resolution order: YAML frontmatter (`---\n…\n---\n` at the top of the
+   * `.eta`) takes precedence; if absent, falls back to a sibling `<name>.meta.yaml`
+   * sidecar. Frontmatter is the preferred form — sidecars are kept for backward
+   * compatibility. The returned `source` is always the body with frontmatter
+   * stripped, so it can be passed straight to Eta.
+   */
   async get(name: string): Promise<TemplateDetail> {
     const bodyPath = this.resolveBodyPath(name);
-    let source: string;
+    let raw: string;
     try {
-      source = await readFile(bodyPath, 'utf8');
+      raw = await readFile(bodyPath, 'utf8');
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         throw notFound(
@@ -153,14 +169,41 @@ export class TemplateService {
       throw err;
     }
     const st = await stat(bodyPath);
-    const metaPath = `${bodyPath.slice(0, -TEMPLATE_EXT.length)}${META_EXT}`;
+
+    let source = raw;
     let meta: TemplateMeta | undefined;
-    try {
-      const yaml = await readFile(metaPath, 'utf8');
-      meta = await yamlParser.parse<TemplateMeta>(yaml);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+
+    if (raw.startsWith(FRONTMATTER_PREFIX)) {
+      const closeIdx = raw.indexOf('\n---', FRONTMATTER_PREFIX.length);
+      if (closeIdx < 0) {
+        throw validationError(
+          `Template '${name}' opens with '---' but is missing the closing '---' delimiter for the frontmatter block.`,
+        );
+      }
+      const yamlText = raw.slice(FRONTMATTER_PREFIX.length, closeIdx);
+      try {
+        meta = await yamlParser.parse<TemplateMeta>(yamlText);
+      } catch (err) {
+        throw validationError(
+          `Failed to parse frontmatter in '${name}': ${err instanceof Error ? err.message : String(err)}`,
+          { name },
+          { cause: err instanceof Error ? err : undefined },
+        );
+      }
+      const afterClose = closeIdx + 4;
+      source = raw[afterClose] === '\n' ? raw.slice(afterClose + 1) : raw.slice(afterClose);
     }
+
+    if (meta === undefined) {
+      const metaPath = `${bodyPath.slice(0, -TEMPLATE_EXT.length)}${META_EXT}`;
+      try {
+        const yaml = await readFile(metaPath, 'utf8');
+        meta = await yamlParser.parse<TemplateMeta>(yaml);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+
     return {
       name,
       relPath: relative(this.templatesDir, bodyPath).split(sep).join('/'),
@@ -229,10 +272,13 @@ export class TemplateService {
       body = `<% /* Seeded from Mailchimp template ${tmpl.id} (${JSON.stringify(tmpl.name)}). */ %>\n<% /* This template returned no default-content sections (typical for user-uploaded HTML templates that use mc:edit). Populate the body below. */ %>\n<h1><%= it.title %></h1>\n<p><%= it.body %></p>\n`;
     }
 
-    await writeFile(bodyPath, body, 'utf8');
-    const metaPath = `${bodyPath.slice(0, -TEMPLATE_EXT.length)}${META_EXT}`;
-    const metaYaml = `# Sidecar metadata for '${localName}'. All fields optional.\nsubject: ${JSON.stringify(tmpl.name)}\n`;
-    await writeFile(metaPath, metaYaml, 'utf8');
+    /**
+     * Single-file output: YAML frontmatter on top, rendered body below. Drops
+     * the legacy `.meta.yaml` sidecar — sidecars are still read by `get()` for
+     * backward compatibility but new templates ship as one file.
+     */
+    const file = `${FRONTMATTER_PREFIX}subject: ${JSON.stringify(tmpl.name)}\n---\n\n${body}`;
+    await writeFile(bodyPath, file, 'utf8');
     ctx.log.info('template seeded from Mailchimp', {
       mailchimpTemplateId: tmpl.id,
       localName,
@@ -240,8 +286,24 @@ export class TemplateService {
     });
     return {
       relPath: relative(this.templatesDir, bodyPath).split(sep).join('/'),
-      bytes: Buffer.byteLength(body, 'utf8'),
+      bytes: Buffer.byteLength(file, 'utf8'),
     };
+  }
+}
+
+/**
+ * Cheap probe — read the first 4 bytes and check for the frontmatter prefix.
+ * Used by `list()` to set `hasMeta` accurately on frontmatter-only templates
+ * without reading every body in full.
+ */
+async function peekFrontmatter(absPath: string): Promise<boolean> {
+  const fh = await open(absPath);
+  try {
+    const buf = Buffer.alloc(FRONTMATTER_PREFIX.length);
+    const { bytesRead } = await fh.read(buf, 0, buf.length, 0);
+    return bytesRead === buf.length && buf.toString('utf8') === FRONTMATTER_PREFIX;
+  } finally {
+    await fh.close();
   }
 }
 
