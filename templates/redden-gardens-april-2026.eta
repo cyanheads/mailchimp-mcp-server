@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="x-apple-disable-message-reformatting">
+  <meta name="color-scheme" content="light">
+  <title>Redden Gardens — <%= it.monthYear %></title>
+</head>
+<body style="margin:0;padding:0;background:#f4efe4;font-family:Georgia,'Times New Roman',serif;color:#2b2a26;-webkit-font-smoothing:antialiased;">
+
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#f4efe4;font-size:1px;line-height:1px;">Peas are climbing, lettuce is up, and the blackberry near 10th is waking. Here's your April dispatch from 909 Scott.</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4efe4;">
+  <tr>
+    <td align="center" style="padding:28px 12px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#fbf8f0;border:1px solid #e4dcc6;">
+
+        <tr>
+          <td style="background:#2d4a22;padding:26px 32px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top" width="430" style="width:430px;">
+                  <div style="color:#e7d9a8;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;padding-bottom:6px;">Vol. <%= it.volume %> &middot; Issue <%= it.issue %> &middot; <%= it.monthYear %></div>
+                  <div style="color:#fbf8f0;font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1.1;letter-spacing:1px;">Redden Gardens</div>
+                  <div style="color:#c8b88a;font-family:Georgia,'Times New Roman',serif;font-size:13px;font-style:italic;padding-top:6px;">The Gardener's Almanac &mdash; a monthly dispatch from 909 Scott</div>
+                </td>
+                <td valign="top" align="right" width="106" style="width:106px;">
+                  <img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f955.png" width="56" height="56" alt="" style="display:inline-block;border:0;outline:0;vertical-align:top;">
+                  <img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f331.png" width="38" height="38" alt="" style="display:inline-block;border:0;outline:0;vertical-align:top;padding-top:18px;">
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr><td style="background:#c84b31;height:4px;line-height:4px;font-size:0;">&nbsp;</td></tr>
+
+        <tr>
+          <td style="padding:36px 40px 8px 40px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="top" style="padding-right:14px;">
+                  <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.6;color:#2b2a26;">Hello, *|IF:FNAME|**|FNAME|**|ELSE:|*neighbor*|END:IF|*,</p>
+                  <p style="margin:16px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.7;color:#2b2a26;">April is the month the garden stops rehearsing and starts performing. Peas are already climbing the trellises on the south end, the asparagus crowns are breaking ground, and the blackberry near the 10th &amp; Scott corner &mdash; the one we've been watching for three seasons &mdash; is leafing out with real confidence this year.</p>
+                </td>
+                <td valign="top" align="right" width="88" style="width:88px;">
+                  <img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f430.png" width="72" height="72" alt="bunny" style="display:block;border:0;outline:0;">
+                </td>
+              </tr>
+            </table>
+            <p style="margin:16px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:16px;line-height:1.7;color:#2b2a26;">If you haven't been by your plot in a week, now is the time. Weeds grow faster than memory.</p>
+          </td>
+        </tr>
+
+        <tr><td style="padding:24px 40px 8px 40px;"><div style="border-top:1px solid #d9cea8;"></div></td></tr>
+
+        <tr>
+          <td style="padding:8px 40px 8px 40px;">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#8a6f3e;">Plant This Month</p>
+            <h2 style="margin:6px 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;color:#2d4a22;font-weight:normal;">What to sow &amp; transplant in April</h2>
+            <p style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a463e;">Pulled from the UK Extension planting calendar we follow. Kentucky's Zone 6b is right in stride &mdash; cool-season crops go in now, warm-season starts move to the windowsill.</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:0 40px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f0e9d2;border-left:4px solid #7a9454;">
+              <tr>
+                <td style="padding:20px 22px;">
+                  <p style="margin:0 0 8px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f331.png" width="18" height="18" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-4px;margin-right:8px;">Direct Sow Outdoors</p>
+                  <p style="margin:0 0 18px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#2b2a26;">Spinach &middot; mustard &middot; beets &middot; peas &middot; edible-podded peas &middot; carrots &middot; collards &middot; kale &middot; radishes &middot; turnips &middot; green onions &middot; onion sets &middot; endive &middot; Swiss chard &middot; lettuce</p>
+                  <p style="margin:0 0 8px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f955.png" width="18" height="18" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-4px;margin-right:8px;">Transplant Outdoors</p>
+                  <p style="margin:0 0 18px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#2b2a26;">Cabbage &middot; kohlrabi &middot; asparagus &amp; rhubarb crowns &middot; early potato seed pieces</p>
+                  <p style="margin:0 0 8px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f345.png" width="18" height="18" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-4px;margin-right:8px;">Start Indoors</p>
+                  <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#2b2a26;">Peppers &middot; tomatoes &middot; eggplant &middot; sweet potato slips</p>
+                  <p style="margin:16px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;font-style:italic;color:#6b5d3a;">Tip: if your rhubarb is four years old, dig and divide it now. Fertilize asparagus and rhubarb with 1 lb of 5-10-10 per 100 sq ft.</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px 40px 8px 40px;">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#8a6f3e;">Outside the Fence</p>
+            <h2 style="margin:6px 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;color:#2d4a22;font-weight:normal;">What anyone is welcome to pick</h2>
+            <p style="margin:0 0 12px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#4a463e;">Our perimeter plantings are communal by design. Berries and herbs along the outside of the fence are for anyone walking by &mdash; please don't be shy. The blackberry near 10th &amp; Scott is our projected star this year as it reaches productive maturity. Tomatoes and peppers outside the fence will hit their stride in July and August.</p>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#4a463e;">Flowers along the outside are fair game too &mdash; we just ask that you stick to multi-bloom varieties so there's plenty left for neighbors and pollinators. If you're unsure what's edible or how to pick, ask anyone you see working in the garden.</p>
+          </td>
+        </tr>
+
+        <tr><td style="padding:24px 40px 8px 40px;"><div style="border-top:1px solid #d9cea8;"></div></td></tr>
+
+        <tr>
+          <td style="padding:8px 40px 8px 40px;">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#8a6f3e;">Community Corner</p>
+            <h2 style="margin:6px 0 18px 0;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;color:#2d4a22;font-weight:normal;">Three things worth knowing</h2>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:0 40px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:0 0 18px 0;">
+                  <p style="margin:0 0 4px 0;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f345.png" width="22" height="22" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-5px;margin-right:8px;">The Giving Table returns in June.</p>
+                  <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a463e;">Excess harvest from inside the garden gets shared outside the fence. We usually roll it out when summer squash starts &mdash; keep an eye out in early June (sooner if the weather cooperates).</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 18px 0;">
+                  <p style="margin:0 0 4px 0;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f96c.png" width="22" height="22" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-5px;margin-right:8px;">COVUNITY Fridge is open year-round.</p>
+                  <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a463e;">Along the alley to the north of the green building. Take what you need, leave what you can. There's also a microwave and a hot/cold water station, open anytime.</p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:0 0 4px 0;">
+                  <p style="margin:0 0 4px 0;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#2d4a22;font-weight:bold;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f33b.png" width="22" height="22" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-5px;margin-right:8px;">The Sunflower Library is restocked.</p>
+                  <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.65;color:#4a463e;">Our sharing library &mdash; yes, the one shaped like a sunflower on the fence &mdash; got a fresh donation of seed catalogs and two Ruth Stout titles. Pick up or drop off whenever.</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px 40px 8px 40px;">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#8a6f3e;"><img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f41d.png" width="16" height="16" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-3px;margin-right:6px;">Beyond 909 Scott</p>
+            <h2 style="margin:6px 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.2;color:#2d4a22;font-weight:normal;">Our satellite gardens</h2>
+            <p style="margin:0 0 12px 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#4a463e;">Beyond the main lot, we help tend a smaller community garden in the northwest corner of <strong>Goebel Park</strong>, near the pollinator bed. Over at <strong>Randolph Park</strong>, the pollinator garden on the north end and the urban orchard on the south end are both leafing out &mdash; worth a walk-by this month.</p>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#4a463e;">If you want to put time toward any of these, reply to this email and we'll point you at whichever site needs hands that week.</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px 40px 8px 40px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#2d4a22;">
+              <tr>
+                <td style="padding:28px 28px 24px 28px;">
+                  <p style="margin:0 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#c8b88a;">Plots available</p>
+                  <h3 style="margin:0 0 10px 0;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.25;color:#fbf8f0;font-weight:normal;">A few plots open up each spring. Claim yours before the warm-season rush.</h3>
+                  <p style="margin:0 0 18px 0;font-family:Georgia,'Times New Roman',serif;font-size:14px;line-height:1.6;color:#dcd0a5;">Know someone who's been talking about growing their own tomatoes? Forward this along &mdash; there's still time to get a plot tilled and planted before Memorial Day.</p>
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td style="background:#c84b31;">
+                        <a href="<%= it.requestPlotUrl %>" style="display:inline-block;padding:12px 26px;font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#fbf8f0;text-decoration:none;letter-spacing:1px;">Request a Plot &rsaquo;</a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:32px 40px 8px 40px;">
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.7;color:#4a463e;">See you in the rows,</p>
+            <p style="margin:6px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:17px;font-style:italic;color:#2d4a22;">The Redden Gardens crew <img src="https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/1f430.png" width="22" height="22" alt="" style="display:inline-block;border:0;outline:0;vertical-align:-5px;margin-left:4px;"></p>
+          </td>
+        </tr>
+
+        <tr><td style="padding:28px 40px 8px 40px;"><div style="border-top:1px solid #d9cea8;"></div></td></tr>
+
+        <tr>
+          <td style="padding:12px 40px 28px 40px;">
+            <p style="margin:0 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:#8a6f3e;">Our Mission</p>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.7;color:#6b5d3a;font-style:italic;">To create a dedicated green haven for vegetable gardening and community knowledge sharing &mdash; and to grow beauty alongside vegetables, people alongside community, and stories alongside knowledge.</p>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="background:#2d4a22;padding:22px 40px;">
+            <p style="margin:0 0 4px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#c8b88a;letter-spacing:1px;">909 Scott Blvd &middot; Covington, KY 41011</p>
+            <p style="margin:0 0 12px 0;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#8a9a6a;font-style:italic;">The Dr. John D. &amp; M. Patricia Redden Memorial Garden</p>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:12px;color:#8a9a6a;">
+              <a href="<%= it.websiteUrl %>" style="color:#e7d9a8;text-decoration:none;">reddengardens.org</a> &nbsp;&middot;&nbsp;
+              <a href="<%= it.instagramUrl %>" style="color:#e7d9a8;text-decoration:none;">Instagram</a> &nbsp;&middot;&nbsp;
+              <a href="<%= it.facebookUrl %>" style="color:#e7d9a8;text-decoration:none;">Facebook</a> &nbsp;&middot;&nbsp;
+              <a href="<%= it.volunteerUrl %>" style="color:#e7d9a8;text-decoration:none;">Volunteer</a>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;">
+        <tr>
+          <td style="padding:16px 20px 0 20px;font-family:Georgia,'Times New Roman',serif;font-size:11px;line-height:1.6;color:#8a7d5a;text-align:center;">You're getting this because you're part of the Redden Gardens plot &amp; volunteer community.</td>
+        </tr>
+      </table>
+
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>

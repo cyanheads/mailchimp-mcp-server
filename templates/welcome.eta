@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title><%= it.subject ?? 'Welcome' %></title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 560px; margin: 0 auto; padding: 32px;">
+  <h1 style="font-size: 24px; margin: 0 0 16px;">Hi <%= it.firstName %>,</h1>
+
+  <p style="font-size: 16px; line-height: 1.5; color: #333;">
+    Welcome to <strong><%= it.brand %></strong>. Glad to have you on board.
+  </p>
+
+  <% if (it.ctaUrl && it.ctaLabel) { %>
+  <p style="margin: 24px 0;">
+    <a href="<%= it.ctaUrl %>"
+       style="display: inline-block; padding: 12px 20px; background: #0f62fe; color: #fff; text-decoration: none; border-radius: 6px;">
+      <%= it.ctaLabel %>
+    </a>
+  </p>
+  <% } %>
+
+  <p style="font-size: 14px; color: #888; margin-top: 32px;">
+    — The <%= it.brand %> team
+  </p>
+</body>
+</html>

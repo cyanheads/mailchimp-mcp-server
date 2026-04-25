@@ -78,6 +78,10 @@ docs/devdocs.md
 .mcpregistry_github_token
 .mcpregistry_registry_token
 
+# SHA-256 upload cache lives next to the assets dir — pure runtime artifact,
+# regenerated automatically on the next campaign send / `mailchimp_assets sync`.
+/assets/.mailchimp-cache.json
+
 # =============================================================================
 # REFERENCE ARTIFACTS (large; fetch on demand)
 # =============================================================================
