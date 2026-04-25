@@ -357,6 +357,15 @@ The render pipeline:
 
 The `mailchimp_local_templates` tool exposes `list`, `get`, `render-preview` (returns HTML without sending), and `seed-from-mailchimp` (reads a Mailchimp `base`/`user` template by ID and writes it to disk as a starting point — useful on free where you can read but not write upstream).
 
+### Example templates in this repo
+
+The [`templates/`](./templates) directory holds working examples — point `MAILCHIMP_TEMPLATES_DIR` at it directly to try them, or copy them into your own dir as a starting point:
+
+| Template | What it shows |
+|:---------|:--------------|
+| [`welcome.eta`](./templates/welcome.eta) | Minimal body — `<%= it.firstName %>` interpolation, `<% if %>` conditional CTA block, sidecar declaring vars |
+| [`redden-gardens-april-2026.eta`](./templates/redden-gardens-april-2026.eta) | Full inline-styled HTML newsletter. Demonstrates the recommended split: **Mailchimp merge tags** (`*\|FNAME\|*`) for per-recipient personalization on real list sends, **Eta vars** (volume / issue / monthYear / URLs) for list-wide constants substituted at template-render time |
+
 **Caveats:**
 - `localTemplate` is mutually exclusive with `html` and `templateId` on the same content block.
 - Var validation isn't enforced by the schema — missing/extra vars surface as Eta render errors at send time.
