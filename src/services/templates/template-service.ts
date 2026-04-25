@@ -221,11 +221,12 @@ export class TemplateService {
     const sectionKeys = Object.keys(sections);
 
     let body: string;
+    /** Eta v4 doesn't accept `<%#` for comments. Use JS block comments inside an Eta code tag instead — they survive in the seeded source but render to nothing. */
     if (sectionKeys.length > 0) {
-      const fragments = sectionKeys.map((k) => `<%# section: ${k} %>\n${String(sections[k])}`);
+      const fragments = sectionKeys.map((k) => `<% /* section: ${k} */ %>\n${String(sections[k])}`);
       body = fragments.join('\n\n');
     } else {
-      body = `<%# Seeded from Mailchimp template ${tmpl.id} ('${tmpl.name}'). %>\n<%# This template returned no default-content sections (typical for user-uploaded HTML templates that use mc:edit). Populate the body below. %>\n<h1><%= it.title %></h1>\n<p><%= it.body %></p>\n`;
+      body = `<% /* Seeded from Mailchimp template ${tmpl.id} (${JSON.stringify(tmpl.name)}). */ %>\n<% /* This template returned no default-content sections (typical for user-uploaded HTML templates that use mc:edit). Populate the body below. */ %>\n<h1><%= it.title %></h1>\n<p><%= it.body %></p>\n`;
     }
 
     await writeFile(bodyPath, body, 'utf8');

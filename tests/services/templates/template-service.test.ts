@@ -211,6 +211,11 @@ describe('TemplateService — seedFromMailchimp', () => {
     const detail = await svc.get('seeded');
     expect(detail.source).toContain('Seeded from Mailchimp template 9999');
     expect(detail.meta?.subject).toBe('Starter');
+
+    /** Stub must be valid Eta — pre-fix regression: `<%# %>` bombed at render. */
+    const rendered = await svc.render('seeded', { title: 'Hi', body: 'Body' });
+    expect(rendered.html).toContain('<h1>Hi</h1>');
+    expect(rendered.html).toContain('<p>Body</p>');
   });
 
   it('writes section fragments when Mailchimp returns a populated map', async () => {
@@ -238,5 +243,11 @@ describe('TemplateService — seedFromMailchimp', () => {
     expect(detail.source).toContain('<h1>Header</h1>');
     expect(detail.source).toContain('section: body');
     expect(detail.source).toContain('<p>Body</p>');
+
+    /** Section markers must be valid Eta — pre-fix regression: `<%# %>` bombed at render. */
+    const rendered = await svc.render('dnd-seed', {});
+    expect(rendered.html).toContain('<h1>Header</h1>');
+    expect(rendered.html).toContain('<p>Body</p>');
+    expect(rendered.html).not.toContain('<%');
   });
 });
