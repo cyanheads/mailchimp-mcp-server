@@ -171,18 +171,22 @@ export class MailchimpService {
     } catch (err) {
       clearTimeout(timer);
       if (opts.signal?.aborted) {
-        throw timeout('Request cancelled by caller.', { url, method }, { cause: err });
+        throw timeout(
+          'Request cancelled by caller.',
+          { url, method, reason: 'request_cancelled' },
+          { cause: err },
+        );
       }
       if (timeoutController.signal.aborted) {
-        throw serviceUnavailable(
+        throw timeout(
           `Mailchimp request timed out after ${this.timeoutMs}ms (${method} ${url}).`,
-          { url, method, timeoutMs: this.timeoutMs },
+          { url, method, timeoutMs: this.timeoutMs, reason: 'mailchimp_timeout' },
           { cause: err },
         );
       }
       throw serviceUnavailable(
         `Network failure calling Mailchimp (${method} ${url}).`,
-        { url, method },
+        { url, method, reason: 'mailchimp_unavailable' },
         { cause: err },
       );
     } finally {
@@ -199,7 +203,7 @@ export class MailchimpService {
       } catch (err) {
         throw serviceUnavailable(
           'Mailchimp returned a non-JSON successful response (likely a maintenance page).',
-          { url, method, preview: rawText.slice(0, 200) },
+          { url, method, preview: rawText.slice(0, 200), reason: 'mailchimp_unavailable' },
           { cause: err },
         );
       }
@@ -212,13 +216,19 @@ export class MailchimpService {
     } catch {
       body = undefined;
     }
+    const pathOnly = stripBaseUrl(url, this.baseUrl);
     const errorData = this.buildErrorData(res.status, body);
+    errorData.url = url;
+    errorData.method = method;
+    const recoveryHint = recoveryHintForPath(res.status, method, pathOnly);
+    if (recoveryHint) errorData.recovery = { hint: recoveryHint };
     const title = body?.title ?? res.statusText;
     const detail = body?.detail ?? 'No details from Mailchimp.';
     const fieldErrors = body?.errors?.length
       ? ` Field errors: ${body.errors.map((e) => `${e.field}: ${e.message}`).join('; ')}.`
       : '';
-    const message = `Mailchimp ${method} ${url} failed (${res.status} ${title}): ${detail}${fieldErrors}`;
+    /** Message stays human-readable but no longer leaks the full data-center URL or HTTP method. Path is included for context (already part of the resource model the agent sees) but the data-center hostname stays in `data.url` only. */
+    const message = `Mailchimp returned ${res.status} ${title} for ${pathOnly}: ${detail}${fieldErrors}`;
 
     log.warning('Mailchimp upstream error', {
       url,
@@ -249,14 +259,16 @@ export class MailchimpService {
     if (status === 401) {
       return unauthorized(
         `${message}. Check MAILCHIMP_API_KEY — the key may be invalid or revoked.`,
-        data,
+        { ...data, reason: 'mailchimp_unauthorized' },
       );
     }
-    if (status === 403) return forbidden(message, data);
-    if (status === 404) return notFound(message, data);
-    if (status === 422 || status === 400) return validationError(message, data);
-    if (status === 429) return rateLimited(message, data);
-    return serviceUnavailable(message, data);
+    if (status === 403) return forbidden(message, { ...data, reason: 'mailchimp_forbidden' });
+    if (status === 404) return notFound(message, { ...data, reason: 'mailchimp_not_found' });
+    if (status === 422 || status === 400) {
+      return validationError(message, { ...data, reason: 'mailchimp_validation_failed' });
+    }
+    if (status === 429) return rateLimited(message, { ...data, reason: 'mailchimp_rate_limited' });
+    return serviceUnavailable(message, { ...data, reason: 'mailchimp_unavailable' });
   }
 
   // ─── Account ──────────────────────────────────────────────────────
@@ -1296,4 +1308,60 @@ export function setMailchimpServiceForTesting(service: MailchimpService | undefi
 
 function mergeSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
   return a ? AbortSignal.any([a, b]) : b;
+}
+
+/** Strip the data-center base URL from a fully-qualified Mailchimp URL, leaving just the API path. Falls back to the input on shape mismatch so debug data is never lost. */
+function stripBaseUrl(fullUrl: string, baseUrl: string): string {
+  if (fullUrl.startsWith(baseUrl)) {
+    const rest = fullUrl.slice(baseUrl.length);
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  try {
+    const parsed = new URL(fullUrl);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return fullUrl;
+  }
+}
+
+/**
+ * Map an upstream failure to an actionable next-move hint. Status + path is
+ * enough to disambiguate the common cases — wrong audience ID, wrong campaign
+ * ID, wrong subscriber email (delivered as a member-hash URL segment), wrong
+ * template / segment / report ID. Returns `undefined` when the path doesn't
+ * match a known shape; the framework still surfaces the underlying error
+ * message and `data.reason`.
+ */
+function recoveryHintForPath(status: number, method: HttpMethod, path: string): string | undefined {
+  if (status === 429)
+    return 'Wait briefly before retrying; lower MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.';
+  if (status === 401)
+    return 'Verify MAILCHIMP_API_KEY is set and current; rotate via Mailchimp → Account → Extras → API keys.';
+  if (status >= 500)
+    return 'Upstream is degraded; retry shortly. Check status.mailchimp.com if the failures persist.';
+  if (status !== 404) return;
+  /** Order: most-specific first. The /lists/{id}/members/{hash} pattern must beat the bare /lists/{id} match. */
+  if (/^\/lists\/[^/]+\/members\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'Verify the subscriber email exists with mailchimp_find_subscriber, then retry. The Mailchimp URL identifies subscribers by an MD5 hash of the lowercased email — wrong email and wrong hash both surface as 404.';
+  }
+  if (/^\/lists\/[^/]+\/segments\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List segments via mailchimp_segments (operation: list) for this audience and copy a valid segmentId.';
+  }
+  if (/^\/lists\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List audiences via mailchimp_audiences (operation: list) and copy a valid audienceId. Free-tier accounts have one audience.';
+  }
+  if (/^\/campaigns\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List campaigns via mailchimp_campaigns (operation: list) and copy a valid campaignId.';
+  }
+  if (/^\/reports\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List reports via mailchimp_reports (operation: list) — only sent campaigns have reports.';
+  }
+  if (/^\/templates\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List templates via mailchimp_templates (operation: list) and copy a valid templateId.';
+  }
+  if (/^\/file-manager\/(files|folders)\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'List files via mailchimp_files (operation: list / list-folders) and copy a valid id.';
+  }
+  if (method === 'GET') return 'List the parent collection to discover valid IDs, then retry.';
+  return;
 }

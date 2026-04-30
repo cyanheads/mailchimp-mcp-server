@@ -10,7 +10,7 @@
  */
 
 import type { Context } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { configurationError, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getTemplateService } from '@/services/templates/template-service.js';
 
 export interface CampaignContentInput {
@@ -44,9 +44,9 @@ export async function resolveLocalTemplate<T extends CampaignContentInput>(
   }
   const svc = getTemplateService();
   if (!svc) {
-    throw new McpError(
-      JsonRpcErrorCode.ConfigurationError,
+    throw configurationError(
       "'localTemplate' requires MAILCHIMP_TEMPLATES_DIR to be set on the server.",
+      { reason: 'templates_not_configured' },
     );
   }
   const result = await svc.render(input.localTemplate, input.localTemplateVars ?? {});

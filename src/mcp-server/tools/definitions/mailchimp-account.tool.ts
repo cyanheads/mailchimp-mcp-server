@@ -92,6 +92,12 @@ const OutputSchema = z.object({
     .number()
     .optional()
     .describe('Offset used for this page. Populated for `activity-feed`.'),
+  note: z
+    .string()
+    .optional()
+    .describe(
+      'Plain-language note populated when `activity-feed` returns no rows — explains the empty result without forcing the agent to infer cause.',
+    ),
 });
 
 type Output = z.infer<typeof OutputSchema>;
@@ -153,12 +159,17 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
       return mapped;
     });
     ctx.log.info('mailchimp_account activity-feed', { count: items.length });
-    return {
+    const out: Output = {
       operation: 'activity-feed',
       items,
       totalItems: feed.total_items ?? items.length,
       offset: input.offset,
     };
+    if (items.length === 0 && (feed.total_items ?? 0) === 0) {
+      out.note =
+        'No Chimp Chatter events returned. Common causes: the account has no recent activity (no campaigns sent, no subscribes, no unsubscribes), or the chatter feed is still warming up on a brand-new account. Check mailchimp_audiences and mailchimp_campaigns for direct signal instead.';
+    }
+    return out;
   },
 
   format: (result) => {
@@ -201,7 +212,7 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
       if (hasInfo) lines.push('');
       lines.push(`# Activity feed (${items.length} of ${total}, offset ${result.offset ?? 0})`, '');
       if (items.length === 0) {
-        lines.push('_No activity in the requested window._');
+        lines.push(`_${result.note ?? 'No activity in the requested window.'}_`);
       } else {
         for (const item of items) {
           lines.push(`**${item.updateTime}** — type: ${item.type}`);
@@ -213,6 +224,9 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
           lines.push('');
         }
       }
+    }
+    if (result.note && (result.items === undefined || result.items.length > 0)) {
+      lines.push('', `_${result.note}_`);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

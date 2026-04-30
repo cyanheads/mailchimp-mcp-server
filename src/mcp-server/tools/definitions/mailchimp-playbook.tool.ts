@@ -7,11 +7,12 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
   getMailchimpService,
   mailchimpMemberHash,
 } from '@/services/mailchimp/mailchimp-service.js';
+import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const TopicSchema = z
   .enum([
@@ -72,6 +73,16 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'subscriber_search_no_usable_match',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Subscriber search returned matches but none had usable record data.',
+      recovery:
+        'Use mailchimp_find_subscriber with the same email to inspect the raw search response and pick a candidate.',
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
@@ -189,6 +200,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const report = await svc.reports.get(ctx, input.campaignId);
         const open = report.opens?.open_rate ?? 0;
         const click = report.clicks?.click_rate ?? 0;
+        const sent = report.emails_sent ?? 0;
         const ib = report.industry_stats;
         const benchmark = (actual: number | undefined, avg: number | undefined): string => {
           if (typeof actual !== 'number' || typeof avg !== 'number') return '';
@@ -196,28 +208,40 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           const sign = delta >= 0 ? '+' : '';
           return ` (${sign}${(delta * 100).toFixed(2)}pp vs industry)`;
         };
+        /** Suppress rate-based advice on tiny sends — 0/1 isn't a "low rate", it's no signal. Threshold: 50 recipients gives roughly ±5pp confidence on a 15% rate. */
+        const SAMPLE_THRESHOLD = 50;
+        const tooSmall = sent < SAMPLE_THRESHOLD;
         const instructions = [
           `# Post-send review — "${report.campaign_title ?? report.subject_line ?? report.id}"`,
           '',
-          `**Sent to:** ${report.emails_sent ?? 0}  `,
-          `**Open rate:** ${PCT(open)}${benchmark(open, ib?.open_rate)}  `,
-          `**Click rate:** ${PCT(click)}${benchmark(click, ib?.click_rate)}  `,
+          `**Sent to:** ${sent}  `,
+          `**Open rate:** ${PCT(open)}${tooSmall ? '' : benchmark(open, ib?.open_rate)}  `,
+          `**Click rate:** ${PCT(click)}${tooSmall ? '' : benchmark(click, ib?.click_rate)}  `,
           `**Unsubscribed:** ${report.unsubscribed ?? 0}  `,
           `**Abuse reports:** ${report.abuse_reports ?? 0}  `,
           '',
+          tooSmall
+            ? `> **Sample too small for rate analysis.** ${sent} recipient${sent === 1 ? '' : 's'} — open/click rates are not meaningful below ~${SAMPLE_THRESHOLD}. Inspect raw events directly instead of treating percentages as signal.`
+            : '',
           '1. **Get the full digest.** `mailchimp_campaign_report` returns top clicked links, top locations, recent unsubs, and industry benchmarks in one call.',
-          open < 0.15
-            ? "2. **Low opens — look at subject/from.** Open rate is below typical industry benchmarks. Check `mailchimp_reports` with `dimension: advice` for Mailchimp's automated tips."
-            : '2. **Opens look healthy.** Focus review on content → action funnel.',
-          click < 0.02
-            ? "3. **Low clicks — look at content.** Click rate is low; use `mailchimp_reports` `operation: slice` with `dimension: click-details` to see which links landed (and which didn't)."
-            : '3. **Clicks are healthy — which CTAs won?** `mailchimp_reports` `operation: slice` with `dimension: click-details`.',
+          tooSmall
+            ? '2. **Inspect the raw event timeline.** `mailchimp_reports` `operation: slice` with `dimension: email-activity` shows per-recipient opens / clicks / bounces — far more useful than a rate at this volume.'
+            : open < 0.15
+              ? "2. **Low opens — look at subject/from.** Open rate is below typical industry benchmarks. Check `mailchimp_reports` with `dimension: advice` for Mailchimp's automated tips."
+              : '2. **Opens look healthy.** Focus review on content → action funnel.',
+          tooSmall
+            ? '3. **Click-by-click drilldown.** `mailchimp_reports` `operation: slice` with `dimension: click-details` lists every URL with its click count — useful even when there are zero clicks.'
+            : click < 0.02
+              ? "3. **Low clicks — look at content.** Click rate is low; use `mailchimp_reports` `operation: slice` with `dimension: click-details` to see which links landed (and which didn't)."
+              : '3. **Clicks are healthy — which CTAs won?** `mailchimp_reports` `operation: slice` with `dimension: click-details`.',
           (report.abuse_reports ?? 0) > 0
             ? '4. **⚠ Abuse reports present.** Review with `mailchimp_reports` `dimension: abuse-reports` — high counts damage deliverability.'
             : '4. **No abuse reports.** Good signal.',
           '5. **Unsub reasons.** `mailchimp_reports` with `dimension: unsubscribed` — the `reason` field tells you what drove the unsubs.',
           '6. **If this was bad, diagnose next.** `mailchimp_playbook` with `topic: deliverability`.',
-        ].join('\n');
+        ]
+          .filter(Boolean)
+          .join('\n');
         return {
           topic: 'post-send-review',
           instructions,
@@ -411,7 +435,10 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         }
         const top = exact[0] ?? fuzzy[0];
         if (!top) {
-          throw validationError('Search returned matches but none were usable.');
+          throw ctx.fail('subscriber_search_no_usable_match', undefined, {
+            email: input.email,
+            ...ctx.recoveryFor('subscriber_search_no_usable_match'),
+          });
         }
         const instructions = [
           `# Subscriber triage — \`${input.email}\``,

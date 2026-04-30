@@ -74,6 +74,12 @@ const OutputSchema = z.object({
     })
     .optional()
     .describe('Populated for `scope: campaigns`.'),
+  note: z
+    .string()
+    .optional()
+    .describe(
+      'Plain-language note populated when the search returns no results — echoes the query and suggests next moves.',
+    ),
 });
 
 type Output = z.infer<typeof OutputSchema>;
@@ -94,54 +100,64 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
       const resp = await svc.search.members(ctx, params);
       const exactAll = resp.exact_matches?.members ?? [];
       const fuzzyAll = resp.full_search?.members ?? [];
-      return {
+      const totalExact = resp.exact_matches?.total_items ?? exactAll.length;
+      const totalFuzzy = resp.full_search?.total_items ?? fuzzyAll.length;
+      const out: Output = {
         scope: 'members',
         query: input.query,
         members: {
           exact: exactAll.slice(0, input.includeTopN).map((m) => {
-            const out: z.infer<typeof MemberMatchSchema> = {
+            const o: z.infer<typeof MemberMatchSchema> = {
               audienceId: m.list_id,
               subscriberId: m.id,
               email: m.email_address,
               status: m.status,
             };
-            if (m.full_name) out.fullName = m.full_name;
-            return out;
+            if (m.full_name) o.fullName = m.full_name;
+            return o;
           }),
           fuzzy: fuzzyAll.slice(0, input.includeTopN).map((m) => {
-            const out: z.infer<typeof MemberMatchSchema> = {
+            const o: z.infer<typeof MemberMatchSchema> = {
               audienceId: m.list_id,
               subscriberId: m.id,
               email: m.email_address,
               status: m.status,
             };
-            if (m.full_name) out.fullName = m.full_name;
-            return out;
+            if (m.full_name) o.fullName = m.full_name;
+            return o;
           }),
-          totalExact: resp.exact_matches?.total_items ?? exactAll.length,
-          totalFuzzy: resp.full_search?.total_items ?? fuzzyAll.length,
+          totalExact,
+          totalFuzzy,
         },
       };
+      if (totalExact === 0 && totalFuzzy === 0) {
+        out.note = `No subscribers matched '${input.query}'${input.audienceId ? ` in audience '${input.audienceId}'` : ' across any audience'}. Archived subscribers are excluded — check via mailchimp_find_subscriber for the exact email, broaden the query, or omit audienceId to widen the scope.`;
+      }
+      return out;
     }
 
     const resp = await svc.search.campaigns(ctx, { query: input.query });
-    return {
+    const out: Output = {
       scope: 'campaigns',
       query: input.query,
       campaigns: {
         totalMatches: resp.total_items,
         matches: resp.results.slice(0, input.includeTopN).map((r) => {
-          const out: z.infer<typeof CampaignMatchSchema> = { campaignId: r.campaign.id };
-          if (r.campaign.type) out.type = r.campaign.type;
-          if (r.campaign.status) out.status = r.campaign.status;
-          if (r.campaign.settings?.subject_line) out.subjectLine = r.campaign.settings.subject_line;
-          if (r.campaign.settings?.title) out.title = r.campaign.settings.title;
-          if (r.campaign.send_time) out.sendTime = r.campaign.send_time;
-          if (r.snippet) out.snippet = r.snippet;
-          return out;
+          const o: z.infer<typeof CampaignMatchSchema> = { campaignId: r.campaign.id };
+          if (r.campaign.type) o.type = r.campaign.type;
+          if (r.campaign.status) o.status = r.campaign.status;
+          if (r.campaign.settings?.subject_line) o.subjectLine = r.campaign.settings.subject_line;
+          if (r.campaign.settings?.title) o.title = r.campaign.settings.title;
+          if (r.campaign.send_time) o.sendTime = r.campaign.send_time;
+          if (r.snippet) o.snippet = r.snippet;
+          return o;
         }),
       },
     };
+    if (resp.total_items === 0) {
+      out.note = `No campaigns matched '${input.query}'. Search covers subject line, internal title, preview text, and archive HTML — try broader terms, or use mailchimp_campaigns (operation: list) to browse all campaigns.`;
+    }
+    return out;
   },
 
   format: (result) => {
@@ -162,7 +178,9 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
           );
         }
       }
-      if (m.exact.length === 0 && m.fuzzy.length === 0) lines.push('_No matches._');
+      if (m.exact.length === 0 && m.fuzzy.length === 0) {
+        lines.push(result.note ? `_${result.note}_` : '_No matches._');
+      }
     }
     if (result.campaigns) {
       const c = result.campaigns;
@@ -180,7 +198,16 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
         );
         if (r.snippet) lines.push(`  _${r.snippet}_`);
       }
-      if (c.matches.length === 0) lines.push('_No matches._');
+      if (c.matches.length === 0) {
+        lines.push(result.note ? `_${result.note}_` : '_No matches._');
+      }
+    }
+    if (
+      result.note &&
+      ((result.members && (result.members.exact.length > 0 || result.members.fuzzy.length > 0)) ||
+        (result.campaigns && result.campaigns.matches.length > 0))
+    ) {
+      lines.push('', `_${result.note}_`);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

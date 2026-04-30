@@ -6,11 +6,12 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const ModeSchema = z
   .enum(['draft', 'test', 'send', 'schedule'])
@@ -152,6 +153,16 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'pre_send_checklist_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp send-checklist returned blocking errors on the replica.',
+      recovery:
+        'Inspect data.errors for each blocking finding, apply contentOverride or other overrides to fix, then re-invoke.',
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
@@ -250,10 +261,15 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
         (input.mode === 'send' || input.mode === 'schedule' || input.mode === 'test') &&
         errors.length > 0
       ) {
-        throw validationError(
+        throw ctx.fail(
+          'pre_send_checklist_failed',
           `Campaign failed send-checklist with ${errors.length} error(s): ${errors
             .map((e) => e.heading)
             .join('; ')}`,
+          {
+            errors: errors.map((e) => ({ heading: e.heading, details: e.details })),
+            ...ctx.recoveryFor('pre_send_checklist_failed'),
+          },
         );
       }
 

@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.3.0
+**Version:** 0.3.2
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
@@ -168,24 +168,45 @@ Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is
 
 ## Errors
 
-Handlers throw — the framework catches, classifies, and formats. Three escalation levels:
+Handlers throw — the framework catches, classifies, and formats.
+
+**Recommended: typed error contract.** Declare `errors: [{ reason, code, when, recovery, retryable? }]` on `tool()` / `resource()` to get a typed `ctx.fail(reason, …)` keyed by the declared reason union (TS catches `ctx.fail('typo')` at compile time), auto-populated `data.reason` for observability, and lint-enforced conformance against the handler body. The `recovery` field is required (≥5 words, lint-validated) — single source of truth for the agent's next move. Spread `ctx.recoveryFor('reason')` to flow the contract recovery onto the wire (mirrored into `content[]` text); override with explicit `{ recovery: { hint: '...' } }` when runtime context matters. Baseline codes (`InternalError`, `ServiceUnavailable`, `Timeout`, `ValidationError`, `SerializationError`) bubble freely and don't need declaring.
 
 ```ts
-// 1. Plain Error — framework auto-classifies from message patterns
-throw new Error('Item not found');           // → NotFound
-throw new Error('Invalid query format');     // → ValidationError
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 
-// 2. Error factories — explicit code, concise
-import { notFound, validationError, forbidden, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
+errors: [
+  { reason: 'audience_not_found', code: JsonRpcErrorCode.NotFound,
+    when: 'Audience ID does not exist',
+    recovery: 'List audiences via mailchimp_audiences and copy a valid ID.' },
+  { reason: 'send_cancelled', code: JsonRpcErrorCode.InvalidRequest,
+    when: 'User declined the send confirmation',
+    recovery: 'Re-invoke and confirm at the elicit prompt to send.' },
+],
+async handler(input, ctx) {
+  if (!found) throw ctx.fail('audience_not_found', `No audience ${input.id}`,
+    { ...ctx.recoveryFor('audience_not_found') });
+}
+```
+
+**Fallback (no contract entry fits):** error factories or plain `Error`.
+
+```ts
+// Error factories — explicit code
+import { notFound, validationError, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
 throw notFound('Item not found', { itemId });
 throw serviceUnavailable('API unavailable', { url }, { cause: err });
 
-// 3. McpError — full control over code and data
+// Plain Error — framework auto-classifies from message patterns
+throw new Error('Item not found');           // → NotFound
+throw new Error('Invalid query format');     // → ValidationError
+
+// McpError — when no factory exists for the code
 import { McpError, JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 throw new McpError(JsonRpcErrorCode.DatabaseError, 'Connection failed', { pool: 'primary' });
 ```
 
-Plain `Error` is fine for most cases. Use factories when the error code matters. See framework CLAUDE.md for the full auto-classification table and all available factories.
+Tool errors mirror the success-path `format-parity` invariant — both `content[]` and `structuredContent.error` carry the same payload (code, message, data, recovery hint). See framework CLAUDE.md and the `api-errors` skill for the full auto-classification table, contract reference, and factory list.
 
 ---
 
@@ -311,8 +332,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run tree` | Generate directory structure doc |
 | `bun run format` | Auto-fix formatting |
 | `bun test` | Run tests |
-| `bun run dev:stdio` | Dev mode (stdio) |
-| `bun run dev:http` | Dev mode (HTTP) |
+| `bun run dev` | Watch mode (transport via `MCP_TRANSPORT_TYPE`) |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
 
@@ -349,7 +369,7 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 ## Checklist
 
 - [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, `z.bigint()`, `z.symbol()`, `z.void()`, `z.map()`, `z.set()`, `z.function()`, `z.nan()`) on **tool/resource input/output**. Server config may use `.transform()`.
-- [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`)
+- [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`). When schema-level regex/length matters, use `z.union([z.literal(''), z.string().regex(...).describe(...)])` — literal variants are exempt from `describe-on-fields`.
 - [ ] JSDoc `@fileoverview` + `@module` on every file
 - [ ] `ctx.log` for logging — no `console`
 - [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch (except workflow tools that need to clean up drafts on failure)

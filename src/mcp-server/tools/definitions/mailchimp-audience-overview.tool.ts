@@ -104,6 +104,12 @@ const OutputSchema = z.object({
     )
     .describe('Custom subscriber attributes defined on this audience.'),
   subscribeUrl: z.string().optional().describe('Long-form subscribe URL for sharing.'),
+  notes: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Plain-language notes explaining empty arrays so the agent does not infer "zero engagement" when upstream data is genuinely absent (free-tier limits, brand-new audience, no sends yet).',
+    ),
 });
 
 type Output = z.infer<typeof OutputSchema>;
@@ -185,6 +191,25 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
         language: audience.campaign_defaults.language,
       };
     }
+
+    const notes: string[] = [];
+    const memberCount = result.stats?.memberCount ?? 0;
+    const campaignCount = result.stats?.campaignCount ?? 0;
+    if (result.growth.length === 0) {
+      notes.push(
+        'No growth-history rows returned — typical for an audience created within the current month, since Mailchimp buckets growth by month at month-end.',
+      );
+    }
+    if (result.emailClients.length === 0) {
+      notes.push(
+        memberCount === 0
+          ? 'No email-client breakdown — the audience has no members yet.'
+          : campaignCount === 0
+            ? 'No email-client breakdown — Mailchimp populates this from open events, and no campaigns have been sent to this audience yet.'
+            : 'No email-client breakdown — Mailchimp records this from open events; no opens have been recorded yet (or open tracking is disabled).',
+      );
+    }
+    if (notes.length > 0) result.notes = notes;
 
     ctx.log.info('audience_overview built', {
       audienceId: audience.id,
@@ -275,6 +300,11 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
         const req = mf.required ? ' (required)' : '';
         lines.push(`- \`${mf.tag}\` — ${mf.name} [${mf.type}]${req}`);
       }
+    }
+
+    if (result.notes && result.notes.length > 0) {
+      lines.push('', '## Notes', '');
+      for (const n of result.notes) lines.push(`- _${n}_`);
     }
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];

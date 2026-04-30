@@ -164,6 +164,12 @@ export class TemplateService {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         throw notFound(
           `Template '${name}' not found at '${relative(this.templatesDir, bodyPath)}'.`,
+          {
+            name,
+            recovery: {
+              hint: 'Run mailchimp_local_templates with operation: list to see available templates, or seed-from-mailchimp to bootstrap one from a Mailchimp template ID.',
+            },
+          },
         );
       }
       throw err;
@@ -219,12 +225,37 @@ export class TemplateService {
    * partials relative to `templatesDir`. Returns the rendered HTML plus any
    * subject / previewText from the optional meta sidecar (caller decides
    * whether to use them).
+   *
+   * **Var handling.** When the template declares `vars: [...]` in its meta,
+   * every declared name must be present (any value type allowed; `undefined`
+   * counts as missing). This catches the worst-case bug where a missing
+   * variable renders as the literal string `undefined` in outgoing email HTML.
+   * For undeclared keys (or templates without a vars list), accesses fall back
+   * to `''` via a Proxy — safer default than Eta's raw `undefined`.
    */
   async render(name: string, vars: Record<string, unknown>): Promise<RenderResult> {
     const detail = await this.get(name);
+    const declared = detail.meta?.vars;
+    if (declared && declared.length > 0) {
+      const missing = declared.filter((k) => vars[k] === undefined);
+      if (missing.length > 0) {
+        throw validationError(
+          `Template '${name}' declares vars [${declared.map((v) => `'${v}'`).join(', ')}] but the following are missing: ${missing.map((v) => `'${v}'`).join(', ')}.`,
+          {
+            name,
+            declared,
+            missing,
+            recovery: {
+              hint: `Pass values for ${missing.map((v) => `'${v}'`).join(', ')} in vars, or remove them from the template's meta vars list.`,
+            },
+          },
+        );
+      }
+    }
+    const safeVars = wrapVarsWithEmptyFallback(vars);
     let html: string;
     try {
-      const result = this.eta.renderString(detail.source, vars);
+      const result = this.eta.renderString(detail.source, safeVars);
       html = typeof result === 'string' ? result : await result;
     } catch (err) {
       throw validationError(
@@ -289,6 +320,23 @@ export class TemplateService {
       bytes: Buffer.byteLength(file, 'utf8'),
     };
   }
+}
+
+/**
+ * Wrap the caller's vars in a Proxy that returns `''` for unknown / undefined
+ * keys instead of `undefined`. Prevents `<%= it.missing %>` from rendering as
+ * the literal string `"undefined"` into outgoing email HTML — Eta has no
+ * built-in safe-undefined mode. Declared meta vars are validated separately;
+ * this Proxy is the safety net for ad-hoc accesses inside template logic.
+ */
+function wrapVarsWithEmptyFallback(vars: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(vars, {
+    get(target, key) {
+      if (typeof key === 'symbol') return Reflect.get(target, key);
+      const value = Reflect.get(target, key);
+      return value === undefined ? '' : value;
+    },
+  });
 }
 
 /**

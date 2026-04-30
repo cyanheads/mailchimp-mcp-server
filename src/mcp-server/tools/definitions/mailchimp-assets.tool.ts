@@ -10,8 +10,13 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  configurationError,
+  JsonRpcErrorCode,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import { getAssetService } from '@/services/assets/asset-service.js';
+import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const OperationSchema = z
   .enum(['list', 'info', 'sync', 'clear-cache'])
@@ -84,9 +89,9 @@ type Output = z.infer<typeof OutputSchema>;
 function requireService(): NonNullable<ReturnType<typeof getAssetService>> {
   const svc = getAssetService();
   if (!svc) {
-    throw new McpError(
-      JsonRpcErrorCode.ConfigurationError,
+    throw configurationError(
       'Assets service is not initialized. Set MAILCHIMP_ASSETS_DIR and restart the server to enable local-assets workflows.',
+      { reason: 'assets_not_configured' },
     );
   }
   return svc;
@@ -98,6 +103,16 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'assets_not_configured',
+      code: JsonRpcErrorCode.ConfigurationError,
+      when: 'MAILCHIMP_ASSETS_DIR was not set on the server.',
+      recovery:
+        'Set MAILCHIMP_ASSETS_DIR to a writable directory and restart the server to enable local-assets workflows.',
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = requireService();
@@ -118,8 +133,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
         };
       }
       case 'info': {
-        if (!input.relPath)
-          throw new McpError(JsonRpcErrorCode.ValidationError, "'relPath' is required for 'info'.");
+        if (!input.relPath) throw validationError("'relPath' is required for 'info'.");
         const info = await svc.info(input.relPath);
         return {
           operation: 'info',

@@ -9,8 +9,13 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  configurationError,
+  JsonRpcErrorCode,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import { getTemplateService } from '@/services/templates/template-service.js';
+import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const OperationSchema = z
   .enum(['list', 'get', 'render-preview', 'seed-from-mailchimp'])
@@ -30,7 +35,7 @@ const InputSchema = z.object({
     .record(z.string(), z.unknown())
     .optional()
     .describe(
-      "Variables passed to Eta during `render-preview`. Reference inside the template via `<%= it.varName %>` (Eta's default scope). No schema enforcement — missing vars surface as render errors.",
+      "Variables passed to Eta during `render-preview`. Reference inside the template via `<%= it.varName %>` (Eta's default scope). When the template's meta declares a `vars` list, every declared name must be present here or the render fails with a validation error (so you never silently emit `undefined` into outgoing email). Undeclared lookups inside the template body fall back to an empty string.",
     ),
   mailchimpTemplateId: z.coerce
     .number()
@@ -101,9 +106,9 @@ type Output = z.infer<typeof OutputSchema>;
 function requireService(): NonNullable<ReturnType<typeof getTemplateService>> {
   const svc = getTemplateService();
   if (!svc) {
-    throw new McpError(
-      JsonRpcErrorCode.ConfigurationError,
+    throw configurationError(
       'Local-templates service is not initialized. Set MAILCHIMP_TEMPLATES_DIR and restart the server to enable local-template authoring.',
+      { reason: 'templates_not_configured' },
     );
   }
   return svc;
@@ -115,6 +120,16 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'templates_not_configured',
+      code: JsonRpcErrorCode.ConfigurationError,
+      when: 'MAILCHIMP_TEMPLATES_DIR was not set on the server.',
+      recovery:
+        'Set MAILCHIMP_TEMPLATES_DIR to a writable directory and restart the server to enable local-template authoring.',
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = requireService();
@@ -129,8 +144,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
         };
       }
       case 'get': {
-        if (!input.name)
-          throw new McpError(JsonRpcErrorCode.ValidationError, "'name' is required for 'get'.");
+        if (!input.name) throw validationError("'name' is required for 'get'.");
         const detail = await svc.get(input.name);
         return {
           operation: 'get',
@@ -146,11 +160,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
         };
       }
       case 'render-preview': {
-        if (!input.name)
-          throw new McpError(
-            JsonRpcErrorCode.ValidationError,
-            "'name' is required for 'render-preview'.",
-          );
+        if (!input.name) throw validationError("'name' is required for 'render-preview'.");
         const result = await svc.render(input.name, input.vars ?? {});
         return {
           operation: 'render-preview',
@@ -165,15 +175,11 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
       }
       case 'seed-from-mailchimp': {
         if (!input.name)
-          throw new McpError(
-            JsonRpcErrorCode.ValidationError,
+          throw validationError(
             "'name' is required for 'seed-from-mailchimp' (the destination template name).",
           );
         if (input.mailchimpTemplateId === undefined)
-          throw new McpError(
-            JsonRpcErrorCode.ValidationError,
-            "'mailchimpTemplateId' is required for 'seed-from-mailchimp'.",
-          );
+          throw validationError("'mailchimpTemplateId' is required for 'seed-from-mailchimp'.");
         const result = await svc.seedFromMailchimp(ctx, input.mailchimpTemplateId, input.name);
         return {
           operation: 'seed-from-mailchimp',
