@@ -8,7 +8,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import {
   getMailchimpService,
   mailchimpMemberHash,
@@ -43,7 +43,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Subscriber email address. Required for every operation except `list`. Hashed internally to the Mailchimp `subscriber_hash` URL segment.',
+      'Subscriber email address (case-insensitive). Required for every operation except `list`.',
     ),
   status: z
     .enum(['subscribed', 'unsubscribed', 'cleaned', 'pending', 'transactional'])
@@ -85,7 +85,7 @@ const InputSchema = z.object({
 
 const SubscriberSummarySchema = z
   .object({
-    id: z.string().describe('Mailchimp subscriber ID (the member hash).'),
+    id: z.string().describe('Opaque Mailchimp subscriber ID — pass back to other tools verbatim.'),
     email: z.string().describe('Subscriber email address.'),
     status: z
       .string()
@@ -179,15 +179,21 @@ const OutputSchema = z.object({
   activity: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Raw subscriber activity events (opens, clicks). Populated for `list-activity`.'),
+    .describe(
+      'Subscriber activity events (opens, clicks, bounces). Populated for `list-activity`. Each row: `{ action, timestamp, type, campaign_id?, title?, parent_campaign? }`.',
+    ),
   events: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Custom events attached to the subscriber. Populated for `list-events`.'),
+    .describe(
+      'Custom events attached to the subscriber. Populated for `list-events`. Each row: `{ name, properties, occurred_at, is_syncing }`.',
+    ),
   goals: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Goal completions attributed to the subscriber. Populated for `list-goals`.'),
+    .describe(
+      'Goal completions attributed to the subscriber. Populated for `list-goals`. Each row: `{ goal_id, event, last_visited_at, data }`.',
+    ),
   archived: z
     .boolean()
     .optional()
@@ -236,6 +242,44 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for subscriber writes.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience, subscriber, or note does not exist (subscriber must exist on the audience for non-list reads).',
+      recovery:
+        'Run mailchimp_audiences operation:list to confirm audienceId; mailchimp_find_subscriber with email to confirm membership and discover noteId via list-notes.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually an unknown merge field, invalid status transition, or malformed tag payload.',
+      recovery:
+        'Inspect data.upstream.errors[] for field-level reasons; verify merge fields exist via mailchimp_merge_fields list.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations or use mailchimp_import_subscribers for batches.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

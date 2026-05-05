@@ -6,6 +6,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const InputSchema = z.object({
@@ -108,7 +109,7 @@ const OutputSchema = z.object({
     .array(z.string())
     .optional()
     .describe(
-      'Plain-language notes explaining empty arrays so the agent does not infer "zero engagement" when upstream data is genuinely absent (free-tier limits, brand-new audience, no sends yet).',
+      'Plain-language notes explaining empty arrays — distinguishes "no data yet" (new audience, no sends, free-tier limits) from "zero engagement" (real but bad signal).',
     ),
 });
 
@@ -120,6 +121,36 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for this audience read.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience does not exist or has been deleted.',
+      recovery: 'Run mailchimp_audiences operation:list to discover valid audienceId values.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

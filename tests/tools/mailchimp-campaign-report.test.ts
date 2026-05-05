@@ -54,7 +54,7 @@ describe('mailchimpCampaignReportTool — draft guard', () => {
         }),
       ),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpCampaignReportTool.errors });
     const input = mailchimpCampaignReportTool.input.parse({ campaignId: 'draftx' });
     await expect(mailchimpCampaignReportTool.handler(input, ctx)).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
@@ -72,7 +72,7 @@ describe('mailchimpCampaignReportTool — draft guard', () => {
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
     vi.stubGlobal('fetch', fetchStub);
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpCampaignReportTool.errors });
     const input = mailchimpCampaignReportTool.input.parse({ campaignId: 'draftx' });
     await expect(mailchimpCampaignReportTool.handler(input, ctx)).rejects.toThrow();
     expect(fetchStub).toHaveBeenCalledOnce();

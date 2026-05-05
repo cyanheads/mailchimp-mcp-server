@@ -6,7 +6,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Audience, SignupForm } from '@/services/mailchimp/types.js';
@@ -100,15 +100,19 @@ const InputSchema = z.object({
       header: z
         .record(z.string(), z.unknown())
         .optional()
-        .describe('Form header configuration (raw Mailchimp shape).'),
+        .describe('Form header. Principal keys: `image_url`, `text`, `image_alt`, `image_width`.'),
       contents: z
         .array(z.record(z.string(), z.unknown()))
         .optional()
-        .describe('Form content sections (raw Mailchimp shape).'),
+        .describe(
+          'Form content sections. Each entry: `{ section, value }` — `section` names the region (e.g. `signup_message`, `unsub_message`, `header_image`); `value` is the text/HTML to render.',
+        ),
       styles: z
         .array(z.record(z.string(), z.unknown()))
         .optional()
-        .describe('Form style definitions (raw Mailchimp shape).'),
+        .describe(
+          'Form CSS overrides. Each entry: `{ selector, options: [{ property, value }] }` — `selector` targets a region (e.g. `page_label`); `options` lists CSS property/value pairs.',
+        ),
     })
     .optional()
     .describe('Signup-form customization payload. Required for `customize-signup-forms`.'),
@@ -152,7 +156,9 @@ const OutputSchema = z.object({
   activity: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Raw per-day subscribe/unsubscribe counts. Populated for `list-activity`.'),
+    .describe(
+      'Per-day subscribe/unsubscribe counts. Populated for `list-activity`. Each row: `{ day: "YYYY-MM-DD", subs, unsubs, other_adds, other_removes, hard_bounce, soft_bounce, recipient_clicks, unique_opens, emails_sent }`.',
+    ),
   growth: z
     .array(
       z
@@ -209,11 +215,15 @@ const OutputSchema = z.object({
   signupForms: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Signup-form definitions. Populated for `get-signup-forms`.'),
+    .describe(
+      'Signup-form definitions. Populated for `get-signup-forms`. Each entry: `{ type, header, contents, styles }` (mirrors `signupFormConfig` input shape).',
+    ),
   signupForm: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe('The saved signup-form definition. Populated for `customize-signup-forms`.'),
+    .describe(
+      'The saved signup-form definition. Populated for `customize-signup-forms`. Same shape as `signupForms[]` entries: `{ type, header, contents, styles }`.',
+    ),
 });
 
 type AudienceSummary = z.infer<typeof AudienceSummarySchema>;
@@ -312,6 +322,42 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for this audience operation.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience does not exist or has been deleted.',
+      recovery: 'Re-run mailchimp_audiences operation:list to discover valid audienceId values.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — request body failed upstream validation.',
+      recovery: 'Inspect data.upstream.errors[] for field-level reasons, fix the input, and retry.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

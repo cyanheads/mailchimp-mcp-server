@@ -6,7 +6,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Segment } from '@/services/mailchimp/types.js';
 
@@ -29,13 +29,17 @@ const SegmentConditionSchema = z
   })
   .describe('One saved-segment condition row.');
 
-const SegmentOptionsSchema = z.object({
-  match: z.enum(['any', 'all']).optional().describe('Match ANY or ALL conditions.'),
-  conditions: z
-    .array(SegmentConditionSchema)
-    .optional()
-    .describe('Saved-segment conditions (empty for static segments).'),
-});
+const SegmentOptionsSchema = z
+  .object({
+    match: z.enum(['any', 'all']).optional().describe('Match ANY or ALL conditions.'),
+    conditions: z
+      .array(SegmentConditionSchema)
+      .optional()
+      .describe('Saved-segment conditions (empty for static segments).'),
+  })
+  .describe(
+    "Saved-segment options. Note: condition keys (`condition_type`, `field`, `op`, `value`, `extra`) mirror Mailchimp's wire format and stay snake_case here — the rest of this tool's input is camelCase.",
+  );
 
 const InputSchema = z.object({
   operation: OperationSchema,
@@ -154,6 +158,44 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — advanced dynamic-segment conditions require Premium, or the API key lacks scope.',
+      recovery:
+        'Use static or basic saved segments on free tier (no advanced conditions); upgrade to Premium for advanced filters.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience or segment does not exist.',
+      recovery:
+        'Run mailchimp_audiences operation:list and mailchimp_segments operation:list to discover valid IDs.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually a malformed condition, unknown field, or non-existent member email.',
+      recovery:
+        'Inspect data.upstream.errors[] for field-level reasons; verify condition_type/op/value shape matches the segment type.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

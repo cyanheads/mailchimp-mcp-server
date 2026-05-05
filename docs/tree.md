@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-04-25 00:24:14
+Generated on: 2026-05-05 10:15:33
 
 ```text
 mailchimp-mcp-server/
@@ -13,6 +13,7 @@ mailchimp-mcp-server/
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
+├── assets/
 ├── docs/
 │   ├── reference/
 │   │   └── README.md
@@ -29,6 +30,7 @@ mailchimp-mcp-server/
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
+│   ├── split-changelog.ts
 │   └── tree.ts
 ├── skills/
 │   ├── add-app-tool/
@@ -44,6 +46,8 @@ mailchimp-mcp-server/
 │   ├── add-tool/
 │   │   └── SKILL.md
 │   ├── api-auth/
+│   │   └── SKILL.md
+│   ├── api-canvas/
 │   │   └── SKILL.md
 │   ├── api-config/
 │   │   └── SKILL.md
@@ -92,7 +96,9 @@ mailchimp-mcp-server/
 │   │   └── SKILL.md
 │   ├── security-pass/
 │   │   └── SKILL.md
-│   └── setup/
+│   ├── setup/
+│   │   └── SKILL.md
+│   └── tool-defs-analysis/
 │       └── SKILL.md
 ├── src/
 │   ├── config/
@@ -148,6 +154,9 @@ mailchimp-mcp-server/
 │   │   └── templates/
 │   │       └── template-service.ts
 │   └── index.ts
+├── templates/
+│   ├── redden-gardens-april-2026.eta
+│   └── welcome.eta
 ├── tests/
 │   ├── config/
 │   │   └── server-config.test.ts

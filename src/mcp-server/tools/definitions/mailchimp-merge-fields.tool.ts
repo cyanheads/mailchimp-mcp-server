@@ -6,7 +6,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { MergeField } from '@/services/mailchimp/types.js';
 
@@ -72,7 +72,9 @@ const InputSchema = z.object({
   options: z
     .record(z.string(), z.unknown())
     .optional()
-    .describe('Merge-field options (e.g. choices for dropdown, date format for date).'),
+    .describe(
+      'Type-specific options. `dropdown`/`radio`: `{ choices: string[] }`. `date`/`birthday`: `{ date_format: "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD" }`. `phone`: `{ phone_format: "US" | "none" }`. `text`: `{ size?: number }`.',
+    ),
   count: z.coerce
     .number()
     .int()
@@ -157,6 +159,44 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for merge-field changes.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience or merge field does not exist.',
+      recovery:
+        'Run mailchimp_audiences operation:list to confirm audienceId; mailchimp_merge_fields operation:list to discover valid mergeId values.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually a duplicate tag, invalid type, or tag over 10 chars.',
+      recovery:
+        'Inspect data.upstream.errors[] for field-level reasons; tags must be unique per audience and ≤10 chars.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

@@ -16,7 +16,6 @@ import {
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { getAssetService } from '@/services/assets/asset-service.js';
-import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const OperationSchema = z
   .enum(['list', 'info', 'sync', 'clear-cache'])
@@ -104,7 +103,35 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
   input: InputSchema,
   output: OutputSchema,
   errors: [
-    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions on File Manager.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for File Manager uploads.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 during upload — usually file size over 1 MB (image) / 10 MB (other) or a disallowed extension.',
+      recovery:
+        'Inspect data.upstream.errors[]; convert .webp/.avif to .png/.jpg, compress oversized files; allowed extensions are documented on mailchimp_files.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests during sync.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT to slow the upload fan-out.',
+      retryable: true,
+    },
     {
       reason: 'assets_not_configured',
       code: JsonRpcErrorCode.ConfigurationError,

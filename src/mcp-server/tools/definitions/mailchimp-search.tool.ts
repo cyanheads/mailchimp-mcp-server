@@ -5,6 +5,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const ScopeSchema = z
@@ -34,7 +35,11 @@ const MemberMatchSchema = z
     audienceId: z.string().describe('Audience (list) ID the match belongs to.'),
     subscriberId: z.string().describe('Mailchimp subscriber ID (member hash).'),
     email: z.string().describe('Subscriber email address.'),
-    status: z.string().describe('Current subscription status.'),
+    status: z
+      .string()
+      .describe(
+        'Current status (`subscribed`, `unsubscribed`, `cleaned`, `pending`, `transactional`).',
+      ),
     fullName: z.string().optional().describe('Full name from merge fields, if available.'),
   })
   .describe('One member hit from the global search.');
@@ -90,6 +95,37 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for global search.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audienceId points at a list that does not exist (members scope only).',
+      recovery:
+        'Run mailchimp_audiences operation:list to discover valid audienceId values, or omit audienceId to search all audiences.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
@@ -102,30 +138,22 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
       const fuzzyAll = resp.full_search?.members ?? [];
       const totalExact = resp.exact_matches?.total_items ?? exactAll.length;
       const totalFuzzy = resp.full_search?.total_items ?? fuzzyAll.length;
+      const summarizeMember = (m: (typeof exactAll)[number]): z.infer<typeof MemberMatchSchema> => {
+        const o: z.infer<typeof MemberMatchSchema> = {
+          audienceId: m.list_id,
+          subscriberId: m.id,
+          email: m.email_address,
+          status: m.status,
+        };
+        if (m.full_name) o.fullName = m.full_name;
+        return o;
+      };
       const out: Output = {
         scope: 'members',
         query: input.query,
         members: {
-          exact: exactAll.slice(0, input.includeTopN).map((m) => {
-            const o: z.infer<typeof MemberMatchSchema> = {
-              audienceId: m.list_id,
-              subscriberId: m.id,
-              email: m.email_address,
-              status: m.status,
-            };
-            if (m.full_name) o.fullName = m.full_name;
-            return o;
-          }),
-          fuzzy: fuzzyAll.slice(0, input.includeTopN).map((m) => {
-            const o: z.infer<typeof MemberMatchSchema> = {
-              audienceId: m.list_id,
-              subscriberId: m.id,
-              email: m.email_address,
-              status: m.status,
-            };
-            if (m.full_name) o.fullName = m.full_name;
-            return o;
-          }),
+          exact: exactAll.slice(0, input.includeTopN).map(summarizeMember),
+          fuzzy: fuzzyAll.slice(0, input.includeTopN).map(summarizeMember),
           totalExact,
           totalFuzzy,
         },

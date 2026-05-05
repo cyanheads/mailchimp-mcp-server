@@ -12,13 +12,15 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Template } from '@/services/mailchimp/types.js';
 
 const OperationSchema = z
   .enum(['list', 'get', 'create', 'update', 'delete', 'get-default-content'])
-  .describe('Template operation.');
+  .describe(
+    'Template operation. `list`/`get` are reads (work on free for `base`/`user` types). `create`/`update`/`delete` are paid-tier writes. `get-default-content` returns the per-section default content map (populated for drag-and-drop templates).',
+  );
 
 const InputSchema = z.object({
   operation: OperationSchema,
@@ -39,7 +41,10 @@ const InputSchema = z.object({
     .describe(
       'Filter by type for `list`. `user` = your saved templates; `base` = Mailchimp starter layouts; `gallery` = paid drag-and-drop designs.',
     ),
-  category: z.string().optional().describe('Category filter for `list`.'),
+  category: z
+    .string()
+    .optional()
+    .describe('Category filter for `list` (e.g. `Newsletter`, `Notification`, `E-commerce`).'),
   count: z.coerce
     .number()
     .int()
@@ -116,6 +121,43 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — template writes (create/update/delete) and gallery reads are paid-only; data.requiresPlan typically reports `standard`.',
+      recovery:
+        'Use mailchimp_local_templates instead — it works on every plan tier (templates live as .eta files under MAILCHIMP_TEMPLATES_DIR). Use seed-from-mailchimp to bootstrap from a base/user template.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — template does not exist or has been deleted.',
+      recovery: 'Run mailchimp_templates operation:list to discover valid templateId values.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually a malformed HTML body, missing mc:edit regions, or invalid folderId.',
+      recovery:
+        'Inspect data.upstream.errors[]; ensure HTML includes mc:edit="…" attributes for editable regions.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

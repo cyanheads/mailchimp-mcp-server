@@ -13,12 +13,11 @@ import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
-import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const ModeSchema = z
   .enum(['draft', 'test', 'send', 'schedule'])
   .describe(
-    'What to do with the campaign after content is set. `draft` leaves it unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues delivery for `scheduleTime`. Modes `send` and `schedule` prompt for confirmation via `ctx.elicit` when the client supports it.',
+    'What to do with the campaign after content is set. `draft` leaves it unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues delivery for `scheduleTime`. On `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation.',
   );
 
 const ContentSchema = z
@@ -96,7 +95,9 @@ const ChecklistItemSchema = z
 const OutputSchema = z.object({
   campaignId: z.string().describe('Mailchimp campaign ID — use for follow-up tool calls.'),
   webId: z.number().optional().describe('Mailchimp web-id (for UI deep links).'),
-  mode: ModeSchema.describe('What actually happened; downgraded to `draft` if elicit rejected.'),
+  mode: ModeSchema.describe(
+    'What actually happened; downgraded to `draft` if the user declined the confirmation prompt.',
+  ),
   status: z.string().describe('Post-action Mailchimp campaign status.'),
   subject: z.string().describe('Subject line used (echoed from input).'),
   recipientCount: z
@@ -107,10 +108,15 @@ const OutputSchema = z.object({
   testsSentTo: z.array(z.string()).optional().describe('Test recipients, only when mode=test.'),
   checklistWarnings: z
     .array(ChecklistItemSchema)
-    .describe('Non-blocking checklist items. Blocking items throw before this point.'),
+    .describe(
+      'Non-blocking checklist items. Blocking items throw `pre_send_checklist_failed` before this output is produced.',
+    ),
   archiveUrl: z.string().optional().describe('Public archive URL, populated once sending begins.'),
   webUrl: z.string().optional().describe('Deep link to the campaign in the Mailchimp UI.'),
-  cancelledByUser: z.boolean().optional().describe('True when elicit confirmation was rejected.'),
+  cancelledByUser: z
+    .boolean()
+    .optional()
+    .describe('True when the user declined the confirmation prompt; mode was downgraded to draft.'),
   cleanedUp: z
     .boolean()
     .optional()
@@ -121,12 +127,47 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   description:
-    "Compose and send (or schedule/test) a campaign in one call. Creates the draft, sets content, runs the send-checklist, optionally sends a test, then sends or schedules. On `mode: 'send' | 'schedule'` the tool prompts for human confirmation via `ctx.elicit` when the client supports it. Aborted or failed drafts are auto-deleted when `cleanupOnError: true` (default) to keep the account tidy.",
+    "Compose and send (or schedule/test) a campaign in one call. Creates the draft, sets content, runs the send-checklist, optionally sends a test, then sends or schedules. On `mode: 'send' | 'schedule'` the tool prompts the user for confirmation when the client supports MCP elicitation. Aborted or failed drafts are auto-deleted when `cleanupOnError: true` (default) to keep the account tidy.",
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
-    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for sending campaigns.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audienceId, segmentId, or templateId does not exist.',
+      recovery:
+        'Verify IDs via mailchimp_audiences / mailchimp_segments / mailchimp_templates list; cleaned-up draft is deleted automatically when cleanupOnError is true (default).',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually a malformed subject/from-name/reply-to, oversized content, or scheduleTime under 15 minutes in the future.',
+      recovery:
+        'Inspect data.upstream.errors[]; ensure scheduleTime is ≥15 minutes ahead and content fits Mailchimp size caps.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
     {
       reason: 'pre_send_checklist_failed',
       code: JsonRpcErrorCode.ValidationError,

@@ -1,13 +1,18 @@
 /**
  * @fileoverview Tool definitions barrel — exposes `allToolDefinitions` for `createApp()`.
- * Conditional tools are included only when their runtime requirements are satisfied
- * (env var set + Node-style filesystem available):
- *   - `mailchimp_assets` requires `MAILCHIMP_ASSETS_DIR`.
- *   - `mailchimp_local_templates` requires `MAILCHIMP_TEMPLATES_DIR`.
- * On Cloudflare Workers neither appears in the surface.
+ * Conditional tools surface differently based on the runtime gate:
+ *   - On Cloudflare Workers (no Node filesystem) `mailchimp_assets` and
+ *     `mailchimp_local_templates` are entirely absent — the underlying services
+ *     can't run.
+ *   - On Node, the tools always appear in the manifest. When their env var is
+ *     set they're fully active; when unset they're wrapped via `disabledTool()`
+ *     so operators reading `/.well-known/mcp.json` and the landing page see why
+ *     the tool is gated and how to enable it, while LLM clients still can't
+ *     invoke them via `tools/list`.
  * @module mcp-server/tools/definitions/index
  */
 
+import { disabledTool } from '@cyanheads/mcp-ts-core';
 import type { AnyToolDefinition } from '@cyanheads/mcp-ts-core/tools';
 import { mailchimpAccountTool } from './mailchimp-account.tool.js';
 import { mailchimpAssetsTool } from './mailchimp-assets.tool.js';
@@ -66,7 +71,23 @@ function hasTemplatesDir(): boolean {
 }
 
 const conditional: AnyToolDefinition[] = [];
-if (hasFilesystem() && hasAssetsDir()) conditional.push(mailchimpAssetsTool);
-if (hasFilesystem() && hasTemplatesDir()) conditional.push(mailchimpLocalTemplatesTool);
+if (hasFilesystem()) {
+  conditional.push(
+    hasAssetsDir()
+      ? mailchimpAssetsTool
+      : disabledTool(mailchimpAssetsTool, {
+          reason: 'MAILCHIMP_ASSETS_DIR not set — local-assets surface inactive.',
+          hint: 'Set MAILCHIMP_ASSETS_DIR=/path/to/assets to enable @assets/* uploads, hashing, and HTML rewriting.',
+        }),
+  );
+  conditional.push(
+    hasTemplatesDir()
+      ? mailchimpLocalTemplatesTool
+      : disabledTool(mailchimpLocalTemplatesTool, {
+          reason: 'MAILCHIMP_TEMPLATES_DIR not set — local-templates surface inactive.',
+          hint: 'Set MAILCHIMP_TEMPLATES_DIR=/path/to/templates to enable .eta template rendering (canonical write path on free-tier accounts).',
+        }),
+  );
+}
 
 export const allToolDefinitions: AnyToolDefinition[] = [...alwaysOn, ...conditional];

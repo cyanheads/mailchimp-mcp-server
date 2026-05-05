@@ -7,7 +7,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { CampaignReport } from '@/services/mailchimp/types.js';
@@ -35,7 +35,9 @@ const DimensionSchema = z
     'sent-to',
     'unsubscribed',
   ])
-  .describe('Report slice dimension. Required when `operation = slice`.');
+  .describe(
+    "Report slice dimension. Required when `operation = slice`. Variants: `abuse-reports` — subscribers who marked the campaign as spam · `advice` — Mailchimp's automated tips for the campaign · `click-details` — per-URL click counts (drill into one URL with `linkId`) · `open-details` — per-member open events (drill into one with `subscriberHash`) · `domain-performance` — aggregate stats grouped by recipient email domain · `eepurl` — Mailchimp's shortened-URL stats for this campaign · `email-activity` — per-recipient open/click/bounce timeline · `locations` — opens grouped by country/region · `sent-to` — per-recipient delivery state · `unsubscribed` — members who unsubscribed from this send.",
+  );
 
 const InputSchema = z.object({
   operation: OperationSchema,
@@ -55,7 +57,10 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe('ISO 8601 lower bound for `email-activity` / `open-details`.'),
-  type: z.string().optional().describe('Campaign type filter for `list`.'),
+  type: z
+    .string()
+    .optional()
+    .describe('Campaign type filter for `list` (`regular`, `plaintext`, `rss`).'),
   beforeSendTime: z
     .string()
     .optional()
@@ -98,7 +103,7 @@ const OutputSchema = z.object({
   rows: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Raw per-row data for the requested dimension.'),
+    .describe('Per-row data for the requested dimension; row shape varies by `dimension`.'),
   totalItems: z
     .number()
     .optional()
@@ -133,6 +138,44 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for campaign reports.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — campaign or report dimension does not exist.',
+      recovery:
+        'Run mailchimp_reports operation:list to discover valid campaignId values; verify dimension/linkId/subscriberHash inputs.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+    {
+      reason: 'campaign_not_sent',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Campaign exists but has not been sent yet — no report data available.',
+      recovery:
+        "Send the campaign with mailchimp_send_campaign, or inspect the draft via mailchimp_campaigns operation:'get'.",
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
@@ -158,9 +201,10 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
         const campaignId = requireCampaignId(input);
         const r = await svc.reports.get(ctx, campaignId);
         if (!r.send_time) {
-          throw validationError(
-            `Campaign '${campaignId}' has not been sent yet — no report data available. Send it with mailchimp_send_campaign, or inspect the draft with mailchimp_campaigns (operation: 'get').`,
-            { campaignId },
+          throw ctx.fail(
+            'campaign_not_sent',
+            `Campaign '${campaignId}' has not been sent yet — no report data available.`,
+            { campaignId, ...ctx.recoveryFor('campaign_not_sent') },
           );
         }
         return { operation: 'get', campaignId: r.id, report: summarize(r) };

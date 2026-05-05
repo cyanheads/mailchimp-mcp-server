@@ -11,12 +11,11 @@ import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
-import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const ModeSchema = z
   .enum(['draft', 'test', 'send', 'schedule'])
   .describe(
-    'What to do after replicating. `draft` leaves the replica unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues for `scheduleTime`. `send`/`schedule` prompt via `ctx.elicit` when supported.',
+    'What to do after replicating. `draft` leaves the replica unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues for `scheduleTime`. On `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation.',
   );
 
 const ContentOverrideSchema = z
@@ -79,7 +78,7 @@ const InputSchema = z.object({
     .describe('New saved-segment ID. Omit to keep the source segment.'),
   contentOverride: ContentOverrideSchema.optional(),
   mode: ModeSchema.default('draft').describe(
-    'What to do after replicating: `draft` (default), `test`, `send`, or `schedule`. Same elicit semantics as `mailchimp_send_campaign`.',
+    'What to do after replicating: `draft` (default), `test`, `send`, or `schedule`. Same user-confirmation semantics as `mailchimp_send_campaign` — `send`/`schedule` prompt when the client supports MCP elicitation.',
   ),
   scheduleTime: z
     .string()
@@ -109,7 +108,9 @@ const OutputSchema = z.object({
   sourceCampaignId: z.string().describe('Source campaign ID that was replicated.'),
   campaignId: z.string().describe('ID of the newly created replica.'),
   webId: z.number().optional().describe('Mailchimp web-id for constructing UI deep links.'),
-  mode: ModeSchema.describe('What actually happened; downgraded to `draft` if elicit rejected.'),
+  mode: ModeSchema.describe(
+    'What actually happened; downgraded to `draft` if the user declined the confirmation prompt.',
+  ),
   status: z
     .string()
     .describe(
@@ -128,14 +129,14 @@ const OutputSchema = z.object({
   checklistWarnings: z
     .array(ChecklistItemSchema)
     .describe(
-      'Non-blocking checklist items. Blocking items throw ValidationError before this point.',
+      'Non-blocking checklist items. Blocking items throw `pre_send_checklist_failed` before this output is produced.',
     ),
   archiveUrl: z.string().optional().describe('Public archive URL, populated once sending begins.'),
   webUrl: z.string().optional().describe('Deep link to the campaign in the Mailchimp UI.'),
   cancelledByUser: z
     .boolean()
     .optional()
-    .describe('True when elicit confirmation was rejected; mode was downgraded to draft.'),
+    .describe('True when the user declined the confirmation prompt; mode was downgraded to draft.'),
   cleanedUp: z
     .boolean()
     .optional()
@@ -149,12 +150,47 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign', {
   description:
-    "Duplicate an existing campaign, optionally override subject/from/reply/audience/segment/content, then leave as draft, send a test, send, or schedule. Same elicit confirmation and cleanup semantics as `mailchimp_send_campaign`. Use for the common 'send v2 of last week's newsletter with an updated intro' pattern.",
+    "Duplicate an existing campaign, optionally override subject/from/reply/audience/segment/content, then leave as draft, send a test, send, or schedule. Same user-confirmation and cleanup semantics as `mailchimp_send_campaign` — on `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation. Use for the common 'send v2 of last week's newsletter with an updated intro' pattern.",
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
-    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for campaign sends.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — sourceCampaignId or override ID does not exist.',
+      recovery:
+        'Run mailchimp_campaigns operation:list to discover valid campaignIds; verify audienceOverride via mailchimp_audiences.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — replicated draft body or override payload failed upstream validation.',
+      recovery:
+        'Inspect data.upstream.errors[] for field-level reasons; check that scheduleTime is ≥15 minutes in the future and content is non-empty.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
     {
       reason: 'pre_send_checklist_failed',
       code: JsonRpcErrorCode.ValidationError,

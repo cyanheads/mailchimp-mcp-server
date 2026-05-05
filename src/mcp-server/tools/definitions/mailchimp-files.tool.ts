@@ -10,7 +10,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { FileFolder, File as MailchimpFile } from '@/services/mailchimp/types.js';
 
@@ -50,7 +50,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Base64-encoded file bytes (no `data:` prefix, no line breaks). Required for `upload`. **Mailchimp caps images at 1 MB and other files at 10 MB** — bytes over the cap return a validation error. Allowed extensions per Mailchimp: images (`.jpg`/`.jpeg`/`.png`/`.gif`/`.svg`/`.bmp`/`.tif`/`.tiff`/`.psd`/`.ai`/`.eps`/`.indd`/`.jpe`), documents (`.pdf`/`.doc`/`.docx`/`.rtf`/`.odt`/`.ott`/`.pages`/`.pub`/`.mobi`/`.epub`), text (`.txt`/`.csv`/`.log`/`.css`/`.ics`), audio (`.mp3`/`.m4a`/`.m4v`/`.wma`/`.ogg`/`.flac`/`.wav`/`.aif`/`.aifc`/`.aiff`), video (`.mp4`/`.mov`/`.avi`/`.mkv`/`.mpeg`/`.mpg`/`.wmv`), archives (`.zip` (no unsupported inner types)/`.vcf`). **`.webp` and `.avi`f are not in the allowlist — convert to `.png`/`.jpg` before upload.**',
+      'Base64-encoded file bytes (no `data:` prefix, no line breaks). Required for `upload`. **Mailchimp caps images at 1 MB and other files at 10 MB** — bytes over the cap return a validation error. Allowed extensions per Mailchimp: images (`.jpg`/`.jpeg`/`.png`/`.gif`/`.svg`/`.bmp`/`.tif`/`.tiff`/`.psd`/`.ai`/`.eps`/`.indd`/`.jpe`), documents (`.pdf`/`.doc`/`.docx`/`.rtf`/`.odt`/`.ott`/`.pages`/`.pub`/`.mobi`/`.epub`), text (`.txt`/`.csv`/`.log`/`.css`/`.ics`), audio (`.mp3`/`.m4a`/`.m4v`/`.wma`/`.ogg`/`.flac`/`.wav`/`.aif`/`.aifc`/`.aiff`), video (`.mp4`/`.mov`/`.avi`/`.mkv`/`.mpeg`/`.mpg`/`.wmv`), archives (`.zip` (no unsupported inner types)/`.vcf`). **`.webp` and `.avif` are not in the allowlist — convert to `.png`/`.jpg` before upload.**',
     ),
   type: FileTypeSchema.optional().describe('Filter by type for `list`.'),
   beforeCreatedAt: z
@@ -179,6 +179,43 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for File Manager.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — file or folder does not exist or has been deleted.',
+      recovery: 'Run mailchimp_files operation:list (or list-folders) to discover valid IDs.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually file size over 1 MB (image) / 10 MB (other), disallowed extension, or malformed base64.',
+      recovery:
+        'Inspect data.upstream.errors[]; convert .webp/.avif to .png/.jpg, compress oversized files, and confirm fileData is plain base64 with no `data:` prefix.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

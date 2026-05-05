@@ -12,7 +12,6 @@ import {
   getMailchimpService,
   mailchimpMemberHash,
 } from '@/services/mailchimp/mailchimp-service.js';
-import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const TopicSchema = z
   .enum([
@@ -56,7 +55,9 @@ const OutputSchema = z.object({
   instructions: z.string().describe('Markdown walkthrough tailored to the live numbers.'),
   liveState: z
     .record(z.string(), z.unknown())
-    .describe('The live data the playbook folded in (so the agent can verify or drill down).'),
+    .describe(
+      'The live state the playbook folded in — same data is available via the suggested follow-up tools for verification or drill-down.',
+    ),
   nextToolSuggestions: z
     .array(NextToolSchema)
     .describe('Ordered list of follow-up tool calls, with reasons.'),
@@ -69,12 +70,40 @@ const PCT = (v: number | undefined): string =>
 
 export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   description:
-    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (designing a campaign, sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using the other tools. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments.',
+    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (designing a campaign, sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — call the suggested follow-up tools to execute. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments.',
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
-    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for the playbook probe.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audienceId, campaignId, or subscriber email does not exist.',
+      recovery:
+        'Use mailchimp_audiences / mailchimp_campaigns / mailchimp_find_subscriber to verify the ID before re-invoking.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
     {
       reason: 'subscriber_search_no_usable_match',
       code: JsonRpcErrorCode.ValidationError,

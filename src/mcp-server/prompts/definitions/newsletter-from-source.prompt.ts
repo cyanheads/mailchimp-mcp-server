@@ -13,7 +13,7 @@ const ArgsSchema = z.object({
   source: z
     .string()
     .describe(
-      "Source material for the newsletter. Either a URL (e.g. the organization's website) that the agent will fetch, or a free-form brief describing the content and context.",
+      "Source material for the newsletter. Either a URL (e.g. the organization's website) to fetch and summarize, or a free-form brief describing the content and context.",
     ),
   audienceId: z
     .string()
@@ -31,7 +31,7 @@ const ArgsSchema = z.object({
 
 export const newsletterFromSourcePrompt = prompt('newsletter_from_source', {
   description:
-    "Compose a monthly editorial newsletter from a source URL or brief. The agent fetches the source, calls the `design-campaign` playbook with live audience state, drafts HTML using the server's editorial design conventions, and walks the send via draft → test → send. Full design reference lives at `docs/email-design-playbook.md`.",
+    "Compose a monthly editorial newsletter from a source URL or brief. Fetches the source, calls the `design-campaign` playbook with live audience state, drafts HTML using the server's editorial design conventions, and walks the send via draft → test → send. Full design reference lives at `docs/email-design-playbook.md`.",
   args: ArgsSchema,
   generate: (args) => {
     const audienceLine = args.audienceId

@@ -2,6 +2,26 @@
 
 All notable changes to `mailchimp-mcp-server` are documented in this file. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.3 — 2026-05-05
+
+LLM-facing language audit across the tool surface, per-tool error contracts replacing the shared service-errors set, and self-documenting conditional tools.
+
+### Added
+
+- **`disabledTool()` wrappers for `mailchimp_assets` / `mailchimp_local_templates`.** On Node, the tools now appear in the manifest with a `reason` and `hint` even when their env var isn't set — operators reading `/.well-known/mcp.json` and the landing page see what's gated and how to enable it. LLM clients still can't invoke them via `tools/list`. Cloudflare Workers behavior unchanged (no Node FS, both tools absent).
+- **`tool-defs-analysis` skill** at `skills/tool-defs-analysis/` — read-only audit pass over LLM-facing definition language: voice & tense, internal leaks, audience leaks, defaults, recovery hints, output descriptions, cross-references, sparsity, examples, structure.
+
+### Changed
+
+- **Per-tool error contracts replaced the shared `MAILCHIMP_SERVICE_ERRORS`.** Each tool's `errors[]` is now tailored — recovery hints reference the specific surface ("scope for sending campaigns" vs "scope for member search" vs "scope for this account-level read"), 404 entries name the right discovery tool, and `ctx.recoveryFor()` flows the tailored hint onto the wire. `src/mcp-server/tools/definitions/_error-contracts.ts` removed.
+- **Tool-defs language audit applied across all 25 definitions:**
+  - Internal leaks removed: `ctx.elicit` references in `mailchimp_send_campaign` / `mailchimp_replicate_campaign` replaced with "prompts the user for confirmation when the client supports MCP elicitation"; HTTP-method mapping in `mailchimp_upsert_subscriber` ("PUT /members/{hash}…PATCH") replaced with the user-visible behavior; subscriber-hash internal-terminology mention removed from `mailchimp_subscribers`.
+  - Audience leaks removed: "the agent fetches…", "Treat the returned ID as the canonical Y" replaced with neutral framing across the `newsletter-from-source` prompt and `mailchimp_playbook` description.
+  - Per-variant glosses added to enum fields: `mailchimp_reports.dimension` (10 variants), `mailchimp_templates.operation`, `mailchimp_subscribers.status`.
+  - Per-key shape hints added for dynamic-record fields: `mailchimp_audiences.signupFormConfig.header/contents/styles`, `mailchimp_merge_fields.options`, subscriber activity / events / goals row schemas.
+  - Factual corrections: `mailchimp_campaigns.archiveType` was incorrectly labeled "MIME type" (it accepts archive format names — `zip`, `tar`, `tar.gz`, `tar.bz2`); `.avif` extension typo in `mailchimp_files.fileData`; formula-style describes (`recipientsCount minus bounce categories`, `exactMatches + fuzzyMatches`) rewritten in plain English.
+- **Code dedup in `mailchimp_search`** — exact/fuzzy member mapping consolidated through a single `summarizeMember()` helper, replacing two identical 9-line `.map()` blocks.
+
 ## 0.3.2 — 2026-04-29
 
 Adopted typed error contracts from `@cyanheads/mcp-ts-core` 0.8.x and tightened how the server handles upstream sparsity, missing data, and small-sample sends. Every Mailchimp-touching tool now advertises a declarative `errors[]` surface, the service stamps a matching `data.reason` on classified failures, and 404s carry a path-derived `data.recovery.hint` (e.g. "verify the subscriber email with mailchimp_find_subscriber, then retry"). Empty results no longer look like regressions — search / activity-feed / audience-overview now return a plain-language `note` that distinguishes "free-tier limit", "brand-new audience", and "no campaigns sent yet" from genuine zero.

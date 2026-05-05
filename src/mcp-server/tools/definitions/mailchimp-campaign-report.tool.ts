@@ -7,7 +7,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const InputSchema = z.object({
@@ -31,7 +31,10 @@ const OutputSchema = z.object({
   recipientsCount: z.number().optional().describe('Emails that Mailchimp attempted to deliver.'),
   delivery: z
     .object({
-      delivered: z.number().optional().describe('emails_sent - hard - soft - syntax bounces.'),
+      delivered: z
+        .number()
+        .optional()
+        .describe('Successfully delivered emails (recipientsCount minus all bounce categories).'),
       bounces: z
         .object({
           hard: z.number().describe('Hard bounces (permanent delivery failures).'),
@@ -121,14 +124,56 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for campaign reports.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — campaign does not exist or has been deleted.',
+      recovery: 'Run mailchimp_campaigns operation:list to discover valid campaignId values.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; reduce MAILCHIMP_CONCURRENCY_LIMIT for bulk operations.',
+      retryable: true,
+    },
+    {
+      reason: 'campaign_not_sent',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Campaign exists but has not been sent yet — no report data available.',
+      recovery:
+        "Send the campaign with mailchimp_send_campaign, or inspect the draft via mailchimp_campaigns operation:'get'.",
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
     const report = await svc.reports.get(ctx, input.campaignId);
     if (!report.send_time) {
-      throw validationError(
-        `Campaign '${input.campaignId}' has not been sent yet — no report data available. Send it with mailchimp_send_campaign, or inspect the draft with mailchimp_campaigns (operation: 'get').`,
-        { campaignId: input.campaignId, status: report.type ?? 'unsent' },
+      throw ctx.fail(
+        'campaign_not_sent',
+        `Campaign '${input.campaignId}' has not been sent yet — no report data available.`,
+        {
+          campaignId: input.campaignId,
+          status: report.type ?? 'unsent',
+          ...ctx.recoveryFor('campaign_not_sent'),
+        },
       );
     }
     const [clicks, locations, unsubs] = await Promise.all([

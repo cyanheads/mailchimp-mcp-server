@@ -7,6 +7,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import {
   getMailchimpService,
   mailchimpMemberHash,
@@ -21,9 +22,7 @@ const StatusSchema = z
 
 const InputSchema = z.object({
   audienceId: z.string().describe('Audience (list) ID.'),
-  email: z
-    .string()
-    .describe('Subscriber email address (case-insensitive; normalized before hashing).'),
+  email: z.string().describe('Subscriber email address (case-insensitive).'),
   status: StatusSchema,
   mergeFields: z
     .record(z.string(), z.unknown())
@@ -53,7 +52,9 @@ const InputSchema = z.object({
 });
 
 const OutputSchema = z.object({
-  subscriberId: z.string().describe('Mailchimp subscriber ID (the member hash).'),
+  subscriberId: z
+    .string()
+    .describe('Opaque Mailchimp subscriber ID — pass back to other tools verbatim.'),
   email: z.string().describe('Subscriber email echoed back.'),
   status: z.string().describe('Resulting subscriber status after the upsert.'),
   isNew: z.boolean().describe('True if the subscriber record was just created.'),
@@ -69,10 +70,47 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber', {
   description:
-    "Add or update a subscriber in one idempotent call. Create path uses PUT /members/{hash}; update path uses PATCH to avoid re-validating pre-existing (possibly malformed) merge fields. Tags are synced declaratively — pass the desired active set and the tool computes the add/remove delta. **Important:** Mailchimp stores static-segment membership as a tag, so a declarative sync will remove the subscriber from any named segment not listed in `tags`; use `preserveTags` to protect them. Use `status: 'pending'` to trigger Mailchimp's double-opt-in email; `'subscribed'` for immediate opt-in (make sure you have consent).",
+    "Add or update a subscriber in one idempotent call. Skips merge-field revalidation on updates that don't touch merge fields, so a stored malformed value can't block other writes. Tags are synced declaratively — pass the desired active set and the tool computes the add/remove delta. **Important:** Mailchimp stores static-segment membership as a tag, so a declarative sync will remove the subscriber from any named segment not listed in `tags`; use `preserveTags` to protect them. Use `status: 'pending'` to trigger Mailchimp's double-opt-in email; `'subscribed'` for immediate opt-in (make sure you have consent).",
   annotations: { idempotentHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  errors: [
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
+      recovery:
+        'Inspect data.requiresPlan when present; otherwise the API key lacks scope for subscriber writes.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 — audience does not exist or has been deleted.',
+      recovery: 'Run mailchimp_audiences operation:list to discover valid audienceId values.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 — usually unknown merge fields, an email already permanently-deleted, or invalid status transition.',
+      recovery:
+        'Inspect data.upstream.errors[]; verify merge fields exist via mailchimp_merge_fields list; permanently-deleted emails cannot resubscribe via API.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 — too many concurrent requests.',
+      recovery:
+        'Retry after a brief delay; for batch upserts use mailchimp_import_subscribers instead.',
+      retryable: true,
+    },
+  ] as const,
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();

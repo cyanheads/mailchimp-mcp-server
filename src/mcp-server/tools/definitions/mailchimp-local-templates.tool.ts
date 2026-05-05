@@ -15,7 +15,6 @@ import {
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { getTemplateService } from '@/services/templates/template-service.js';
-import { MAILCHIMP_SERVICE_ERRORS } from './_error-contracts.js';
 
 const OperationSchema = z
   .enum(['list', 'get', 'render-preview', 'seed-from-mailchimp'])
@@ -121,7 +120,39 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
   input: InputSchema,
   output: OutputSchema,
   errors: [
-    ...MAILCHIMP_SERVICE_ERRORS,
+    {
+      reason: 'mailchimp_unauthorized',
+      code: JsonRpcErrorCode.Unauthorized,
+      when: 'Mailchimp returned 401 — only fires on seed-from-mailchimp, which reads the upstream template.',
+      recovery:
+        'Verify MAILCHIMP_API_KEY in env; rotate via Mailchimp → Account → Extras → API keys.',
+    },
+    {
+      reason: 'mailchimp_forbidden',
+      code: JsonRpcErrorCode.Forbidden,
+      when: 'Mailchimp returned 403 on seed-from-mailchimp — gallery templates and certain user templates are paid-only reads.',
+      recovery:
+        'Use a base or user template instead of a gallery template, or upgrade the Mailchimp plan.',
+    },
+    {
+      reason: 'mailchimp_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Mailchimp returned 404 on seed-from-mailchimp — mailchimpTemplateId points at a template that does not exist.',
+      recovery: 'Run mailchimp_templates operation:list to discover valid IDs.',
+    },
+    {
+      reason: 'mailchimp_validation_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp returned 400 or 422 on seed-from-mailchimp.',
+      recovery: 'Inspect data.upstream.errors[] for field-level reasons.',
+    },
+    {
+      reason: 'mailchimp_rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Mailchimp returned 429 on seed-from-mailchimp — too many concurrent requests.',
+      recovery: 'Retry after a brief delay.',
+      retryable: true,
+    },
     {
       reason: 'templates_not_configured',
       code: JsonRpcErrorCode.ConfigurationError,
