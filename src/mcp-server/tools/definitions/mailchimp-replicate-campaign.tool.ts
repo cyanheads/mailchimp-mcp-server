@@ -15,7 +15,7 @@ import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 const ModeSchema = z
   .enum(['draft', 'test', 'send', 'schedule'])
   .describe(
-    'What to do after replicating. `draft` leaves the replica unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues for `scheduleTime`. On `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation.',
+    'What to do after replicating. `draft` (default — safe) leaves the replica unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues for `scheduleTime`. **Default to `draft` unless the user has explicitly authorized sending** — phrasing like "clone this campaign and update the audience" or "set up a v2" means `draft`, not `send`. `send` and `schedule` also require `confirmSend: true`.',
   );
 
 const ContentOverrideSchema = z
@@ -78,8 +78,14 @@ const InputSchema = z.object({
     .describe('New saved-segment ID. Omit to keep the source segment.'),
   contentOverride: ContentOverrideSchema.optional(),
   mode: ModeSchema.default('draft').describe(
-    'What to do after replicating: `draft` (default), `test`, `send`, or `schedule`. Same user-confirmation semantics as `mailchimp_send_campaign` — `send`/`schedule` prompt when the client supports MCP elicitation.',
+    'What to do after replicating: `draft` (default), `test`, `send`, or `schedule`. **Default to `draft` unless the user has explicitly authorized sending.** `send`/`schedule` require `confirmSend: true`.',
   ),
+  confirmSend: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Required `true` to dispatch when `mode: 'send' | 'schedule'`. Structural confirmation that the user has explicitly authorized the send. The handler rejects `mode: 'send'`/`'schedule'` calls with `confirmSend: false`. Leave `false` for `draft`/`test`. Before flipping to `true`, surface a one-line summary of the replica (subject after overrides, audience name, recipient count, send time if scheduled) and get explicit user authorization.",
+    ),
   scheduleTime: z
     .string()
     .optional()
@@ -150,7 +156,7 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign', {
   description:
-    "Duplicate an existing campaign, optionally override subject/from/reply/audience/segment/content, then leave as draft, send a test, send, or schedule. Same user-confirmation and cleanup semantics as `mailchimp_send_campaign` — on `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation. Use for the common 'send v2 of last week's newsletter with an updated intro' pattern.",
+    "Duplicate an existing campaign, optionally override subject/from/reply/audience/segment/content, then leave as draft (default), send a test, send, or schedule. **Send-capable — default to `mode: 'draft'`.** Only use `mode: 'send'` or `'schedule'` when the user has explicitly authorized dispatch; phrasing like 'clone this campaign and update the audience' or 'set up a v2' is NOT authorization to send — leave as `draft`, return the new `campaignId` and `webUrl`, and let the user run a follow-up send after reviewing. Send/schedule modes require `confirmSend: true`. Use for the common 'send v2 of last week's newsletter with an updated intro' pattern.",
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -208,6 +214,11 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     }
     if (input.mode === 'test' && (!input.testEmails || input.testEmails.length === 0)) {
       throw validationError("'testEmails' (≥1) is required when mode=test.");
+    }
+    if ((input.mode === 'send' || input.mode === 'schedule') && !input.confirmSend) {
+      throw validationError(
+        `'confirmSend: true' is required for mode=${input.mode}. Get explicit user authorization for this dispatch (surface subject + audience + recipient count first), then re-invoke with confirmSend: true. To proceed without sending, use mode='draft'.`,
+      );
     }
 
     const overridesApplied: string[] = [];

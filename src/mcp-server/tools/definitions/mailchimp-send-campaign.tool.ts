@@ -17,7 +17,7 @@ import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 const ModeSchema = z
   .enum(['draft', 'test', 'send', 'schedule'])
   .describe(
-    'What to do with the campaign after content is set. `draft` leaves it unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately. `schedule` queues delivery for `scheduleTime`. On `send`/`schedule`, prompts the user for confirmation when the client supports MCP elicitation.',
+    'What to do with the campaign after content is set. `draft` (default — safe) leaves it unsent. `test` sends a preview to `testEmails`. `send` dispatches immediately to the audience. `schedule` queues delivery for `scheduleTime`. **Default to `draft` unless the user has explicitly authorized sending** — ambiguous requests like "set this up" or "configure the newsletter" mean `draft`. `send` and `schedule` also require `confirmSend: true`.',
   );
 
 const ContentSchema = z
@@ -64,6 +64,12 @@ const InputSchema = z.object({
     .describe('Saved-segment ID to target a subset of the audience.'),
   content: ContentSchema,
   mode: ModeSchema.default('draft'),
+  confirmSend: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Required `true` to dispatch when `mode: 'send' | 'schedule'`. Structural confirmation that the user has explicitly authorized the send. The handler rejects `mode: 'send'`/`'schedule'` calls with `confirmSend: false`. Leave `false` for `draft`/`test`. Before flipping to `true`, surface a one-line summary (subject, audience name, recipient count, send time if scheduled) and get explicit user authorization.",
+    ),
   scheduleTime: z
     .string()
     .optional()
@@ -127,7 +133,7 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   description:
-    "Compose and send (or schedule/test) a campaign in one call. Creates the draft, sets content, runs the send-checklist, optionally sends a test, then sends or schedules. On `mode: 'send' | 'schedule'` the tool prompts the user for confirmation when the client supports MCP elicitation. Aborted or failed drafts are auto-deleted when `cleanupOnError: true` (default) to keep the account tidy.",
+    "Compose a Mailchimp campaign and optionally test/send/schedule it in one call. Creates the draft, sets content, runs the send-checklist, then either leaves it as a draft (default) or dispatches per `mode`. **Send-capable — default to `mode: 'draft'`.** Only use `mode: 'send'` or `'schedule'` when the user has explicitly authorized dispatch; ambiguous phrasing like 'set up next week's newsletter', 'compose a draft', or 'the usual' does NOT authorize a send — leave as `draft`, return the `campaignId` and `webUrl`, and let the user run a follow-up send after reviewing. Send/schedule modes require `confirmSend: true`. Aborted or failed drafts are auto-deleted when `cleanupOnError: true` (default).",
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -199,6 +205,11 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     }
     if (input.mode === 'test' && (!input.testEmails || input.testEmails.length === 0)) {
       throw validationError("'testEmails' (≥1) is required when mode=test.");
+    }
+    if ((input.mode === 'send' || input.mode === 'schedule') && !input.confirmSend) {
+      throw validationError(
+        `'confirmSend: true' is required for mode=${input.mode}. Get explicit user authorization for this dispatch (surface subject + audience + recipient count first), then re-invoke with confirmSend: true. To proceed without sending, use mode='draft'.`,
+      );
     }
 
     let campaignId: string | undefined;

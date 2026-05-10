@@ -3,7 +3,7 @@
  * actions. Delete is intentionally omitted: deleting a SENT campaign destroys
  * its report history. Send/test/schedule/replicate-and-send live in the
  * workflow tools (`mailchimp_send_campaign`, `mailchimp_replicate_campaign`)
- * so they can run checklist validation + elicit confirmation.
+ * so they can run checklist validation and gate on explicit `confirmSend: true`.
  * @module mcp-server/tools/definitions/mailchimp-campaigns.tool
  */
 
@@ -31,7 +31,7 @@ const OperationSchema = z
     'resume-rss',
   ])
   .describe(
-    'Which campaign operation to run. `list`/`get`/`create`/`update` are record-level; `get-content`/`set-content` manage the HTML/plaintext payload; `get-checklist` validates readiness; `cancel-send` aborts an in-flight send; `create-resend` makes a resend-to-non-openers draft; `pause-rss`/`resume-rss` control RSS-driven campaigns. NOT exposed: `send`, `send-test`, `schedule`, `delete`. Use the `mailchimp_send_campaign`/`mailchimp_replicate_campaign` workflow tools for sends — they include send-checklist validation and elicit confirmation.',
+    'Which campaign operation to run. `list`/`get`/`create`/`update` are record-level; `get-content`/`set-content` manage the HTML/plaintext payload; `get-checklist` validates readiness; `cancel-send` aborts an in-flight send; `create-resend` makes a resend-to-non-openers draft; `pause-rss`/`resume-rss` control RSS-driven campaigns. NOT exposed: `send`, `send-test`, `schedule`, `delete`. Use the `mailchimp_send_campaign`/`mailchimp_replicate_campaign` workflow tools for sends — they include send-checklist validation and require explicit `confirmSend: true` to dispatch.',
   );
 
 const CampaignTypeSchema = z
@@ -242,7 +242,7 @@ function buildSettings(settings: z.infer<typeof SettingsSchema> | undefined) {
 
 export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   description:
-    'Campaign record management: list/get/create/update, replicate, content read/write, send-checklist, and RSS/resend controls. DELETE is intentionally not exposed — deleting a sent campaign destroys its historical reports; use `cancel-send` to abort an in-flight send, or delete via the Mailchimp UI if you truly need to. Use the `mailchimp_send_campaign` workflow tool to actually send a campaign (it chains create/content/checklist/send and elicits confirmation).',
+    'Campaign record management: list/get/create/update, replicate, content read/write, send-checklist, and RSS/resend controls. DELETE is intentionally not exposed — deleting a sent campaign destroys its historical reports; use `cancel-send` to abort an in-flight send, or delete via the Mailchimp UI if you truly need to. Use the `mailchimp_send_campaign` workflow tool to actually send a campaign (it chains create/content/checklist/send and requires explicit `confirmSend: true`).',
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
