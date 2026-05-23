@@ -98,7 +98,7 @@ describe('mailchimpFilesTool — handler', () => {
     setMailchimpServiceForTesting(undefined);
   });
 
-  it('list: returns summarized files, totalItems, totalFileSize', async () => {
+  it('list: returns summarized files, totalItems, totalFileSizeInBytes', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -113,7 +113,7 @@ describe('mailchimpFilesTool — handler', () => {
     const result = await mailchimpFilesTool.handler(input, createMockContext());
     expect(result.operation).toBe('list');
     expect(result.totalItems).toBe(1);
-    expect(result.totalFileSize).toBe(68);
+    expect(result.totalFileSizeInBytes).toBe(68);
     expect(result.files).toHaveLength(1);
     expect(result.files?.[0]?.id).toBe(2641183);
     expect(result.files?.[0]?.fullSizeUrl).toBe('https://mcusercontent.com/abc/images/xxx.png');
@@ -336,9 +336,9 @@ describe('mailchimpFilesTool — format()', () => {
         fullSizeUrl: 'https://example/x.png',
         thumbnailUrl: 'https://example/_t.png',
         type: 'image',
-        size: 68,
-        width: 1,
-        height: 1,
+        sizeInBytes: 68,
+        widthInPixels: 1,
+        heightInPixels: 1,
       },
     });
     const text = out[0]?.type === 'text' ? out[0].text : '';
@@ -352,7 +352,7 @@ describe('mailchimpFilesTool — format()', () => {
       operation: 'list',
       files: [],
       totalItems: 0,
-      totalFileSize: 0,
+      totalFileSizeInBytes: 0,
     });
     const text = out[0]?.type === 'text' ? out[0].text : '';
     expect(text).toContain('No files');

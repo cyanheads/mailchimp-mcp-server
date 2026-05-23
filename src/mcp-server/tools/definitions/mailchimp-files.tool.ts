@@ -92,9 +92,9 @@ const FileSummarySchema = z
         'Public CDN URL for the file. **This is what you embed in campaign HTML** (`<img src="…">`).',
       ),
     thumbnailUrl: z.string().optional().describe('Thumbnail URL (images only).'),
-    size: z.number().optional().describe('File size in bytes.'),
-    width: z.number().optional().describe('Pixel width (images only).'),
-    height: z.number().optional().describe('Pixel height (images only).'),
+    sizeInBytes: z.number().optional().describe('File size in bytes.'),
+    widthInPixels: z.number().optional().describe('Pixel width (images only).'),
+    heightInPixels: z.number().optional().describe('Pixel height (images only).'),
     createdAt: z.string().optional().describe('ISO 8601 upload timestamp.'),
     createdBy: z.string().optional().describe('Display name of the uploader.'),
   })
@@ -120,7 +120,7 @@ const OutputSchema = z.object({
     .number()
     .optional()
     .describe('Total items from Mailchimp (for `list`/`list-folders`).'),
-  totalFileSize: z
+  totalFileSizeInBytes: z
     .number()
     .optional()
     .describe('Aggregate size of all files in bytes (for `list`).'),
@@ -138,9 +138,9 @@ function summarizeFile(f: MailchimpFile): z.infer<typeof FileSummarySchema> {
   if (f.type) out.type = f.type;
   if (typeof f.folder_id === 'number') out.folderId = f.folder_id;
   if (f.thumbnail_url) out.thumbnailUrl = f.thumbnail_url;
-  if (typeof f.size === 'number') out.size = f.size;
-  if (typeof f.width === 'number') out.width = f.width;
-  if (typeof f.height === 'number') out.height = f.height;
+  if (typeof f.size === 'number') out.sizeInBytes = f.size;
+  if (typeof f.width === 'number') out.widthInPixels = f.width;
+  if (typeof f.height === 'number') out.heightInPixels = f.height;
   if (f.created_at) out.createdAt = f.created_at;
   if (f.created_by) out.createdBy = f.created_by;
   return out;
@@ -234,7 +234,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
         return {
           operation: 'list',
           totalItems: total_items,
-          totalFileSize: total_file_size,
+          totalFileSizeInBytes: total_file_size,
           files: files.map(summarizeFile),
         };
       }
@@ -297,11 +297,11 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       const dims =
-        typeof f.width === 'number' && typeof f.height === 'number'
-          ? ` · ${f.width}×${f.height}`
+        typeof f.widthInPixels === 'number' && typeof f.heightInPixels === 'number'
+          ? ` · ${f.widthInPixels}×${f.heightInPixels}`
           : '';
       lines.push(
-        `${prefix}**${f.name}** (\`${f.id}\`) — ${f.type ?? 'file'} · ${formatBytes(f.size)}${dims}`,
+        `${prefix}**${f.name}** (\`${f.id}\`) — ${f.type ?? 'file'} · ${formatBytes(f.sizeInBytes)}${dims}`,
       );
       lines.push(`${indent}fullSizeUrl: ${f.fullSizeUrl}`);
       if (f.thumbnailUrl) lines.push(`${indent}thumbnailUrl: ${f.thumbnailUrl}`);
@@ -326,7 +326,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
 
     if (result.files) {
       lines.push(
-        `# Files (${result.files.length} of ${result.totalItems ?? '?'}, total ${formatBytes(result.totalFileSize)})`,
+        `# Files (${result.files.length} of ${result.totalItems ?? '?'}, total ${formatBytes(result.totalFileSizeInBytes)})`,
         '',
       );
       if (result.files.length === 0) {

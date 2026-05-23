@@ -86,3 +86,4 @@ docs/devdocs.md
 # REFERENCE ARTIFACTS (large; fetch on demand)
 # =============================================================================
 docs/reference/*.json
+announcements

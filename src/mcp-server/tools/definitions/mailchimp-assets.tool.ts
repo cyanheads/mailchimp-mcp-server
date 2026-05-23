@@ -36,7 +36,7 @@ const InputSchema = z.object({
 const AssetListEntrySchema = z
   .object({
     relPath: z.string().describe('Path relative to MAILCHIMP_ASSETS_DIR.'),
-    size: z.number().describe('File size in bytes.'),
+    sizeInBytes: z.number().describe('File size in bytes.'),
     ext: z.string().describe('Lowercase extension including leading dot.'),
     isImage: z.boolean().describe("Whether the extension is in Mailchimp's image allowlist."),
   })
@@ -45,7 +45,7 @@ const AssetListEntrySchema = z
 const AssetDetailSchema = z
   .object({
     relPath: z.string().describe('Path relative to MAILCHIMP_ASSETS_DIR.'),
-    size: z.number().describe('File size in bytes.'),
+    sizeInBytes: z.number().describe('File size in bytes.'),
     ext: z.string().describe('Lowercase extension including leading dot.'),
     isImage: z.boolean().describe("Whether the extension is in Mailchimp's image allowlist."),
     sha256: z.string().describe('SHA-256 hex of file contents.'),
@@ -152,7 +152,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
           assetsDir: svc.directory,
           assets: entries.map((e) => ({
             relPath: e.relPath,
-            size: e.size,
+            sizeInBytes: e.size,
             ext: e.ext,
             isImage: e.isImage,
           })),
@@ -167,7 +167,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
           assetsDir: svc.directory,
           asset: {
             relPath: info.relPath,
-            size: info.size,
+            sizeInBytes: info.size,
             ext: info.ext,
             isImage: info.isImage,
             sha256: info.sha256,
@@ -225,11 +225,11 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
       } else {
         for (const a of result.assets) {
           const sizeLabel =
-            a.size < 1024
-              ? `${a.size} B`
-              : a.size < 1024 * 1024
-                ? `${(a.size / 1024).toFixed(1)} KB (${a.size} B)`
-                : `${(a.size / 1024 / 1024).toFixed(2)} MB (${a.size} B)`;
+            a.sizeInBytes < 1024
+              ? `${a.sizeInBytes} B`
+              : a.sizeInBytes < 1024 * 1024
+                ? `${(a.sizeInBytes / 1024).toFixed(1)} KB (${a.sizeInBytes} B)`
+                : `${(a.sizeInBytes / 1024 / 1024).toFixed(2)} MB (${a.sizeInBytes} B)`;
           lines.push(
             `- **${a.relPath}** — ${a.isImage ? 'image' : 'file'} · ${sizeLabel} · \`${a.ext}\``,
           );
@@ -241,7 +241,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
       const a = result.asset;
       lines.push(`# ${a.relPath}`, '');
       lines.push(`- type: ${a.isImage ? 'image' : 'file'}`);
-      lines.push(`- size: ${a.size} bytes`);
+      lines.push(`- sizeInBytes: ${a.sizeInBytes}`);
       lines.push(`- ext: \`${a.ext}\``);
       if (a.sha256) lines.push(`- sha256: \`${a.sha256}\``);
       if (a.cached) {

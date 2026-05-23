@@ -1,0 +1,76 @@
+{
+  "manifest_version": "0.3",
+  "name": "mailchimp-mcp-server",
+  "version": "0.3.5",
+  "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates.",
+  "author": { "name": "cyanheads" },
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "MCP_AUTH_MODE": "none",
+        "NODE_ENV": "production",
+        "MAILCHIMP_API_KEY": "${MAILCHIMP_API_KEY}"
+      }
+    }
+  },
+  "compatibility": {
+    "runtimes": { "node": ">=24.0.0" }
+  },
+  "tools_generated": true,
+  "prompts_generated": true,
+  "user_config": {
+    "MAILCHIMP_API_KEY": {
+      "title": "Mailchimp API Key",
+      "description": "Mailchimp Marketing API key, including the '-dc' data-center suffix (e.g. 'abc...-us22'). Generate at Mailchimp → Account → Extras → API keys.",
+      "type": "string",
+      "required": true
+    },
+    "MAILCHIMP_BASE_URL": {
+      "title": "Mailchimp Base URL",
+      "description": "Override the API base URL (for mock servers or testing). Defaults to 'https://{dc}.api.mailchimp.com/3.0' derived from the API key suffix.",
+      "type": "string",
+      "required": false
+    },
+    "MAILCHIMP_TIMEOUT_MS": {
+      "title": "Request Timeout (ms)",
+      "description": "Per-request timeout in milliseconds.",
+      "type": "string",
+      "required": false
+    },
+    "MAILCHIMP_MAX_RETRIES": {
+      "title": "Max Retries",
+      "description": "Max retry attempts for transient upstream failures (0-10).",
+      "type": "string",
+      "required": false
+    },
+    "MAILCHIMP_CONCURRENCY_LIMIT": {
+      "title": "Concurrency Limit",
+      "description": "Max in-flight upstream requests per workflow tool (1-10).",
+      "type": "string",
+      "required": false
+    },
+    "MAILCHIMP_ASSETS_DIR": {
+      "title": "Assets Directory",
+      "description": "Absolute path to a local assets directory. When set, enables the mailchimp_assets tool and auto-uploads @assets/<path> references in campaign HTML to Mailchimp File Manager at send time.",
+      "type": "string",
+      "required": false
+    },
+    "MAILCHIMP_TEMPLATES_DIR": {
+      "title": "Templates Directory",
+      "description": "Absolute path to a local templates directory. When set, enables the mailchimp_local_templates tool and support for content.localTemplate on campaign tools.",
+      "type": "string",
+      "required": false
+    },
+    "MCP_LOG_LEVEL": {
+      "title": "Log Level",
+      "description": "Minimum log level for output (debug, info, warn, error).",
+      "type": "string",
+      "required": false
+    }
+  }
+}

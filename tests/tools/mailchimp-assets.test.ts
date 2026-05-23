@@ -196,7 +196,7 @@ describe('mailchimpAssetsTool — format()', () => {
       assetsDir: '/tmp/a',
       asset: {
         relPath: 'hero.png',
-        size: 4,
+        sizeInBytes: 4,
         ext: '.png',
         isImage: true,
         sha256: 'abc',
@@ -212,7 +212,7 @@ describe('mailchimpAssetsTool — format()', () => {
       assetsDir: '/tmp/a',
       asset: {
         relPath: 'hero.png',
-        size: 4,
+        sizeInBytes: 4,
         ext: '.png',
         isImage: true,
         sha256: 'abc',

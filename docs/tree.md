@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-05-05 10:15:33
+Generated on: 2026-05-23 12:23:12
 
 ```text
 mailchimp-mcp-server/
@@ -14,6 +14,9 @@ mailchimp-mcp-server/
 │   ├── extensions.json
 │   └── settings.json
 ├── assets/
+├── changelog/
+│   ├── 0.3.x/
+│   └── template.md
 ├── docs/
 │   ├── reference/
 │   │   └── README.md
@@ -30,6 +33,8 @@ mailchimp-mcp-server/
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
+│   ├── lint-packaging.ts
+│   ├── list-skills.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
 ├── skills/
@@ -62,6 +67,8 @@ mailchimp-mcp-server/
 │   │   │   ├── graph.md
 │   │   │   ├── llm.md
 │   │   │   └── speech.md
+│   │   └── SKILL.md
+│   ├── api-telemetry/
 │   │   └── SKILL.md
 │   ├── api-testing/
 │   │   └── SKILL.md
@@ -188,6 +195,7 @@ mailchimp-mcp-server/
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
+├── .mcpbignore
 ├── biome.json
 ├── bun.lock
 ├── bunfig.toml
@@ -196,6 +204,7 @@ mailchimp-mcp-server/
 ├── devcheck.config.json
 ├── Dockerfile
 ├── LICENSE
+├── manifest.json
 ├── package.json
 ├── README.md
 ├── server.json
