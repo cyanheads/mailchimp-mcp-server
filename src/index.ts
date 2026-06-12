@@ -14,6 +14,8 @@ import { initMailchimpService } from '@/services/mailchimp/mailchimp-service.js'
 import { initTemplateService } from '@/services/templates/template-service.js';
 
 await createApp({
+  name: 'mailchimp-mcp-server',
+  title: 'mailchimp-mcp-server',
   tools: allToolDefinitions,
   resources: allResourceDefinitions,
   prompts: allPromptDefinitions,
