@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.6](changelog/0.3.x/0.3.6.md) — 2026-06-11
+
+Framework refresh to @cyanheads/mcp-ts-core ^0.10.6, server identity fields (name/title) wired into createApp(), Claude Code + Codex plugin manifests scaffolded, manifest.json gains repository/homepage/license, .mcpbignore re-anchored with post-pack bundle cleaner.
+
 ## [0.3.5](changelog/0.3.x/0.3.5.md) — 2026-05-23
 
 Framework refresh to @cyanheads/mcp-ts-core ^0.9.6, numeric fields renamed to carry units (sizeInBytes, widthInPixels, heightInPixels, totalFileSizeInBytes), manifest.json + .mcpbignore scaffolded for MCPB bundle support, install badges added to README.

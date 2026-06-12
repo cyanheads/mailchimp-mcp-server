@@ -1,10 +1,16 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-05-23 12:23:12
+Generated on: 2026-06-12 03:27:49
 
 ```text
 mailchimp-mcp-server/
+├── .agents/
 ├── .claude/
+├── .claude-plugin/
+│   └── plugin.json
+├── .codex-plugin/
+│   ├── mcp.json
+│   └── plugin.json
 ├── .github/
 │   └── ISSUE_TEMPLATE/
 │       ├── bug_report.yml
@@ -29,12 +35,15 @@ mailchimp-mcp-server/
 │   ├── build.ts
 │   ├── check-docs-sync.ts
 │   ├── check-framework-antipatterns.ts
+│   ├── check-skill-versions.ts
 │   ├── check-skills-sync.ts
+│   ├── clean-mcpb.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
 ├── skills/
@@ -62,6 +71,8 @@ mailchimp-mcp-server/
 │   │   └── SKILL.md
 │   ├── api-linter/
 │   │   └── SKILL.md
+│   ├── api-mirror/
+│   │   └── SKILL.md
 │   ├── api-services/
 │   │   ├── references/
 │   │   │   ├── graph.md
@@ -80,13 +91,22 @@ mailchimp-mcp-server/
 │   │   └── SKILL.md
 │   ├── api-workers/
 │   │   └── SKILL.md
+│   ├── code-simplifier/
+│   │   └── SKILL.md
 │   ├── design-mcp-server/
 │   │   └── SKILL.md
 │   ├── field-test/
 │   │   └── SKILL.md
+│   ├── git-wrapup/
+│   │   └── SKILL.md
 │   ├── maintenance/
 │   │   └── SKILL.md
-│   ├── migrate-mcp-ts-template/
+│   ├── orchestrations/
+│   │   ├── workflows/
+│   │   │   ├── field-test-fix.md
+│   │   │   ├── fix-wrapup-release.md
+│   │   │   ├── greenfield-build.md
+│   │   │   └── maintenance-release.md
 │   │   └── SKILL.md
 │   ├── polish-docs-meta/
 │   │   ├── references/
@@ -104,6 +124,10 @@ mailchimp-mcp-server/
 │   ├── security-pass/
 │   │   └── SKILL.md
 │   ├── setup/
+│   │   └── SKILL.md
+│   ├── techniques/
+│   │   ├── references/
+│   │   │   └── outline-on-overflow.md
 │   │   └── SKILL.md
 │   └── tool-defs-analysis/
 │       └── SKILL.md

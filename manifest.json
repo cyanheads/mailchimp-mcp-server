@@ -1,9 +1,17 @@
 {
   "manifest_version": "0.3",
   "name": "mailchimp-mcp-server",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates.",
-  "author": { "name": "cyanheads" },
+  "author": {
+    "name": "cyanheads"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyanheads/mailchimp-mcp-server"
+  },
+  "homepage": "https://github.com/cyanheads/mailchimp-mcp-server#readme",
+  "license": "Apache-2.0",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -19,7 +27,9 @@
     }
   },
   "compatibility": {
-    "runtimes": { "node": ">=24.0.0" }
+    "runtimes": {
+      "node": ">=24.0.0"
+    }
   },
   "tools_generated": true,
   "prompts_generated": true,

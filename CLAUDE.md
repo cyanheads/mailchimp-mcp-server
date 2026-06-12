@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.3.5
+**Version:** 0.3.6
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Engines:** Bun ≥1.3.2, Node ≥24.0.0
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
@@ -35,8 +35,9 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 - **Logic throws, framework catches.** Tool/resource handlers are pure — throw on failure, no `try/catch`. Plain `Error` is fine; the framework catches, classifies, and formats. Use error factories (`notFound()`, `validationError()`, etc.) when the error code matters.
 - **Use `ctx.log`** for request-scoped logging. No `console` calls.
 - **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
-- **Check `ctx.elicit` / `ctx.sample`** for presence before calling.
+- **Check `ctx.elicit`** for presence before calling.
 - **Secrets in env vars only** — never hardcoded.
+- **Close the loop on issues.** When implementing work tracked by a GitHub issue, comment on the issue with what landed and close it. Do both — a comment without a close leaves stale issues open; a close without a comment leaves no record of what shipped. The comment is for future readers — state the concrete changes, not the conversation that produced them.
 
 ---
 
@@ -159,11 +160,11 @@ Handlers receive a unified `ctx` object. Used in this server:
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
-| `ctx.elicit` | Used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request human confirmation on destructive sends. **Check for presence first.** |
+| `ctx.elicit` | Used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request human confirmation on destructive sends. Form call `(message, schema)` or `.url(message, url)` for external link. **Check for presence first.** |
 | `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
 | `ctx.requestId` / `ctx.traceId` | Appended to the `X-Request-Id` header for correlation with Mailchimp support cases. |
 
-Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap), `ctx.sample` (no model-calling tools), `ctx.progress` (no task tools).
+Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap), `ctx.progress` (no task tools).
 
 ---
 
@@ -305,11 +306,15 @@ Available skills:
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `release-and-publish` | Post-wrapup ship workflow: verification gate, push, publish to npm / MCP Registry / GHCR |
-| `migrate-mcp-ts-template` | Migrate a legacy mcp-ts-template fork to use `@cyanheads/mcp-ts-core` as a package |
+| `git-wrapup` | Land working-tree changes as logical commits — grouped by concern, topped by a release commit and annotated tag |
+| `orchestrations` | Pick and run a multi-phase workflow chaining task skills end-to-end |
+| `code-simplifier` | Post-session code review and cleanup — simplify, consolidate, and align changed code |
+| `techniques` | Catalog of reusable response/data-shaping patterns (outline-on-overflow, etc.) |
 | `report-issue-framework` | File a bug or feature request against `@cyanheads/mcp-ts-core` via `gh` CLI |
 | `report-issue-local` | File a bug or feature request against this server's own repo via `gh` CLI |
 | `api-auth` | Auth modes, scopes, JWT/OAuth |
 | `api-canvas` | DataCanvas: register tabular data, run SQL, export, plus the `spillover()` helper for big result sets — Tier 3 opt-in (not used by this server) |
+| `api-mirror` | MirrorService: persistent, self-refreshing local mirror of a bulk upstream dataset (embedded SQLite + FTS5) |
 | `api-config` | AppConfig, parseConfig, env vars |
 | `api-context` | Context interface, logger, state, progress |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
@@ -336,8 +341,9 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run lint:packaging` | Validate env-var alignment between `manifest.json` and `server.json` |
 | `bun run list-skills` | Print available skills index |
 | `bun run tree` | Generate directory structure doc |
-| `bun run format` | Auto-fix formatting |
-| `bun test` | Run tests |
+| `bun run format` | Auto-fix formatting (safe autofixes only) |
+| `bun run format:unsafe` | Auto-fix formatting including unsafe autofixes (review diff before committing) |
+| `bun run test` | Run tests (Vitest — use `bun run test`, not `bun test`) |
 | `bun run bundle` | Build and pack as `.mcpb` for one-click Claude Desktop install |
 | `bun run audit:refresh` | Delete `bun.lock`, reinstall, re-audit. Use when `devcheck` flags a transitive advisory — stale lockfile can mask already-patched deps. If advisory survives, it's real. |
 | `bun run dev` | Watch mode (transport via `MCP_TRANSPORT_TYPE`) |
