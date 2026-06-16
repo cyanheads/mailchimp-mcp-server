@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "mailchimp-mcp-server",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates.",
   "author": {
     "name": "cyanheads"

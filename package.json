@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/mailchimp-mcp-server",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "mcpName": "io.github.cyanheads/mailchimp-mcp-server",
   "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.",
   "type": "module",
@@ -90,12 +90,12 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
+    "@biomejs/biome": "^2.5.0",
     "@types/node": "^25.9.3",
     "depcheck": "^1.4.7",
     "ignore": "^7.0.5",
     "tsc-alias": "^1.8.17",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }

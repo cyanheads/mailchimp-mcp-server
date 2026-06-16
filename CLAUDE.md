@@ -1,7 +1,7 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.3.6
+**Version:** 0.3.7
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 **Engines:** Bun ≥1.3.2, Node ≥24.0.0
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
