@@ -1,5 +1,5 @@
 {
-  "@cyanheads/mailchimp-mcp-server": {
+  "mailchimp-mcp-server": {
     "command": "npx",
     "args": ["-y", "@cyanheads/mailchimp-mcp-server"],
     "env": {
