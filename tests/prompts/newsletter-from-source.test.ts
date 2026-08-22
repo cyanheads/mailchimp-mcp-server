@@ -17,7 +17,7 @@ async function renderText(args: Record<string, unknown>): Promise<string> {
       : (newsletterFromSourcePrompt.args.parse(args) as never);
   const messages = await newsletterFromSourcePrompt.generate(parsed);
   const [first] = messages;
-  if (!first || first.content.type !== 'text') {
+  if (first?.content.type !== 'text') {
     throw new Error('expected a text message block');
   }
   return first.content.text;

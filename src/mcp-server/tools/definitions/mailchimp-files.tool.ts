@@ -291,7 +291,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderFile = (f: z.infer<typeof FileSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';
@@ -366,7 +366,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
       renderFolder(result.folder, false);
     }
 
-    if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
+    if (typeof result.deleted === 'boolean') lines.push('', `Deleted: ${result.deleted}`);
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

@@ -279,7 +279,7 @@ describe('TemplateService — seedFromMailchimp', () => {
   });
 
   it('writes a stub when Mailchimp returns an empty default-content map', async () => {
-    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchStub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith('/templates/9999')) {
         return fakeJson(200, { id: 9999, name: 'Starter', type: 'base' });
@@ -307,7 +307,7 @@ describe('TemplateService — seedFromMailchimp', () => {
   });
 
   it('writes section fragments when Mailchimp returns a populated map', async () => {
-    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchStub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith('/templates/8888')) {
         return fakeJson(200, { id: 8888, name: 'D&D', type: 'gallery' });

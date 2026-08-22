@@ -500,7 +500,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderSummary = (a: AudienceSummary, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';

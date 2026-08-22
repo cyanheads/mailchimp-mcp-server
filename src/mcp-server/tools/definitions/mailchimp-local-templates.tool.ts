@@ -227,7 +227,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
 
   format: (result) => {
     const lines: string[] = [
-      `_Operation: ${result.operation}_`,
+      `Operation: ${result.operation}`,
       `_Templates dir: ${result.templatesDir}_`,
       '',
     ];

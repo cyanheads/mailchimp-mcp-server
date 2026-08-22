@@ -8,7 +8,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import type { Context } from '@cyanheads/mcp-ts-core';
+import type { Context, ContextLogger } from '@cyanheads/mcp-ts-core';
 import {
   forbidden,
   JsonRpcErrorCode,
@@ -20,7 +20,7 @@ import {
   unauthorized,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
-import { logger as globalLogger, withRetry } from '@cyanheads/mcp-ts-core/utils';
+import { logger as globalLogger, type Logger, withRetry } from '@cyanheads/mcp-ts-core/utils';
 import type { ServerConfig } from '@/config/server-config.js';
 import type {
   AbuseReport,
@@ -64,18 +64,29 @@ import type {
   Unsubscribed,
 } from '@/services/mailchimp/types.js';
 
-interface Logger {
-  debug(msg: string, ctx?: Record<string, unknown>): void;
-  error(msg: string, err?: unknown, ctx?: Record<string, unknown>): void;
-  info(msg: string, ctx?: Record<string, unknown>): void;
+interface RequestLogger {
   warning(msg: string, ctx?: Record<string, unknown>): void;
+}
+
+const defaultRequestLogger: RequestLogger = {
+  warning: (msg) => globalLogger.warning(msg),
+};
+
+function createStartupContextLogger(log: Logger): ContextLogger {
+  return {
+    debug: (msg) => log.debug(msg),
+    error: (msg, error) => log.error(msg, error ?? new Error(msg)),
+    info: (msg) => log.info(msg),
+    notice: (msg) => log.notice(msg),
+    warning: (msg) => log.warning(msg),
+  };
 }
 
 export interface RequestOptions {
   /** JSON body to send. */
   body?: unknown;
   /** Logger for upstream call annotation. */
-  log?: Logger | undefined;
+  log?: RequestLogger | undefined;
   /** Disable retry (use for destructive ops where idempotency isn't guaranteed). */
   noRetry?: boolean | undefined;
   /** URL query parameters — stringified and appended. Arrays are repeated per value. */
@@ -130,7 +141,7 @@ export class MailchimpService {
 
   request<T>(method: HttpMethod, path: string, opts: RequestOptions = {}): Promise<T> {
     const url = this.buildUrl(path, opts.query);
-    const log = opts.log ?? globalLogger;
+    const log = opts.log ?? defaultRequestLogger;
     const fn = async (): Promise<T> => this.sendOnce<T>(method, url, opts, log);
     if (opts.noRetry) return fn();
     const retryOpts: Parameters<typeof withRetry>[1] = {
@@ -148,7 +159,7 @@ export class MailchimpService {
     method: HttpMethod,
     url: string,
     opts: RequestOptions,
-    log: Logger,
+    log: RequestLogger,
   ): Promise<T> {
     const timeoutController = new AbortController();
     const timer = setTimeout(() => timeoutController.abort(), this.timeoutMs);
@@ -1278,16 +1289,16 @@ export async function initMailchimpService(
   try {
     await svc.account.ping({
       signal: AbortSignal.timeout(10_000),
-      log,
-    } as Pick<Context, 'signal' | 'log'>);
-    log.info('Mailchimp API key validated against /ping.', { dataCenter: svc.dataCenter });
+      log: createStartupContextLogger(log),
+    });
+    log.info(`Mailchimp API key validated against /ping (${svc.dataCenter}).`);
   } catch (err) {
     if (err instanceof McpError && err.code === JsonRpcErrorCode.Unauthorized) {
       throw err;
     }
-    log.warning('Mailchimp /ping failed at startup — continuing anyway.', {
-      error: err instanceof Error ? err.message : String(err),
-    });
+    log.warning(
+      `Mailchimp /ping failed at startup — continuing anyway: ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
   _service = svc;
 }

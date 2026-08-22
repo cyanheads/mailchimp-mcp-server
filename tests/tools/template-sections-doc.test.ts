@@ -47,8 +47,8 @@ describe('TEMPLATE_SECTIONS_DOC', () => {
  * at the target path.
  */
 function jsonSchemaDescription(schema: unknown, path: readonly string[]): string | undefined {
-  const resolve = (node: unknown): unknown => {
-    if (!node || typeof node !== 'object') return node;
+  const resolve = (node: unknown): Record<string, unknown> | undefined => {
+    if (!node || typeof node !== 'object') return;
     const n = node as Record<string, unknown>;
     if (Array.isArray(n.allOf) && n.allOf.length > 0) {
       return { ...n, ...resolve(n.allOf[0]) };
@@ -58,15 +58,13 @@ function jsonSchemaDescription(schema: unknown, path: readonly string[]): string
     }
     return n;
   };
-  let node: Record<string, unknown> | undefined = resolve(schema) as
-    | Record<string, unknown>
-    | undefined;
+  let node = resolve(schema);
   for (const segment of path) {
     if (!node) return;
     const props = node.properties;
     if (!props || typeof props !== 'object') return;
     const next = (props as Record<string, unknown>)[segment];
-    node = resolve(next) as Record<string, unknown> | undefined;
+    node = resolve(next);
   }
   const desc = node?.description;
   return typeof desc === 'string' ? desc : undefined;

@@ -64,7 +64,7 @@ describe('mailchimpCampaignReportTool — draft guard', () => {
   });
 
   it('short-circuits — does not fetch slice endpoints for drafts', async () => {
-    const fetchStub = vi.fn(async (input: RequestInfo | URL) => {
+    const fetchStub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);
       if (url.endsWith('/reports/draftx')) {
         return fakeResponse(200, { id: 'draftx', send_time: '' });
@@ -81,7 +81,7 @@ describe('mailchimpCampaignReportTool — draft guard', () => {
   it('proceeds when send_time is present (sent campaign)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: Parameters<typeof fetch>[0]) => {
         const url = String(input);
         if (url.endsWith('/reports/sentx')) {
           return fakeResponse(200, {
@@ -105,7 +105,7 @@ describe('mailchimpCampaignReportTool — draft guard', () => {
         throw new Error(`Unexpected fetch URL: ${url}`);
       }),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpCampaignReportTool.errors });
     const input = mailchimpCampaignReportTool.input.parse({ campaignId: 'sentx' });
     const result = await mailchimpCampaignReportTool.handler(input, ctx);
     expect(result.campaignId).toBe('sentx');

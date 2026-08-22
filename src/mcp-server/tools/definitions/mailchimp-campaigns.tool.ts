@@ -439,7 +439,7 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderSummary = (c: z.infer<typeof CampaignSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';

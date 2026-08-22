@@ -35,7 +35,7 @@ export interface CampaignContentInput {
 export async function resolveLocalTemplate<T extends CampaignContentInput>(
   ctx: Pick<Context, 'signal' | 'log'>,
   input: T,
-): Promise<T> {
+): Promise<T & CampaignContentInput> {
   if (!input.localTemplate) return input;
   if (input.html || typeof input.templateId === 'number') {
     throw validationError(

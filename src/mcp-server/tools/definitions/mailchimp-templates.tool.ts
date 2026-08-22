@@ -222,7 +222,7 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderSummary = (t: z.infer<typeof TemplateSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';
@@ -268,7 +268,7 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
       }
     }
 
-    if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
+    if (typeof result.deleted === 'boolean') lines.push('', `Deleted: ${result.deleted}`);
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

@@ -210,7 +210,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
 
   format: (result) => {
     const lines: string[] = [
-      `_Operation: ${result.operation}_`,
+      `Operation: ${result.operation}`,
       `_Assets dir: ${result.assetsDir}_`,
       '',
     ];

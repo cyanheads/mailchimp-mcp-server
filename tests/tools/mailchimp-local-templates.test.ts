@@ -31,6 +31,10 @@ const BASE_CONFIG: ServerConfig = {
   dataCenter: 'us22',
 };
 
+const createToolContext = () => createMockContext({ errors: mailchimpLocalTemplatesTool.errors });
+const formatTool = mailchimpLocalTemplatesTool.format;
+if (!formatTool) throw new Error('mailchimpLocalTemplatesTool must define format().');
+
 function fakeJson(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -64,7 +68,7 @@ describe('mailchimpLocalTemplatesTool — config error path', () => {
     setTemplateServiceForTesting(undefined);
     const input = mailchimpLocalTemplatesTool.input.parse({ operation: 'list' });
     await expect(
-      mailchimpLocalTemplatesTool.handler(input, createMockContext()),
+      mailchimpLocalTemplatesTool.handler(input, createToolContext()),
     ).rejects.toMatchObject({
       code: JsonRpcErrorCode.ConfigurationError,
       message: expect.stringContaining('MAILCHIMP_TEMPLATES_DIR'),
@@ -86,7 +90,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
 
   it('list: returns the welcome template with hasMeta: true', async () => {
     const input = mailchimpLocalTemplatesTool.input.parse({ operation: 'list' });
-    const result = await mailchimpLocalTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpLocalTemplatesTool.handler(input, createToolContext());
     expect(result.templatesDir).toBe(dir);
     expect(result.templates).toHaveLength(1);
     expect(result.templates?.[0]?.name).toBe('welcome');
@@ -98,7 +102,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
       operation: 'get',
       name: 'welcome',
     });
-    const result = await mailchimpLocalTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpLocalTemplatesTool.handler(input, createToolContext());
     expect(result.template?.source).toContain('<%= it.firstName %>');
     expect(result.template?.meta?.subject).toBe('Welcome');
   });
@@ -106,7 +110,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
   it('get: requires name', async () => {
     const input = mailchimpLocalTemplatesTool.input.parse({ operation: 'get' });
     await expect(
-      mailchimpLocalTemplatesTool.handler(input, createMockContext()),
+      mailchimpLocalTemplatesTool.handler(input, createToolContext()),
     ).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'name' is required"),
@@ -119,7 +123,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
       name: 'welcome',
       vars: { firstName: 'Casey' },
     });
-    const result = await mailchimpLocalTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpLocalTemplatesTool.handler(input, createToolContext());
     expect(result.rendered?.html).toContain('Hello Casey');
     expect(result.rendered?.subject).toBe('Welcome');
     expect(result.rendered?.previewText).toBe('Onboard');
@@ -128,7 +132,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
   it('render-preview: requires name', async () => {
     const input = mailchimpLocalTemplatesTool.input.parse({ operation: 'render-preview' });
     await expect(
-      mailchimpLocalTemplatesTool.handler(input, createMockContext()),
+      mailchimpLocalTemplatesTool.handler(input, createToolContext()),
     ).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'name' is required"),
@@ -141,7 +145,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
       mailchimpTemplateId: '9999',
     });
     await expect(
-      mailchimpLocalTemplatesTool.handler(noName, createMockContext()),
+      mailchimpLocalTemplatesTool.handler(noName, createToolContext()),
     ).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'name' is required"),
@@ -151,7 +155,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
       name: 'starter',
     });
     await expect(
-      mailchimpLocalTemplatesTool.handler(noId, createMockContext()),
+      mailchimpLocalTemplatesTool.handler(noId, createToolContext()),
     ).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'mailchimpTemplateId' is required"),
@@ -161,7 +165,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
   it('seed-from-mailchimp: writes a seed file from upstream metadata', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: Parameters<typeof fetch>[0]) => {
         const url = String(input);
         if (url.endsWith('/templates/9999'))
           return fakeJson(200, { id: 9999, name: 'Starter', type: 'base' });
@@ -174,7 +178,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
       name: 'starter',
       mailchimpTemplateId: '9999',
     });
-    const result = await mailchimpLocalTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpLocalTemplatesTool.handler(input, createToolContext());
     expect(result.seeded?.relPath).toBe('starter.eta');
     expect(result.seeded?.mailchimpTemplateId).toBe(9999);
   });
@@ -182,7 +186,7 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
 
 describe('mailchimpLocalTemplatesTool — format()', () => {
   it('list with empty templates prompts to create one', () => {
-    const out = mailchimpLocalTemplatesTool.format({
+    const out = formatTool({
       operation: 'list',
       templatesDir: '/tmp/t',
       templates: [],
@@ -192,7 +196,7 @@ describe('mailchimpLocalTemplatesTool — format()', () => {
   });
 
   it('render-preview output includes html in a code fence', () => {
-    const out = mailchimpLocalTemplatesTool.format({
+    const out = formatTool({
       operation: 'render-preview',
       templatesDir: '/tmp/t',
       rendered: {

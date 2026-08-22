@@ -12,17 +12,10 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { forbidden, notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { logger as globalLogger } from '@cyanheads/mcp-ts-core/utils';
+import { logger as globalLogger, type Logger } from '@cyanheads/mcp-ts-core/utils';
 import { AssetCache, type CachedUpload, hashBuffer } from '@/services/assets/asset-cache.js';
 import { rewriteHtml, scanAssetReferences } from '@/services/assets/rewrite.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
-
-interface Logger {
-  debug(msg: string, ctx?: Record<string, unknown>): void;
-  error(msg: string, err?: unknown, ctx?: Record<string, unknown>): void;
-  info(msg: string, ctx?: Record<string, unknown>): void;
-  warning(msg: string, ctx?: Record<string, unknown>): void;
-}
 
 /** Mailchimp's image cap (1 MB); larger images return a 4xx upstream. */
 export const MAX_IMAGE_BYTES = 1_048_576;
@@ -322,7 +315,7 @@ export async function initAssetService(
   const cache = new AssetCache(assetsDir);
   await cache.load();
   _service = new AssetService(assetsDir, cache, concurrencyLimit);
-  log.info('AssetService initialized', { assetsDir, cacheSize: cache.size() });
+  log.info(`AssetService initialized: ${assetsDir} (${cache.size()} cached uploads)`);
 }
 
 export function getAssetService(): AssetService | undefined {

@@ -28,6 +28,10 @@ const BASE_CONFIG: ServerConfig = {
   dataCenter: 'us22',
 };
 
+const createToolContext = () => createMockContext({ errors: mailchimpTemplatesTool.errors });
+const formatTool = mailchimpTemplatesTool.format;
+if (!formatTool) throw new Error('mailchimpTemplatesTool must define format().');
+
 function fakeResponse(status: number, body: unknown = ''): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
   return new Response(text, {
@@ -113,7 +117,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       ),
     );
     const input = mailchimpTemplatesTool.input.parse({ operation: 'list' });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(result.operation).toBe('list');
     expect(result.totalItems).toBe(1);
     expect(result.templates).toHaveLength(1);
@@ -122,21 +126,23 @@ describe('mailchimpTemplatesTool — handler', () => {
   });
 
   it('list: forwards type and category filters to the upstream query', async () => {
-    const stub = vi.fn(async () => fakeResponse(200, { templates: [], total_items: 0 }));
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0]) =>
+      fakeResponse(200, { templates: [], total_items: 0 }),
+    );
     vi.stubGlobal('fetch', stub);
     const input = mailchimpTemplatesTool.input.parse({
       operation: 'list',
       type: 'user',
       category: 'promos',
     });
-    await mailchimpTemplatesTool.handler(input, createMockContext());
+    await mailchimpTemplatesTool.handler(input, createToolContext());
     const url = String(stub.mock.calls[0]?.[0]);
     expect(url).toContain('type=user');
     expect(url).toContain('category=promos');
   });
 
   it('get: calls GET /templates/{id} and returns a summarized template', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       expect(String(input)).toContain('/templates/10012367');
       return fakeResponse(200, TEMPLATE_FIXTURE);
     });
@@ -145,7 +151,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'get',
       templateId: '10012367', // string — regression guard
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
     expect(result.operation).toBe('get');
     expect(result.template?.id).toBe(10012367);
@@ -157,7 +163,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'create',
       html: '<h1>x</h1>',
     });
-    await expect(mailchimpTemplatesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'name' is required"),
     });
@@ -169,14 +175,14 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'create',
       name: 'New Template',
     });
-    await expect(mailchimpTemplatesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'html' is required"),
     });
   });
 
   it('create: POSTs to /templates and surfaces the returned template', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(String(input)).toMatch(/\/templates$/);
       expect(init?.method).toBe('POST');
       const body = JSON.parse(String(init?.body));
@@ -189,12 +195,12 @@ describe('mailchimpTemplatesTool — handler', () => {
       name: 'New Template',
       html: '<h1>x</h1>',
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(result.template?.id).toBe(2222222);
   });
 
   it('update with just name: sends PATCH with only { name }', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(init?.method).toBe('PATCH');
       const body = JSON.parse(String(init?.body));
       expect(body).toEqual({ name: 'Renamed' });
@@ -206,13 +212,13 @@ describe('mailchimpTemplatesTool — handler', () => {
       templateId: '10012367',
       name: 'Renamed',
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(result.operation).toBe('update');
     expect(result.template?.name).toBe('Renamed');
   });
 
   it('update with just html: sends PATCH with only { html }', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body).toEqual({ html: '<h1>new</h1>' });
       return fakeResponse(200, TEMPLATE_FIXTURE);
@@ -223,12 +229,12 @@ describe('mailchimpTemplatesTool — handler', () => {
       templateId: '10012367',
       html: '<h1>new</h1>',
     });
-    await mailchimpTemplatesTool.handler(input, createMockContext());
+    await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
   });
 
   it('update with all three fields: forwards each as Mailchimp expects (folder_id snake_case)', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body).toEqual({ name: 'n', html: '<h1>h</h1>', folder_id: 'f123' });
       return fakeResponse(200, TEMPLATE_FIXTURE);
@@ -241,7 +247,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       html: '<h1>h</h1>',
       folderId: 'f123',
     });
-    await mailchimpTemplatesTool.handler(input, createMockContext());
+    await mailchimpTemplatesTool.handler(input, createToolContext());
   });
 
   it('update with no name/html/folderId: throws a descriptive validation error and does NOT call upstream', async () => {
@@ -251,7 +257,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'update',
       templateId: '10012367',
     });
-    await expect(mailchimpTemplatesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining('Per-section overrides live on campaigns'),
     });
@@ -264,14 +270,14 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'update',
       name: 'Renamed',
     });
-    await expect(mailchimpTemplatesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'templateId' is required"),
     });
   });
 
   it('delete: issues DELETE and sets deleted=true', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(init?.method).toBe('DELETE');
       return fakeResponse(204, '');
     });
@@ -280,7 +286,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'delete',
       templateId: '10012367',
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(result.deleted).toBe(true);
   });
 
@@ -297,7 +303,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'get-default-content',
       templateId: '10012367',
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     expect(result.defaultContent?.sections).toEqual({
       headline: '<h1>Welcome</h1>',
       body: '<p>Hi</p>',
@@ -313,7 +319,7 @@ describe('mailchimpTemplatesTool — handler', () => {
       operation: 'get-default-content',
       templateId: '10012367',
     });
-    const result = await mailchimpTemplatesTool.handler(input, createMockContext());
+    const result = await mailchimpTemplatesTool.handler(input, createToolContext());
     // Empty object sections is truthy → forwarded; format handles the hint.
     expect(result.defaultContent).toEqual({ sections: {} });
   });
@@ -330,47 +336,41 @@ describe('mailchimpTemplatesTool — metadata', () => {
 
 describe('mailchimpTemplatesTool — format', () => {
   it('renders a list with counts', () => {
-    const text = mailchimpTemplatesTool.format(
-      {
-        operation: 'list',
-        totalItems: 3,
-        templates: [
-          {
-            id: 1,
-            name: 'A',
-            type: 'user',
-            dateCreated: '2026-01-01T00:00:00+00:00',
-            active: true,
-          },
-        ],
-      },
-      createMockContext(),
-    );
+    const text = formatTool({
+      operation: 'list',
+      totalItems: 3,
+      templates: [
+        {
+          id: 1,
+          name: 'A',
+          type: 'user',
+          dateCreated: '2026-01-01T00:00:00+00:00',
+          active: true,
+        },
+      ],
+    });
     const block = text[0];
-    if (!block || block.type !== 'text') throw new Error('expected text block');
+    if (block?.type !== 'text') throw new Error('expected text block');
     expect(block.text).toContain('# Templates (1 of 3)');
     expect(block.text).toContain('**A**');
   });
 
   it('renders a detail with metadata and flags', () => {
-    const text = mailchimpTemplatesTool.format(
-      {
-        operation: 'get',
-        template: {
-          id: 10012367,
-          name: 'Renamed',
-          type: 'user',
-          createdBy: 'tester',
-          dateCreated: '2026-04-21T21:31:30+00:00',
-          active: true,
-          dragAndDrop: false,
-          responsive: true,
-        },
+    const text = formatTool({
+      operation: 'get',
+      template: {
+        id: 10012367,
+        name: 'Renamed',
+        type: 'user',
+        createdBy: 'tester',
+        dateCreated: '2026-04-21T21:31:30+00:00',
+        active: true,
+        dragAndDrop: false,
+        responsive: true,
       },
-      createMockContext(),
-    );
+    });
     const block = text[0];
-    if (!block || block.type !== 'text') throw new Error('expected text block');
+    if (block?.type !== 'text') throw new Error('expected text block');
     expect(block.text).toContain('# Renamed');
     expect(block.text).toContain('10012367');
     expect(block.text).toContain('dragAndDrop false');
@@ -378,15 +378,12 @@ describe('mailchimpTemplatesTool — format', () => {
   });
 
   it('default-content: shows the hint when sections map is empty', () => {
-    const text = mailchimpTemplatesTool.format(
-      {
-        operation: 'get-default-content',
-        defaultContent: { sections: {} },
-      },
-      createMockContext(),
-    );
+    const text = formatTool({
+      operation: 'get-default-content',
+      defaultContent: { sections: {} },
+    });
     const block = text[0];
-    if (!block || block.type !== 'text') throw new Error('expected text block');
+    if (block?.type !== 'text') throw new Error('expected text block');
     expect(block.text).toContain('Default content sections (0)');
     expect(block.text).toContain('Mailchimp only populates this map for drag-and-drop templates');
     expect(block.text).toContain('`mc:edit="…"`');
@@ -394,17 +391,14 @@ describe('mailchimpTemplatesTool — format', () => {
   });
 
   it('default-content: shows sections as JSON when populated', () => {
-    const text = mailchimpTemplatesTool.format(
-      {
-        operation: 'get-default-content',
-        defaultContent: {
-          sections: { headline: '<h1>Welcome</h1>' },
-        },
+    const text = formatTool({
+      operation: 'get-default-content',
+      defaultContent: {
+        sections: { headline: '<h1>Welcome</h1>' },
       },
-      createMockContext(),
-    );
+    });
     const block = text[0];
-    if (!block || block.type !== 'text') throw new Error('expected text block');
+    if (block?.type !== 'text') throw new Error('expected text block');
     expect(block.text).toContain('Default content sections (1)');
     expect(block.text).toContain('```json');
     expect(block.text).toContain('"headline"');
@@ -412,12 +406,9 @@ describe('mailchimpTemplatesTool — format', () => {
   });
 
   it('delete: shows deleted marker', () => {
-    const text = mailchimpTemplatesTool.format(
-      { operation: 'delete', deleted: true },
-      createMockContext(),
-    );
+    const text = formatTool({ operation: 'delete', deleted: true });
     const block = text[0];
-    if (!block || block.type !== 'text') throw new Error('expected text block');
-    expect(block.text).toContain('_Deleted: true_');
+    if (block?.type !== 'text') throw new Error('expected text block');
+    expect(block.text).toContain('Deleted: true');
   });
 });

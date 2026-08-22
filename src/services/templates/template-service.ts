@@ -12,19 +12,12 @@ import { open, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { forbidden, notFound, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { logger as globalLogger, yamlParser } from '@cyanheads/mcp-ts-core/utils';
+import { logger as globalLogger, type Logger, yamlParser } from '@cyanheads/mcp-ts-core/utils';
 import { Eta } from 'eta';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 /** Frontmatter must open with this exact prefix on byte 0. */
 const FRONTMATTER_PREFIX = '---\n';
-
-interface Logger {
-  debug(msg: string, ctx?: Record<string, unknown>): void;
-  error(msg: string, err?: unknown, ctx?: Record<string, unknown>): void;
-  info(msg: string, ctx?: Record<string, unknown>): void;
-  warning(msg: string, ctx?: Record<string, unknown>): void;
-}
 
 /** Source extension for templates. Sidecar metadata is `<name>.meta.yaml`. */
 export const TEMPLATE_EXT = '.eta';
@@ -376,7 +369,7 @@ export async function initTemplateService(
     throw err;
   }
   _service = new TemplateService(templatesDir);
-  log.info('TemplateService initialized', { templatesDir });
+  log.info(`TemplateService initialized: ${templatesDir}`);
 }
 
 export function getTemplateService(): TemplateService | undefined {

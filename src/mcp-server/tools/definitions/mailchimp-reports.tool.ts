@@ -349,8 +349,8 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`];
-    if (result.dimension) lines.push(`_Dimension: ${result.dimension}_`);
+    const lines: string[] = [`Operation: ${result.operation}`];
+    if (result.dimension) lines.push(`Dimension: ${result.dimension}`);
     if (result.campaignId) lines.push(`_campaignId: ${result.campaignId}_`);
     lines.push('');
 

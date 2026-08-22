@@ -35,7 +35,7 @@ function fakeResponse(status: number, body: unknown): Response {
 function routeStub(
   routes: Record<string, { status: number; body: unknown }>,
 ): ReturnType<typeof vi.fn> {
-  return vi.fn(async (input: RequestInfo | URL) => {
+  return vi.fn(async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input);
     for (const [pattern, response] of Object.entries(routes)) {
       if (url.includes(pattern)) return fakeResponse(response.status, response.body);
@@ -56,7 +56,7 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
 
   it('throws a ValidationError when audienceId is missing', async () => {
     vi.stubGlobal('fetch', vi.fn());
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpPlaybookTool.errors });
     const input = mailchimpPlaybookTool.input.parse({ topic: 'design-campaign' });
     await expect(mailchimpPlaybookTool.handler(input, ctx)).rejects.toMatchObject({
       message: expect.stringContaining("'audienceId' is required"),
@@ -81,7 +81,7 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
         },
       }),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpPlaybookTool.errors });
     const input = mailchimpPlaybookTool.input.parse({
       topic: 'design-campaign',
       audienceId: 'abc',
@@ -130,7 +130,7 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
         },
       }),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpPlaybookTool.errors });
     const input = mailchimpPlaybookTool.input.parse({
       topic: 'design-campaign',
       audienceId: 'xyz',
@@ -159,7 +159,7 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
         },
       }),
     );
-    const ctx = createMockContext();
+    const ctx = createMockContext({ errors: mailchimpPlaybookTool.errors });
     const input = mailchimpPlaybookTool.input.parse({
       topic: 'design-campaign',
       audienceId: 'q1',

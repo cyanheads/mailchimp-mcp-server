@@ -25,6 +25,10 @@ const BASE_CONFIG: ServerConfig = {
   dataCenter: 'us22',
 };
 
+const createToolContext = () => createMockContext({ errors: mailchimpFilesTool.errors });
+const formatTool = mailchimpFilesTool.format;
+if (!formatTool) throw new Error('mailchimpFilesTool must define format().');
+
 function fakeResponse(status: number, body: unknown = ''): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
   return new Response(text, {
@@ -110,7 +114,7 @@ describe('mailchimpFilesTool — handler', () => {
       ),
     );
     const input = mailchimpFilesTool.input.parse({ operation: 'list' });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(result.operation).toBe('list');
     expect(result.totalItems).toBe(1);
     expect(result.totalFileSizeInBytes).toBe(68);
@@ -120,7 +124,7 @@ describe('mailchimpFilesTool — handler', () => {
   });
 
   it('list: forwards type and folder filter to the upstream query', async () => {
-    const stub = vi.fn(async () =>
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0]) =>
       fakeResponse(200, { files: [], total_file_size: 0, total_items: 0 }),
     );
     vi.stubGlobal('fetch', stub);
@@ -130,7 +134,7 @@ describe('mailchimpFilesTool — handler', () => {
       folderId: '42',
       sinceCreatedAt: '2026-01-01',
     });
-    await mailchimpFilesTool.handler(input, createMockContext());
+    await mailchimpFilesTool.handler(input, createToolContext());
     const url = String(stub.mock.calls[0]?.[0]);
     expect(url).toContain('type=image');
     expect(url).toContain('folder_id=42');
@@ -140,20 +144,20 @@ describe('mailchimpFilesTool — handler', () => {
   it('get: requires fileId', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'get' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'fileId' is required"),
     });
   });
 
   it('get: calls GET /file-manager/files/{id}', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       expect(String(input)).toContain('/file-manager/files/2641183');
       return fakeResponse(200, FILE_FIXTURE);
     });
     vi.stubGlobal('fetch', stub);
     const input = mailchimpFilesTool.input.parse({ operation: 'get', fileId: '2641183' });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
     expect(result.file?.id).toBe(2641183);
     expect(result.file?.fullSizeUrl).toBe('https://mcusercontent.com/abc/images/xxx.png');
@@ -162,7 +166,7 @@ describe('mailchimpFilesTool — handler', () => {
   it('upload: requires name', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'upload', fileData: 'AAAA' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'name' is required"),
     });
@@ -171,14 +175,14 @@ describe('mailchimpFilesTool — handler', () => {
   it('upload: requires fileData', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'upload', name: 'logo.png' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'fileData' is required"),
     });
   });
 
   it('upload: POSTs to /file-manager/files with file_data (snake_case) and folder_id', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(String(input)).toMatch(/\/file-manager\/files$/);
       expect(init?.method).toBe('POST');
       const body = JSON.parse(String(init?.body));
@@ -196,12 +200,12 @@ describe('mailchimpFilesTool — handler', () => {
       fileData: 'iVBORw0KGgo=',
       folderId: '42',
     });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(result.file?.id).toBe(2641183);
   });
 
   it('upload: omits folder_id from payload when not provided', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body).not.toHaveProperty('folder_id');
       return fakeResponse(200, FILE_FIXTURE);
@@ -212,14 +216,14 @@ describe('mailchimpFilesTool — handler', () => {
       name: 'hero.png',
       fileData: 'iVBORw0KGgo=',
     });
-    await mailchimpFilesTool.handler(input, createMockContext());
+    await mailchimpFilesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
   });
 
   it('update: requires fileId', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'update', name: 'x.png' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'fileId' is required"),
     });
@@ -228,14 +232,14 @@ describe('mailchimpFilesTool — handler', () => {
   it('update: requires at least one of name/folderId', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'update', fileId: '2641183' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining('at least one of'),
     });
   });
 
   it('update: PATCHes /file-manager/files/{id} with snake_case folder_id', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(String(input)).toContain('/file-manager/files/2641183');
       expect(init?.method).toBe('PATCH');
       const body = JSON.parse(String(init?.body));
@@ -249,13 +253,13 @@ describe('mailchimpFilesTool — handler', () => {
       name: 'renamed.png',
       folderId: '0',
     });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
     expect(result.file?.name).toBe('renamed.png');
   });
 
   it('update: name-only PATCH omits folder_id from payload', async () => {
-    const stub = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body).toEqual({ name: 'renamed.png' });
       return fakeResponse(200, { ...FILE_FIXTURE, name: 'renamed.png' });
@@ -266,28 +270,28 @@ describe('mailchimpFilesTool — handler', () => {
       fileId: '2641183',
       name: 'renamed.png',
     });
-    await mailchimpFilesTool.handler(input, createMockContext());
+    await mailchimpFilesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
   });
 
   it('delete: requires fileId', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'delete' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'fileId' is required"),
     });
   });
 
   it('delete: DELETEs /file-manager/files/{id} and returns deleted: true on 204', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(String(input)).toContain('/file-manager/files/2641183');
       expect(init?.method).toBe('DELETE');
       return fakeResponse(204);
     });
     vi.stubGlobal('fetch', stub);
     const input = mailchimpFilesTool.input.parse({ operation: 'delete', fileId: '2641183' });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(result.deleted).toBe(true);
   });
 
@@ -297,7 +301,7 @@ describe('mailchimpFilesTool — handler', () => {
       vi.fn(async () => fakeResponse(200, { folders: [FOLDER_FIXTURE], total_items: 1 })),
     );
     const input = mailchimpFilesTool.input.parse({ operation: 'list-folders' });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(result.operation).toBe('list-folders');
     expect(result.totalItems).toBe(1);
     expect(result.folders).toHaveLength(1);
@@ -307,20 +311,20 @@ describe('mailchimpFilesTool — handler', () => {
   it('get-folder: requires folderId', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const input = mailchimpFilesTool.input.parse({ operation: 'get-folder' });
-    await expect(mailchimpFilesTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpFilesTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'folderId' is required"),
     });
   });
 
   it('get-folder: GETs /file-manager/folders/{id}', async () => {
-    const stub = vi.fn(async (input: RequestInfo | URL) => {
+    const stub = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
       expect(String(input)).toContain('/file-manager/folders/42');
       return fakeResponse(200, FOLDER_FIXTURE);
     });
     vi.stubGlobal('fetch', stub);
     const input = mailchimpFilesTool.input.parse({ operation: 'get-folder', folderId: '42' });
-    const result = await mailchimpFilesTool.handler(input, createMockContext());
+    const result = await mailchimpFilesTool.handler(input, createToolContext());
     expect(stub).toHaveBeenCalledOnce();
     expect(result.folder?.id).toBe(42);
   });
@@ -328,7 +332,7 @@ describe('mailchimpFilesTool — handler', () => {
 
 describe('mailchimpFilesTool — format()', () => {
   it('upload result surfaces the embed hint and fullSizeUrl', () => {
-    const out = mailchimpFilesTool.format({
+    const out = formatTool({
       operation: 'upload',
       file: {
         id: 1,
@@ -348,7 +352,7 @@ describe('mailchimpFilesTool — format()', () => {
   });
 
   it('list result with empty files prompts upload', () => {
-    const out = mailchimpFilesTool.format({
+    const out = formatTool({
       operation: 'list',
       files: [],
       totalItems: 0,
@@ -360,7 +364,7 @@ describe('mailchimpFilesTool — format()', () => {
   });
 
   it('delete result reports deleted: true', () => {
-    const out = mailchimpFilesTool.format({ operation: 'delete', deleted: true });
+    const out = formatTool({ operation: 'delete', deleted: true });
     const text = out[0]?.type === 'text' ? out[0].text : '';
     expect(text).toContain('Deleted: true');
   });

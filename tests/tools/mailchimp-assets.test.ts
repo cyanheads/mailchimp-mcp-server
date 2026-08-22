@@ -30,6 +30,10 @@ const BASE_CONFIG: ServerConfig = {
   dataCenter: 'us22',
 };
 
+const createToolContext = () => createMockContext({ errors: mailchimpAssetsTool.errors });
+const formatTool = mailchimpAssetsTool.format;
+if (!formatTool) throw new Error('mailchimpAssetsTool must define format().');
+
 function fakeUploadResponse(id: number): Response {
   return new Response(
     JSON.stringify({
@@ -75,7 +79,7 @@ describe('mailchimpAssetsTool — config error path', () => {
   it('throws ConfigurationError when asset service is not initialized', async () => {
     setAssetServiceForTesting(undefined);
     const input = mailchimpAssetsTool.input.parse({ operation: 'list' });
-    await expect(mailchimpAssetsTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpAssetsTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ConfigurationError,
       message: expect.stringContaining('MAILCHIMP_ASSETS_DIR'),
     });
@@ -96,7 +100,7 @@ describe('mailchimpAssetsTool — operations', () => {
 
   it('list: returns entries sorted by relPath with assetsDir', async () => {
     const input = mailchimpAssetsTool.input.parse({ operation: 'list' });
-    const result = await mailchimpAssetsTool.handler(input, createMockContext());
+    const result = await mailchimpAssetsTool.handler(input, createToolContext());
     expect(result.assetsDir).toBe(dir);
     expect(result.assets).toHaveLength(2);
     expect(result.assets?.[0]?.relPath).toBe('hero.png');
@@ -106,7 +110,7 @@ describe('mailchimpAssetsTool — operations', () => {
 
   it('info: requires relPath', async () => {
     const input = mailchimpAssetsTool.input.parse({ operation: 'info' });
-    await expect(mailchimpAssetsTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpAssetsTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining("'relPath' is required"),
     });
@@ -114,7 +118,7 @@ describe('mailchimpAssetsTool — operations', () => {
 
   it('info: returns sha256 + cached: undefined when never uploaded', async () => {
     const input = mailchimpAssetsTool.input.parse({ operation: 'info', relPath: 'hero.png' });
-    const result = await mailchimpAssetsTool.handler(input, createMockContext());
+    const result = await mailchimpAssetsTool.handler(input, createToolContext());
     expect(result.asset?.relPath).toBe('hero.png');
     expect(result.asset?.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(result.asset?.cached).toBeUndefined();
@@ -122,7 +126,7 @@ describe('mailchimpAssetsTool — operations', () => {
 
   it('info: rejects path traversal', async () => {
     const input = mailchimpAssetsTool.input.parse({ operation: 'info', relPath: '../escape' });
-    await expect(mailchimpAssetsTool.handler(input, createMockContext())).rejects.toMatchObject({
+    await expect(mailchimpAssetsTool.handler(input, createToolContext())).rejects.toMatchObject({
       code: JsonRpcErrorCode.Forbidden,
     });
   });
@@ -135,7 +139,7 @@ describe('mailchimpAssetsTool — operations', () => {
     );
 
     const input = mailchimpAssetsTool.input.parse({ operation: 'sync' });
-    const result = await mailchimpAssetsTool.handler(input, createMockContext());
+    const result = await mailchimpAssetsTool.handler(input, createToolContext());
     expect(result.uploaded).toBe(2);
     expect(result.cached).toBe(0);
     expect(result.skipped).toEqual([]);
@@ -148,10 +152,10 @@ describe('mailchimpAssetsTool — operations', () => {
     vi.stubGlobal('fetch', fetchStub);
 
     const first = mailchimpAssetsTool.input.parse({ operation: 'sync' });
-    await mailchimpAssetsTool.handler(first, createMockContext());
+    await mailchimpAssetsTool.handler(first, createToolContext());
 
     const second = mailchimpAssetsTool.input.parse({ operation: 'sync' });
-    const result = await mailchimpAssetsTool.handler(second, createMockContext());
+    const result = await mailchimpAssetsTool.handler(second, createToolContext());
     expect(result.uploaded).toBe(0);
     expect(result.cached).toBe(2);
     expect(fetchStub).toHaveBeenCalledTimes(2);
@@ -166,12 +170,12 @@ describe('mailchimpAssetsTool — operations', () => {
 
     await mailchimpAssetsTool.handler(
       mailchimpAssetsTool.input.parse({ operation: 'sync' }),
-      createMockContext(),
+      createToolContext(),
     );
 
     const result = await mailchimpAssetsTool.handler(
       mailchimpAssetsTool.input.parse({ operation: 'clear-cache' }),
-      createMockContext(),
+      createToolContext(),
     );
     expect(result.cleared).toBe(true);
     expect(result.cacheSize).toBe(0);
@@ -180,7 +184,7 @@ describe('mailchimpAssetsTool — operations', () => {
 
 describe('mailchimpAssetsTool — format()', () => {
   it('list result with empty assets prompts to drop files in', () => {
-    const out = mailchimpAssetsTool.format({
+    const out = formatTool({
       operation: 'list',
       assetsDir: '/tmp/a',
       assets: [],
@@ -191,7 +195,7 @@ describe('mailchimpAssetsTool — format()', () => {
   });
 
   it('info result without cache shows "Not yet uploaded"', () => {
-    const out = mailchimpAssetsTool.format({
+    const out = formatTool({
       operation: 'info',
       assetsDir: '/tmp/a',
       asset: {
@@ -207,7 +211,7 @@ describe('mailchimpAssetsTool — format()', () => {
   });
 
   it('info result with cache shows fullSizeUrl', () => {
-    const out = mailchimpAssetsTool.format({
+    const out = formatTool({
       operation: 'info',
       assetsDir: '/tmp/a',
       asset: {

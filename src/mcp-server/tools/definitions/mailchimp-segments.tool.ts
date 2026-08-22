@@ -292,7 +292,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderSummary = (s: z.infer<typeof SegmentSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';
@@ -343,7 +343,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
       for (const e of result.errors) lines.push(`- \`${e.email}\`: ${e.error}`);
     }
 
-    if (typeof result.deleted === 'boolean') lines.push('', `_Deleted: ${result.deleted}_`);
+    if (typeof result.deleted === 'boolean') lines.push('', `Deleted: ${result.deleted}`);
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

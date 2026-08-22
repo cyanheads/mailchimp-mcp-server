@@ -240,7 +240,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
     if (result.mergeFields) {
       lines.push(
         `# Merge fields (${result.mergeFields.length} of ${result.totalItems ?? '?'})`,

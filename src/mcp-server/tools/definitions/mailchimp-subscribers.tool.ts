@@ -484,7 +484,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Operation: ${result.operation}_`, ''];
+    const lines: string[] = [`Operation: ${result.operation}`, ''];
 
     const renderSummary = (s: z.infer<typeof SubscriberSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';
@@ -592,7 +592,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
     }
 
     if (typeof result.archived === 'boolean') lines.push('', `_Archived: ${result.archived}_`);
-    if (typeof result.deleted === 'boolean') lines.push(`_Deleted: ${result.deleted}_`);
+    if (typeof result.deleted === 'boolean') lines.push(`Deleted: ${result.deleted}`);
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },
