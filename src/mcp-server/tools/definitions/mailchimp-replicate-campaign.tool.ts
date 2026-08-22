@@ -1,13 +1,15 @@
 /**
  * @fileoverview `mailchimp_replicate_campaign` — duplicate an existing campaign,
  * optionally override subject/content/recipients, then leave as draft, send a
- * test, send, or schedule. Same elicit + cleanup semantics as `send_campaign`.
+ * test, send, or schedule. Uses the same re-entrant confirmation and cleanup
+ * semantics as `send_campaign`.
  * @module mcp-server/tools/definitions/mailchimp-replicate-campaign.tool
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
@@ -221,11 +223,35 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
       );
     }
 
+    let cancelledByUser = false;
+    if (input.mode === 'send' || input.mode === 'schedule') {
+      const confirmed = await confirmCampaignDispatch(ctx, async () => {
+        const source = await svc.campaigns.get(ctx, input.sourceCampaignId);
+        const subject = input.subjectOverride ?? source.settings?.subject_line ?? '(no subject)';
+        const audienceId = input.audienceOverride ?? source.recipients?.list_id;
+        let audienceLabel = source.recipients?.list_name ?? audienceId ?? '?';
+        let count = source.recipients?.recipient_count;
+
+        if (input.audienceOverride) {
+          const audience = await svc.audiences
+            .get(ctx, input.audienceOverride, { fields: ['name', 'stats.member_count'] })
+            .catch(() => null);
+          audienceLabel = audience?.name ?? input.audienceOverride;
+          count = audience?.stats?.member_count;
+        }
+
+        return input.mode === 'send'
+          ? `Send replica "${subject}" to ${count ?? '?'} subscribers in "${audienceLabel}" now?`
+          : `Schedule replica "${subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
+      });
+      cancelledByUser = !confirmed;
+    }
+
     const overridesApplied: string[] = [];
     let newCampaignId: string | undefined;
 
     try {
-      // 1. Replicate.
+      // 1. Replicate after the confirmation round completes.
       const replica = await svc.campaigns.replicate(ctx, input.sourceCampaignId);
       newCampaignId = replica.id;
       ctx.log.info('campaign replicated', {
@@ -320,29 +346,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
         );
       }
 
-      // 5. Elicit for destructive modes.
-      let cancelledByUser = false;
-      if ((input.mode === 'send' || input.mode === 'schedule') && ctx.elicit) {
-        const post = await svc.campaigns.get(ctx, newCampaignId);
-        const subj = post.settings?.subject_line ?? '(no subject)';
-        const audienceLabel = post.recipients?.list_name ?? post.recipients?.list_id ?? '?';
-        const count = post.recipients?.recipient_count;
-        const message =
-          input.mode === 'send'
-            ? `Send replica "${subj}" to ${count ?? '?'} subscribers in "${audienceLabel}" now?`
-            : `Schedule replica "${subj}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
-        const response = await ctx.elicit(
-          message,
-          z.object({
-            confirmed: z.boolean().describe('Confirm to proceed, decline to leave as draft.'),
-          }),
-        );
-        if (response.action !== 'accept' || !response.content?.confirmed) {
-          cancelledByUser = true;
-        }
-      }
-
-      // 6. Dispatch.
+      // 5. Dispatch.
       const effectiveMode: z.infer<typeof ModeSchema> = cancelledByUser ? 'draft' : input.mode;
       let testsSentTo: string[] | undefined;
       if (effectiveMode === 'test') {

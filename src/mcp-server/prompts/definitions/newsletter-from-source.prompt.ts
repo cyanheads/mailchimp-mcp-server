@@ -75,7 +75,7 @@ export const newsletterFromSourcePrompt = prompt('newsletter_from_source', {
             '',
             "6. **Test send.** Re-run with `mode: 'test'` and the user's email in `testEmails` to proofread the rendered output. iOS Mail + Gmail web is a good minimum review pair.",
             '',
-            "7. **Send.** `mode: 'send'`. The workflow tool will elicit confirmation on human-in-the-loop clients — decline downgrades it back to draft safely.",
+            "7. **Send.** `mode: 'send'`. The workflow tool requests confirmation in a re-entrant input round before creating or modifying a campaign — decline downgrades it back to draft safely.",
             '',
             "8. **Review after ~24h.** `mailchimp_playbook` with `topic: 'post-send-review'` and the returned `campaignId` for the tailored results digest (opens, clicks, abuse, industry benchmarks).",
             '',

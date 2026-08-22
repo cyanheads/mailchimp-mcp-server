@@ -1,15 +1,16 @@
 /**
  * @fileoverview `mailchimp_send_campaign` — end-to-end campaign composer + dispatcher.
  * Creates the draft, sets content, runs the send-checklist, optionally sends a test,
- * and then sends/schedules. Elicit-guards `mode: 'send' | 'schedule'` when the
- * client supports elicitation. Cleans up orphaned drafts on mid-flow failure when
- * `cleanupOnError: true` (default).
+ * and then sends/schedules. A re-entrant input round confirms `mode: 'send' |
+ * 'schedule'` before any campaign mutation. Cleans up orphaned drafts on
+ * mid-flow failure when `cleanupOnError: true` (default).
  * @module mcp-server/tools/definitions/mailchimp-send-campaign.tool
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
@@ -133,7 +134,7 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   description:
-    "Compose a Mailchimp campaign and optionally test/send/schedule it in one call. Creates the draft, sets content, runs the send-checklist, then either leaves it as a draft (default) or dispatches per `mode`. **Send-capable — default to `mode: 'draft'`.** Only use `mode: 'send'` or `'schedule'` when the user has explicitly authorized dispatch; ambiguous phrasing like 'set up next week's newsletter', 'compose a draft', or 'the usual' does NOT authorize a send — leave as `draft`, return the `campaignId` and `webUrl`, and let the user run a follow-up send after reviewing. Send/schedule modes require `confirmSend: true`. Aborted or failed drafts are auto-deleted when `cleanupOnError: true` (default).",
+    "Compose a Mailchimp campaign and optionally test/send/schedule it in one call. Creates the draft, sets content, runs the send-checklist, then either leaves it as a draft (default) or dispatches per `mode`. **Send-capable — default to `mode: 'draft'`.** Only use `mode: 'send'` or `'schedule'` when the user has explicitly authorized dispatch; ambiguous phrasing like 'set up next week's newsletter', 'compose a draft', or 'the usual' does NOT authorize a send — leave as `draft`, return the `campaignId` and `webUrl`, and let the user run a follow-up send after reviewing. Send/schedule modes require `confirmSend: true`. Failed drafts are auto-deleted when `cleanupOnError: true` (default); declined confirmation leaves a reviewable draft.",
   annotations: { destructiveHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -199,7 +200,6 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     if (input.type === 'plaintext' && !input.content.plainText) {
       throw validationError("'type: plaintext' requires `content.plainText`.");
     }
-    const content = await resolveLocalTemplate(ctx, input.content);
     if (input.mode === 'schedule' && !input.scheduleTime) {
       throw validationError("'scheduleTime' is required when mode=schedule.");
     }
@@ -212,11 +212,28 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
       );
     }
 
+    let cancelledByUser = false;
+    if (input.mode === 'send' || input.mode === 'schedule') {
+      const confirmed = await confirmCampaignDispatch(ctx, async () => {
+        const audience = await svc.audiences
+          .get(ctx, input.audienceId, { fields: ['name', 'stats.member_count'] })
+          .catch(() => null);
+        const audienceLabel = audience?.name ?? input.audienceId;
+        const count = audience?.stats?.member_count;
+        return input.mode === 'send'
+          ? `Send "${input.subject}" to ${count ?? 'all'} subscribers in "${audienceLabel}" now?`
+          : `Schedule "${input.subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
+      });
+      cancelledByUser = !confirmed;
+    }
+
+    const content = await resolveLocalTemplate(ctx, input.content);
+
     let campaignId: string | undefined;
     let cleanedUp = false;
 
     try {
-      // 1. Create draft.
+      // 1. Create draft after the confirmation round completes.
       const settings: Parameters<typeof svc.campaigns.create>[1]['settings'] = {
         subject_line: input.subject,
         from_name: input.fromName,
@@ -271,30 +288,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
         );
       }
 
-      // 4. Elicit confirmation for destructive modes.
-      let cancelledByUser = false;
-      if ((input.mode === 'send' || input.mode === 'schedule') && ctx.elicit) {
-        const audience = await svc.audiences
-          .get(ctx, input.audienceId, { fields: ['name', 'stats.member_count'] })
-          .catch(() => null);
-        const audienceLabel = audience?.name ?? input.audienceId;
-        const count = audience?.stats?.member_count;
-        const message =
-          input.mode === 'send'
-            ? `Send "${input.subject}" to ${count ?? 'all'} subscribers in "${audienceLabel}" now?`
-            : `Schedule "${input.subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
-        const response = await ctx.elicit(
-          message,
-          z.object({
-            confirmed: z.boolean().describe('Confirm to proceed, decline to leave as draft.'),
-          }),
-        );
-        if (response.action !== 'accept' || !response.content?.confirmed) {
-          cancelledByUser = true;
-        }
-      }
-
-      // 5. Dispatch.
+      // 4. Dispatch.
       const effectiveMode: z.infer<typeof ModeSchema> = cancelledByUser ? 'draft' : input.mode;
       let testsSentTo: string[] | undefined;
       if (effectiveMode === 'test') {
@@ -311,7 +305,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
         });
       }
 
-      // 6. Fetch post-action state.
+      // 5. Fetch post-action state.
       const post = await svc.campaigns.get(ctx, campaignId);
 
       const result: Output = {

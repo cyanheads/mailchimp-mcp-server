@@ -184,7 +184,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '2. **Draft first.** Call `mailchimp_send_campaign` with `mode: draft` (or `mode: test` with `testEmails`) to build the campaign and run the send-checklist without dispatching.',
           '3. **Review the checklist.** The tool returns `checklistWarnings`. Fix any `error` items before sending.',
           '4. **Send a test.** Re-run with `mode: test` and your own email in `testEmails` to proofread the rendered output.',
-          '5. **Confirm the send.** Re-run with `mode: send` (or `mode: schedule` + `scheduleTime`). A human-in-the-loop client will prompt for confirmation via `ctx.elicit`; decline to downgrade back to draft.',
+          '5. **Confirm the send.** Re-run with `mode: send` (or `mode: schedule` + `scheduleTime`). The tool requests confirmation in a re-entrant input round before campaign mutation; decline to downgrade back to draft.',
           '6. **Post-send review.** Once status becomes `sent`, call `mailchimp_playbook` with `topic: post-send-review` and the returned `campaignId` for a tailored follow-up.',
           '',
           open !== undefined && open < 0.15
@@ -631,7 +631,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '4. Curl-check any CDN image URLs',
           '5. `mailchimp_send_campaign` `mode: draft` → review `checklistWarnings`',
           '6. `mode: test` → proofread the rendered output (iOS + Gmail web minimum)',
-          '7. `mode: send` (elicits confirmation on HITL clients)',
+          '7. `mode: send` (requests re-entrant confirmation before campaign mutation)',
           '8. After ~24h: `mailchimp_playbook` `topic: post-send-review`',
         ]
           .filter(Boolean)
@@ -671,7 +671,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   },
 
   format: (result) => {
-    const lines: string[] = [`_Topic: ${result.topic}_`, '', result.instructions, ''];
+    const lines: string[] = [`Topic: ${result.topic}`, '', result.instructions, ''];
     if (Object.keys(result.liveState).length > 0) {
       lines.push('', '## Live state', '```json', JSON.stringify(result.liveState, null, 2), '```');
     }
