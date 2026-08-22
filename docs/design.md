@@ -2,14 +2,14 @@
 
 ## MCP Surface
 
-### Tools (17)
+### Tools (20: 18 always-on + 2 conditional)
 
 **Workflow tools** (7) — multi-step orchestration for common end-to-end tasks:
 
 | Name | Description | Key Inputs | Annotations |
 |:-----|:------------|:-----------|:------------|
-| `mailchimp_send_campaign` | Compose and send (or schedule/test) a campaign in one call: create the campaign, set content, run send-checklist, optionally send a test, then send or schedule. Aborted drafts are auto-deleted when `cleanupOnError: true` (default). Requests human confirmation via `ctx.elicit` on `mode: 'send' \| 'schedule'` when the client supports elicitation. | `audienceId`, `subject`, `fromName`, `replyTo`, `content` (html \| plaintext \| templateId+mergeData), `segmentId?`, `mode` (`draft`\|`test`\|`send`\|`schedule`), `scheduleTime?`, `testEmails?`, `cleanupOnError?` (default `true`) | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
-| `mailchimp_replicate_campaign` | Duplicate an existing campaign, optionally override subject/content/recipients, then send or leave as draft. Same elicitation + cleanup semantics as `send_campaign`. | `sourceCampaignId`, `subjectOverride?`, `fromNameOverride?`, `contentOverride?`, `audienceOverride?`, `segmentOverride?`, `mode`, `scheduleTime?`, `testEmails?`, `cleanupOnError?` | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
+| `mailchimp_send_campaign` | Compose and send (or schedule/test) a campaign in one call: create the campaign, set content, run send-checklist, optionally send a test, then send or schedule. Failed drafts are auto-deleted when `cleanupOnError: true` (default); declined confirmation leaves a draft. Requests human confirmation through a re-entrant input round on `mode: 'send' \| 'schedule'` before any campaign mutation. | `audienceId`, `subject`, `fromName`, `replyTo`, `content` (html \| plaintext \| templateId+templateSections \| localTemplate), `segmentId?`, `mode` (`draft`\|`test`\|`send`\|`schedule`), `scheduleTime?`, `testEmails?`, `cleanupOnError?` (default `true`) | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
+| `mailchimp_replicate_campaign` | Duplicate an existing campaign, optionally override subject/content/recipients, then send or leave as draft. Same re-entrant confirmation + cleanup semantics as `send_campaign`. | `sourceCampaignId`, `subjectOverride?`, `fromNameOverride?`, `contentOverride?`, `audienceOverride?`, `segmentOverride?`, `mode`, `scheduleTime?`, `testEmails?`, `cleanupOnError?` | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
 | `mailchimp_upsert_subscriber` | Add or update a subscriber with status, merge fields, tags, and optional note in a single idempotent call. Uses PUT /members/{hash} + tag sync. `status: 'pending'` triggers Mailchimp's double-opt-in flow (user must click the confirmation email) — use `'subscribed'` for immediate opt-in. | `audienceId`, `email`, `status` (`subscribed`\|`unsubscribed`\|`cleaned`\|`pending`\|`transactional`), `mergeFields?`, `tags?`, `note?`, `vip?`, `language?` | `idempotentHint: true` |
 | `mailchimp_import_subscribers` | Batch add/update subscribers via POST /lists/{id}, returns per-row succeeded/failed with reasons. **Status defaults to `pending`** (double-opt-in) to prevent accidental mass-sends; set `status: 'subscribed'` explicitly to import as already-opted-in. Capped at 500 per call. | `audienceId`, `subscribers[]` (≤500), `status?` (default `'pending'`), `updateExisting?`, `skipMergeValidation?` | `openWorldHint: true` |
 | `mailchimp_find_subscriber` | Search for a subscriber by email across one or all audiences. Wraps `/search-members` and enriches with member detail + tags + last activity. | `email`, `audienceId?` | `readOnlyHint: true` |
@@ -22,7 +22,7 @@
 |:-----|:------------|:------|:------------|
 | `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (designing a campaign, sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage` \| `design-campaign`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
 
-**Primitive tools** (9) — fine-grained CRUD, consolidated by noun via `operation` enum:
+**Primitive tools** (10) — fine-grained CRUD, consolidated by noun via `operation` enum:
 
 | Name | Description | Operation enum | Annotations |
 |:-----|:------------|:--------------|:------------|
@@ -34,7 +34,15 @@
 | `mailchimp_campaigns` | Campaign read + create/update + non-send actions. **No delete** — deleting a sent campaign destroys historical reports; pre-send cancellation is covered by `cancel-send`. Send/test/schedule/replicate+send live in the workflow tools. | `list`, `get`, `create`, `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss` | `openWorldHint: true` |
 | `mailchimp_reports` | Campaign report slices. For the common at-a-glance digest, use `mailchimp_campaign_report` instead. | `list`, `get`, `slice` (+ `dimension`: `abuse-reports` \| `advice` \| `click-details` \| `open-details` \| `domain-performance` \| `eepurl` \| `email-activity` \| `locations` \| `sent-to` \| `unsubscribed`; + optional `subscriberHash` or `linkId` for drill-down) | `readOnlyHint: true` |
 | `mailchimp_templates` | Template CRUD. Free plan has access to basic templates only. | `list`, `get`, `create`, `update`, `delete`, `get-default-content` | `openWorldHint: true` |
+| `mailchimp_files` | Mailchimp File Manager uploads and metadata operations for campaign assets, plus read-only folder browsing. | `list`, `get`, `upload`, `update`, `delete`, `list-folders`, `get-folder` | `openWorldHint: true` |
 | `mailchimp_search` | Global search across members or campaigns. | `members`, `campaigns` | `readOnlyHint: true` |
+
+**Conditional local-workspace tools** (2) — registered only when their directory setting is configured:
+
+| Name | Description | Enabled by |
+|:-----|:------------|:-----------|
+| `mailchimp_assets` | List local assets, inspect upload-cache state, pre-warm uploads, and clear cached mappings. | `MAILCHIMP_ASSETS_DIR` |
+| `mailchimp_local_templates` | List, inspect, preview, and seed local Eta campaign templates. | `MAILCHIMP_TEMPLATES_DIR` |
 
 ### Resources (4)
 
@@ -69,7 +77,7 @@ An MCP server that wraps the [Mailchimp Marketing API v3.0](https://mailchimp.co
 
 **Target users.** Developers and solo operators on the Mailchimp free plan who want an LLM agent to draft and send newsletters, manage a subscriber list, and review campaign performance without clicking through the UI. Also usable on paid plans — everything on free works on paid, plus paid-gated endpoints (`automations`, `ecommerce`, `customer-journeys`) are intentionally omitted from v1.
 
-**Lean by design.** v1 covers the tasks agents actually repeat — send newsletters, manage subscribers, review performance. Low-frequency UI organization (folders, file manager, landing pages), one-time integration setup (webhooks), niche features (interest-category groups), and truly catastrophic operations (delete audience / permanent delete subscriber / delete sent campaign) are intentionally excluded. Easier to add when demand emerges than to remove.
+**Lean by design.** v1 covers the tasks agents actually repeat — send newsletters, manage subscribers, review performance, and manage campaign assets. Low-frequency UI organization (folders, landing pages), one-time integration setup (webhooks), niche features (interest-category groups), and truly catastrophic operations (delete audience / permanent delete subscriber / delete sent campaign) are intentionally excluded. Easier to add when demand emerges than to remove.
 
 **What's explicitly out of scope for v1:**
 
@@ -84,7 +92,6 @@ An MCP server that wraps the [Mailchimp Marketing API v3.0](https://mailchimp.co
 
 *Low-signal for agent workflows (free but excluded):*
 - Campaign / template folders (`/campaign-folders`, `/template-folders`) — UI ceremony; agents use IDs.
-- File manager (`/file-manager/**`) — humans upload assets; agents inline or link.
 - Landing pages (`/landing-pages/**`) — off-domain (web, not email), free-tier limited.
 - Per-audience webhooks (`/lists/{id}/webhooks`) — one-time integration setup, not a recurring agent task.
 - Interest-category groups (`/lists/{id}/interest-categories/**`) — niche opt-in feature; most free accounts don't use.
@@ -105,7 +112,7 @@ An MCP server that wraps the [Mailchimp Marketing API v3.0](https://mailchimp.co
 - Validate the API key at startup by issuing `GET /ping` — fail fast with `ConfigurationError` rather than surfacing auth failures on the first tool call.
 - Support Free-plan operations across: audiences (read/create/update + analytics + signup forms), subscribers (read/update + tags/notes + activity), segments, merge fields (read/create/update), campaigns (regular/plaintext/rss, no delete), templates, reports, search.
 - Expose workflow tools for the seven highest-frequency tasks (send campaign, replicate campaign, upsert/import/find subscribers, campaign report digest, audience overview), an instruction tool (`mailchimp_playbook`) for state-aware procedural guidance on complex multi-step tasks, and primitive tools for everything else.
-- Gate destructive workflow operations (`mailchimp_send_campaign`/`mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'`) behind `ctx.elicit` confirmation when the client supports it.
+- Gate destructive workflow operations (`mailchimp_send_campaign`/`mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'`) behind a re-entrant `ctx.requestInput` confirmation before any campaign mutation.
 - Default `mailchimp_import_subscribers` to `status: 'pending'` (double-opt-in) to prevent accidental mass-sends.
 - Respect Mailchimp rate limits: ≤10 concurrent requests per account; backoff on 429 with `Retry-After` honored. Cap workflow-tool parallelism below the account limit to leave headroom for concurrent agent/UI sessions.
 - 60-second per-request timeout (Mailchimp server-side is 120s; we fail fast earlier).
@@ -126,7 +133,7 @@ Workflow tools that parallelize upstream calls use a shared `p-limit`-style sema
 
 **Startup validation.** Registered in `createApp()`'s `setup()` — parses `MAILCHIMP_API_KEY`, extracts DC, and issues a `/ping` with a 10-second timeout. Auth failures throw `ConfigurationError` naming the env var; network failures are logged as warnings and the server starts anyway (Mailchimp outages shouldn't block startup).
 
-**Elicit-guarded destructive ops.** `mailchimp_send_campaign` and `mailchimp_replicate_campaign`, when `mode` is `'send'` or `'schedule'`, check `ctx.elicit` and prompt for confirmation (`"Send campaign 'X' to N recipients?"`). On `reject` → short-circuit to `mode: 'draft'` and return with a `cancelledByUser: true` flag so the agent sees what happened. When `ctx.elicit` is absent (e.g. headless/stdio without a human), the tool proceeds — the `destructiveHint` annotation is the only signal, and it's up to the orchestrating agent's policy.
+**Re-entrant destructive-operation guard.** `mailchimp_send_campaign` and `mailchimp_replicate_campaign`, when `mode` is `'send'` or `'schedule'`, return a `ctx.requestInput` confirmation request before any campaign mutation (`"Send campaign 'X' to N recipients?"`). On re-entry, `ctx.inputs` validates the response. Decline or cancel downgrades to `mode: 'draft'` and returns `cancelledByUser: true`; acceptance proceeds with the original explicit `confirmSend: true` gate still intact.
 
 **Resilience calibration:**
 
@@ -168,7 +175,7 @@ Full endpoint inventory from `docs/reference/mailchimp-openapi.json` (282 operat
 | `automations` (18) | ❌ | — | Standard+. **Excluded.** |
 | `reporting` (12) | partial | — | Surveys/facebook-ads paid. **Excluded.** |
 | `ecommerce` (60) | partial | — | **Excluded.** |
-| `file-manager` (11) | ✅ | — | **Excluded as low-signal** — asset management is a human UI task. |
+| `file-manager` (11) | ✅ | `mailchimp_files`, `mailchimp_assets` | Direct File Manager CRUD plus local asset upload and URL rewriting. |
 | `landing-pages` (8) | ✅ | — | **Excluded as low-signal** — off-domain (web pages). |
 | `audiences` (8) | ✅ | — | BETA omni-channel contacts, separate from `/lists`. Defer. |
 | `templates` (6) | ✅ | `mailchimp_templates` | Free limited template selection. |
@@ -189,7 +196,7 @@ Full endpoint inventory from `docs/reference/mailchimp-openapi.json` (282 operat
 | `activity-feed` (1) | ✅ | `mailchimp_account` (`operation: activity-feed`) | Chimp Chatter stream. |
 | `/` root (1) | ✅ | `mailchimp_account` (`operation: info`) | |
 
-**v1 coverage:** 17 tools covering ~140 operations (~50% of the API). `mailchimp_playbook` reuses existing endpoints for live state — no new upstream surface. Remaining ops are paid-gated, admin-tier, or intentionally deferred as low-signal.
+**v1 coverage:** 20 tools covering ~150 operations. `mailchimp_playbook` and the conditional local-workspace tools compose existing endpoints and local files around the core API surface. Remaining ops are paid-gated, admin-tier, or intentionally deferred as low-signal.
 
 ---
 
@@ -197,9 +204,9 @@ Full endpoint inventory from `docs/reference/mailchimp-openapi.json` (282 operat
 
 How the seven workflow tools compose upstream calls — each replaces a multi-step agent sequence with a single tool call.
 
-**`mailchimp_send_campaign`** (5–8 upstream calls, plus elicit):
+**`mailchimp_send_campaign`** (5–8 upstream calls, plus a re-entrant input round):
 ```
-(if ctx.elicit && mode in send|schedule) → elicit confirmation — reject → short-circuit to draft
+(if mode in send|schedule) → request input before mutation — decline/cancel → downgrade to draft
 POST   /campaigns                            → create draft
 PUT    /campaigns/{id}/content               → set html/plaintext/template content
 GET    /campaigns/{id}/send-checklist        → validate
@@ -209,19 +216,19 @@ POST   /campaigns/{id}/actions/schedule      → (if mode=schedule)
 GET    /campaigns/{id}                       → post-action state for the response
 (on mid-flow error + cleanupOnError)         → DELETE /campaigns/{id}
 ```
-Output carries the campaign ID, send-checklist warnings (non-blocking; blocking items throw `ValidationError` before send), resolved mode, `cancelledByUser` if elicit rejected, and archive URL when available. If `ctx.signal` aborts mid-flow or any upstream step throws, and `cleanupOnError: true` (default), the draft is deleted before the error propagates — prevents orphan drafts cluttering the account.
+Output carries the campaign ID, send-checklist warnings (non-blocking; blocking items throw `ValidationError` before send), resolved mode, `cancelledByUser` if confirmation was declined or cancelled, and archive URL when available. If `ctx.signal` aborts mid-flow or any upstream step throws, and `cleanupOnError: true` (default), the draft is deleted before the error propagates — prevents orphan drafts cluttering the account.
 
-**`mailchimp_replicate_campaign`** (4–9 upstream calls, plus elicit):
+**`mailchimp_replicate_campaign`** (4–9 upstream calls, plus a re-entrant input round):
 ```
+(if mode in send|schedule) → request input before mutation — decline/cancel → downgrade to draft
 POST   /campaigns/{sourceId}/actions/replicate   → clone source → new campaignId
 PATCH  /campaigns/{newId}                        → (if overrides) update subject/from/recipients/segment
 PUT    /campaigns/{newId}/content                → (if contentOverride) set new content
 GET    /campaigns/{newId}/send-checklist         → validate
-(if ctx.elicit && mode in send|schedule) → elicit confirmation
 POST   /campaigns/{newId}/actions/test | send | schedule   → dispatch per mode
 GET    /campaigns/{newId}                        → post-action state
 ```
-Same `cleanupOnError` + elicit semantics as `send_campaign`. Common agent pattern: "send a new version of campaign X with an updated subject line and a fresh intro paragraph."
+Same `cleanupOnError` + re-entrant confirmation semantics as `send_campaign`. Common agent pattern: "send a new version of campaign X with an updated subject line and a fresh intro paragraph."
 
 **`mailchimp_upsert_subscriber`** (2–3 calls):
 ```
@@ -297,7 +304,7 @@ z.object({
     details: z.string(),
   })).describe('Non-blocking send-checklist results. Blocking items throw ValidationError before this point.'),
   archiveUrl: z.string().url().optional().describe('Public archive URL, populated once sending begins.'),
-  cancelledByUser: z.boolean().optional().describe('True if elicit confirmation was rejected; mode was downgraded to draft.'),
+  cancelledByUser: z.boolean().optional().describe('True if confirmation was declined or cancelled; mode was downgraded to draft.'),
   cleanedUp: z.boolean().optional().describe('True if the draft was deleted due to mid-flow failure.'),
 })
 ```
@@ -337,13 +344,13 @@ z.object({
 
 **Workflow tools first, primitives second.** The user workflow for Mailchimp is almost always multi-step (create → content → validate → send). Forcing agents to chain primitive tools is error-prone and wastes context. Workflow tools encode the happy path; primitives exist for edge cases and fine control.
 
-**Consolidate REST verbs into `operation` enum.** Mailchimp's REST surface has 69 `/lists/**` endpoints. Exposing one tool per endpoint would blow up the surface. Grouping by noun with `operation` enum keeps the surface at 17 tools while preserving the CRUD access the agent actually needs.
+**Consolidate REST verbs into `operation` enum.** Mailchimp's REST surface has 69 `/lists/**` endpoints. Exposing one tool per endpoint would blow up the surface. Grouping by noun with `operation` enums keeps the always-on surface at 18 tools while preserving the CRUD access the agent actually needs.
 
-**Lean surface > comprehensive surface.** v1 ships with 16 tools, not 21. Folders, file manager, landing pages, per-audience webhooks, and interest-category groups are intentionally excluded — they're either UI ceremony, off-domain (web pages), one-time human setup, or niche enough that agents rarely touch them. Easier to add a tool when a real use case surfaces than to deprecate one after agents build habits around it.
+**Lean surface > comprehensive surface.** The server ships 18 always-on tools and registers two local-workspace tools only when configured. Folders, landing pages, per-audience webhooks, and interest-category groups remain excluded because they are UI ceremony, off-domain, one-time setup, or too niche for the default surface.
 
 **Irreversible writes live in the UI, not the tool surface.** Deleting an audience on free plan (1-audience cap) nukes everything. Permanent-delete on a subscriber prevents them from ever resubscribing. Deleting a sent campaign destroys historical reports. Deleting a merge field drops a column's worth of data across every subscriber. These don't belong behind an LLM — humans should do them in the Mailchimp UI with its confirmation dialogs. `archive`, `cancel-send`, and other recoverable alternatives remain.
 
-**Elicit-guarded sends.** `mailchimp_send_campaign` and `mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'` prompt via `ctx.elicit` when the client supports it — "Send campaign X to N recipients?" — and downgrade to draft on reject. On clients without elicitation, the `destructiveHint: true` annotation is the signal and the orchestrating agent's policy decides. Can't fully prevent footguns in headless contexts, but human-in-the-loop sessions get a real confirm step.
+**Re-entrant confirmation for sends.** `mailchimp_send_campaign` and `mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'` request input before any campaign mutation — "Send campaign X to N recipients?" — then inspect `ctx.inputs` on re-entry. Decline or cancel downgrades to draft. The framework serves the round trip on both current clients and legacy clients through its compatibility shim.
 
 **`import_subscribers` defaults to pending (double-opt-in).** Agents routinely pass lists of emails without thinking through the consent chain. Defaulting to `pending` forces Mailchimp's double-opt-in flow — each subscriber confirms via email before being added — and requires an explicit `status: 'subscribed'` for the "I already have consent for these" path.
 
@@ -363,7 +370,7 @@ z.object({
 
 **No app-tools in v1.** Mailchimp data is well-suited to text rendering (tables, lists). Revisit after v1 ships if an interactive dashboard use case emerges.
 
-**No prompts in v1.** Tool surface covers the use cases. Prompts earn their keep when there's a recurring LLM interaction pattern worth templating — none of the current flows need that.
+**One authoring prompt.** `newsletter_from_source` captures the recurring source-to-newsletter workflow, while operational work remains on the tool surface.
 
 ---
 
@@ -374,7 +381,7 @@ z.object({
 - **No automations or multi-step journeys.** Single-send campaigns only.
 - **No A/B or variate campaigns.** Only `regular`, `plaintext`, `rss` campaign types exposed.
 - **Irreversible deletes unavailable via tool surface.** Audience delete, subscriber permanent-delete, campaign delete, merge-field delete are intentionally excluded. Humans do them in the UI.
-- **Elicit guard is best-effort.** Clients without `ctx.elicit` (stdio without a human, headless batch runs) see only the `destructiveHint` annotation. Sending is still possible — policy lives in the orchestrator.
+- **Dispatch requires a confirmation round trip.** Clients that cannot complete the input request cannot send or schedule through the workflow tools; `draft` and `test` modes remain available.
 - **Rate limit is per-account-concurrent, not per-period.** 10 simultaneous requests. Workflow tools cap internal concurrency at `MAILCHIMP_CONCURRENCY_LIMIT` (default 4) to leave headroom for other sessions.
 - **Pagination is `count`/`offset`, not cursor.** Tools expose `count` and `offset` directly; callers page explicitly. Mailchimp caps `count` at 1000.
 - **Tag sync requires GET + POST.** No atomic "set tags" endpoint; a concurrent modification between our read and write could lose a tag. Acceptable for v1; documented in the tool's description.
@@ -387,7 +394,7 @@ z.object({
 
 Three layers — all land alongside implementation, not after.
 
-**Unit tests.** Per-tool, per-service-method. `createMockContext()` from `@cyanheads/mcp-ts-core/testing` for context (with `elicit: vi.fn()` mocked for send-path tests). Mock `MailchimpService` methods return canned fixtures per scenario (happy path, sparse upstream response, 404, 429, paid-feature 403, timeout, elicit-reject). Assert tool output shape, error classification, and `format()` content includes all relevant fields. Colocate `foo.tool.test.ts` with `foo.tool.ts`.
+**Unit tests.** Per-tool, per-service-method. `createMockContext()` from `@cyanheads/mcp-ts-core/testing` for context; use `expectInputRequired()` for the first send-path round and `inputResponses` for accepted/declined re-entry. Mock `MailchimpService` methods return canned fixtures per scenario (happy path, sparse upstream response, 404, 429, paid-feature 403, timeout, confirmation decline). Assert tool output shape, error classification, and `format()` content includes all relevant fields. Colocate `foo.tool.test.ts` with `foo.tool.ts`.
 
 **Sparse-payload cases.** Per the project checklist, every tool that wraps an external API needs at least one test with upstream fields omitted (e.g., a member with no merge fields, a campaign with no archive URL). Mailchimp's spec marks many fields optional — normalize and `format()` must handle absence without fabricating values.
 
@@ -422,7 +429,7 @@ Each step is independently testable. `bun run devcheck` after each.
 6. **`mailchimp_audiences`** + **`mailchimp_audience_overview`** — list/get/create/update + analytics + signup-forms + the digest workflow tool.
 7. **`mailchimp_subscribers`** + **`mailchimp_upsert_subscriber`** + **`mailchimp_find_subscriber`** + **`mailchimp_import_subscribers`** — the subscriber surface. `import_subscribers` defaults status to `'pending'`.
 8. **`mailchimp_segments`** + **`mailchimp_merge_fields`** — audience-config tools.
-9. **`mailchimp_campaigns`** + **`mailchimp_send_campaign`** + **`mailchimp_replicate_campaign`** — campaign CRUD (no delete) and send workflows with elicit guard.
+9. **`mailchimp_campaigns`** + **`mailchimp_send_campaign`** + **`mailchimp_replicate_campaign`** — campaign CRUD (no delete) and send workflows with re-entrant confirmation.
 10. **`mailchimp_reports`** (consolidated `list`/`get`/`slice` with `dimension` enum) + **`mailchimp_campaign_report`** — reports + digest.
 11. **`mailchimp_templates`** — template CRUD.
 12. **`mailchimp_search`** — search-members + search-campaigns.
@@ -432,4 +439,4 @@ Each step is independently testable. `bun run devcheck` after each.
 16. **Field-test** with `skills/field-test` — exercise each tool with realistic inputs, log pain points.
 17. **`polish-docs-meta`** — README, CHANGELOG, version sync, server.json description refresh.
 
-Estimated effort: small service + 17 tools + 4 resources ≈ 30–38 files, with tests. 2 focused sessions.
+Delivered surface: 20 tools (18 always-on, 2 conditional), 4 resources, and 1 prompt.

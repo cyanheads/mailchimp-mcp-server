@@ -237,7 +237,7 @@ Before `mode: 'send'`:
 1. **Draft first.** `mailchimp_send_campaign` with `mode: 'draft'` to run the send-checklist without dispatching.
 2. **Test send.** `mode: 'test'` with your own address in `testEmails`. Open on iOS, Gmail web, and desktop Outlook if possible.
 3. **Proofread the rendered copy**, not the source. Missing merge tags, broken links, and awkward spacing are obvious in rendered view.
-4. **Send.** On a human-in-the-loop client, Mailchimp's tool will prompt for confirmation via `ctx.elicit` — decline to downgrade back to draft.
+4. **Send.** Mailchimp's tool requests confirmation in a re-entrant input round before creating or modifying a campaign — decline to downgrade back to draft.
 5. **Review after.** Wait ~24 hours, then call `mailchimp_playbook` with `topic: 'post-send-review'` and the campaign ID.
 
 Free-plan note: scheduling is gated behind paid plans. On free, only `draft`, `test`, and immediate `send` work.
