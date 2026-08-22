@@ -1,9 +1,11 @@
 # Agent Protocol
 
 **Server:** mailchimp-mcp-server
-**Version:** 0.3.7
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
-**Engines:** Bun ≥1.3.2, Node ≥24.0.0
+**Version:** 0.3.8
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.12.3`
+**Engines:** Bun ≥1.3.0, Node ≥24.0.0
+**MCP SDK:** `@modelcontextprotocol/server` `^2.0.0`
+**Zod:** `^4.4.3`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -35,7 +37,7 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 - **Logic throws, framework catches.** Tool/resource handlers are pure — throw on failure, no `try/catch`. Plain `Error` is fine; the framework catches, classifies, and formats. Use error factories (`notFound()`, `validationError()`, etc.) when the error code matters.
 - **Use `ctx.log`** for request-scoped logging. No `console` calls.
 - **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
-- **Check `ctx.elicit`** for presence before calling.
+- **Need input the caller didn't supply?** `return ctx.requestInput(...)` and read `ctx.inputs` when the handler is re-entered. Never `await` for user input mid-handler.
 - **Secrets in env vars only** — never hardcoded.
 - **Close the loop on issues.** When implementing work tracked by a GitHub issue, comment on the issue with what landed and close it. Do both — a comment without a close leaves stale issues open; a close without a comment leaves no record of what shipped. The comment is for future readers — state the concrete changes, not the conversation that produced them.
 
@@ -71,10 +73,16 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
 });
 ```
 
-### Tool (workflow — orchestrates multi-step flows, elicits confirmation)
+### Tool (workflow — orchestrates multi-step flows, requests confirmation)
 
 ```ts
 // src/mcp-server/tools/definitions/mailchimp-send-campaign.tool.ts
+import { inputRequired, tool, z } from '@cyanheads/mcp-ts-core';
+
+const ConfirmationSchema = z.object({
+  confirmed: z.boolean().describe('Confirm campaign dispatch.'),
+});
+
 export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   description: 'Compose and send (or schedule/test) a campaign in one call.',
   annotations: { destructiveHint: true, openWorldHint: true },
@@ -82,13 +90,30 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   output: OutputSchema,
   async handler(input, ctx) {
     const svc = getMailchimpService();
+    let confirmed = input.mode !== 'send';
+
+    if (input.mode === 'send') {
+      const view = ctx.inputs.view('campaignDispatchConfirmation');
+      if (view.kind === 'missing') {
+        return ctx.requestInput({
+          inputRequests: {
+            campaignDispatchConfirmation: inputRequired.elicit({
+              message: `Send "${input.subject}" now?`,
+              requestedSchema: ConfirmationSchema,
+            }),
+          },
+        });
+      }
+      confirmed =
+        view.kind === 'elicit' &&
+        view.action === 'accept' &&
+        ctx.inputs.accepted('campaignDispatchConfirmation', ConfirmationSchema)?.confirmed === true;
+    }
+
+    const effectiveMode = confirmed ? input.mode : 'draft';
     const draftId = await svc.campaigns.create(ctx, input);
     try {
-      if (input.mode === 'send' && ctx.elicit) {
-        const ok = await ctx.elicit('Confirm send?', z.object({ confirm: z.boolean() }));
-        if (ok.action !== 'accept' || !ok.data.confirm) throw new Error('Send cancelled by user.');
-      }
-      return await svc.campaigns.finalize(ctx, draftId, input);
+      return await svc.campaigns.finalize(ctx, draftId, { ...input, mode: effectiveMode });
     } catch (err) {
       if (input.cleanupOnError !== false) await svc.campaigns.deleteDraft(ctx, draftId).catch(() => {});
       throw err;
@@ -160,11 +185,12 @@ Handlers receive a unified `ctx` object. Used in this server:
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
-| `ctx.elicit` | Used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request human confirmation on destructive sends. Form call `(message, schema)` or `.url(message, url)` for external link. **Check for presence first.** |
+| `ctx.requestInput` | Always-present control-flow helper used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request confirmation before any campaign mutation. The handler returns through it, then restarts on the next round. |
+| `ctx.inputs` | Reads and validates re-entry responses. Use `.view(key)` to distinguish accept/decline/cancel/missing and `.accepted(key, schema)` to validate accepted content. |
 | `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
 | `ctx.requestId` / `ctx.traceId` | Appended to the `X-Request-Id` header for correlation with Mailchimp support cases. |
 
-Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap), `ctx.progress` (no task tools).
+Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap).
 
 ---
 
@@ -183,7 +209,7 @@ errors: [
     recovery: 'List audiences via mailchimp_audiences and copy a valid ID.' },
   { reason: 'send_cancelled', code: JsonRpcErrorCode.InvalidRequest,
     when: 'User declined the send confirmation',
-    recovery: 'Re-invoke and confirm at the elicit prompt to send.' },
+    recovery: 'Re-invoke and confirm at the campaign dispatch prompt to send.' },
 ],
 async handler(input, ctx) {
   if (!found) throw ctx.fail('audience_not_found', `No audience ${input.id}`,
@@ -316,7 +342,7 @@ Available skills:
 | `api-canvas` | DataCanvas: register tabular data, run SQL, export, plus the `spillover()` helper for big result sets — Tier 3 opt-in (not used by this server) |
 | `api-mirror` | MirrorService: persistent, self-refreshing local mirror of a bulk upstream dataset (embedded SQLite + FTS5) |
 | `api-config` | AppConfig, parseConfig, env vars |
-| `api-context` | Context interface, logger, state, progress |
+| `api-context` | Context interface, logger, state, and multi-round input requests |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
 | `api-linter` | MCP definition lint rules — every `format-parity`, `schema-*`, `name-*`, `server-json-*` rule ID the linter emits |
 | `api-services` | LLM, Speech, Graph services |
@@ -345,6 +371,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run format:unsafe` | Auto-fix formatting including unsafe autofixes (review diff before committing) |
 | `bun run test` | Run tests (Vitest — use `bun run test`, not `bun test`) |
 | `bun run bundle` | Build and pack as `.mcpb` for one-click Claude Desktop install |
+| `bun run changelog:build` | Build the root CHANGELOG.md rollup from per-version entries |
+| `bun run changelog:check` | Verify the root CHANGELOG.md rollup is current |
 | `bun run audit:refresh` | Delete `bun.lock`, reinstall, re-audit. Use when `devcheck` flags a transitive advisory — stale lockfile can mask already-patched deps. If advisory survives, it's real. |
 | `bun run dev` | Watch mode (transport via `MCP_TRANSPORT_TYPE`) |
 | `bun run start:stdio` | Production mode (stdio) |
@@ -399,7 +427,7 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 - [ ] Mailchimp raw/domain/output schemas reviewed against real upstream sparsity/nullability (many fields are `null` or absent on free-tier accounts)
 - [ ] Normalization and `format()` preserve uncertainty — never fabricate metrics, counts, or timestamps from missing upstream data
 - [ ] Tests include at least one sparse payload case (empty audience, un-sent campaign, missing `industry_stats`, etc.)
-- [ ] Destructive writes (`send`, `schedule`, batch member delete) elicit confirmation via `ctx.elicit` when available
+- [ ] Destructive writes (`send`, `schedule`) request re-entrant confirmation via `ctx.requestInput` before any campaign mutation
 - [ ] New primitive tools grouped by noun via `operation` enum — don't add a new top-level tool per verb
 - [ ] Registered in `src/mcp-server/*/definitions/index.ts` barrel
 - [ ] Tests use `createMockContext()` from `@cyanheads/mcp-ts-core/testing`

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.8](changelog/0.3.x/0.3.8.md) — 2026-08-22
+
+Campaign send and replicate now use re-entrant confirmation before mutation, with MCP SDK v2 wire behavior and a framework/toolchain refresh.
+
 ## [0.3.7](changelog/0.3.x/0.3.7.md) — 2026-06-15
 
 Server-level instructions wired into createApp() to orient clients on auth, the audience/list model, and the playbook-first workflow; plugin display-identity fields unscoped to the bare server name while install commands stay on the scoped npm package.

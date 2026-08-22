@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![Version](https://img.shields.io/badge/Version-0.3.7-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^1.29.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![TypeScript](https://img.shields.io/badge/TypeScript-^6.0.3-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.3.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![Version](https://img.shields.io/badge/Version-0.3.8-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.0.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -37,8 +37,8 @@ Eighteen always-on tools plus two conditional ones — `mailchimp_assets` (when 
 | `mailchimp_segments` | CRUD for audience segments (saved, static, fuzzy) plus member listing and batch add/remove. |
 | `mailchimp_merge_fields` | Read + create/update custom subscriber attributes. No delete — drops data across all subscribers. |
 | `mailchimp_campaigns` | Campaign record management: list/get/create/update, replicate, content, checklist, RSS/resend controls. |
-| `mailchimp_send_campaign` | Compose and send (or schedule/test) a campaign in one call. Elicits human confirmation on send/schedule. |
-| `mailchimp_replicate_campaign` | Duplicate a campaign with optional overrides, then draft/test/send/schedule. Same elicit + cleanup semantics. |
+| `mailchimp_send_campaign` | Compose and send (or schedule/test) a campaign in one call. Requests re-entrant human confirmation before send/schedule mutations. |
+| `mailchimp_replicate_campaign` | Duplicate a campaign with optional overrides, then draft/test/send/schedule. Same confirmation + cleanup semantics. |
 | `mailchimp_reports` | Campaign reports — generic slicer across ten dimensions (clicks, opens, locations, etc.). |
 | `mailchimp_campaign_report` | Post-send analytics digest — headline metrics + top 5 slices in one response. |
 | `mailchimp_templates` | Email template read/write — reads (`list`/`get`) work on free for `base`/`user` types; writes (`create`/`update`/`delete`) and `gallery` require a paid plan. |
@@ -55,9 +55,9 @@ Eighteen always-on tools plus two conditional ones — `mailchimp_assets` (when 
 Compose and send (or schedule/test) a campaign in one call.
 
 - Chains create → content → checklist → optional test → send/schedule
-- Requests human confirmation via `ctx.elicit` when `mode: 'send' | 'schedule'` and the client supports elicitation
-- Auto-deletes aborted or failed drafts when `cleanupOnError: true` (default)
-- Supports `html`, `plaintext`, and `templateId + mergeData` content forms
+- Requests human confirmation through a re-entrant input round before any campaign mutation when `mode: 'send' | 'schedule'`
+- Auto-deletes failed drafts when `cleanupOnError: true` (default); declined confirmation leaves a reviewable draft
+- Supports `html`, `plaintext`, `templateId + templateSections`, and local Eta template content forms
 
 ---
 
@@ -66,7 +66,7 @@ Compose and send (or schedule/test) a campaign in one call.
 Duplicate an existing campaign with optional overrides, then send/schedule/test or leave as draft.
 
 - Overrides: subject, from name, reply-to, audience, segment, content
-- Same elicit confirmation + cleanup semantics as `mailchimp_send_campaign`
+- Same re-entrant confirmation + cleanup semantics as `mailchimp_send_campaign`
 - Tuned for the common "send v2 of last week's newsletter with an updated intro" pattern
 
 ---
@@ -149,7 +149,7 @@ Built on [`@cyanheads/mcp-ts-core`](https://www.npmjs.com/package/@cyanheads/mcp
 Mailchimp-specific:
 
 - Auto-derives the API base URL from the `-dc` suffix on the API key
-- Safe-by-default send workflows — elicit confirmation, pending-status imports, no permanent deletes from agent surface
+- Safe-by-default send workflows — re-entrant confirmation, pending-status imports, no permanent deletes from agent surface
 - Workflow tools parallelize related sub-requests under a configurable concurrency limit
 - Domain normalization shapes sparse upstream payloads into compact, LLM-friendly output without fabricating values
 
@@ -221,7 +221,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 MAILCHIMP_API_KEY=... bun run start:h
 
 ### Prerequisites
 
-- [Bun v1.3.2](https://bun.sh/) or higher (or Node.js v24+).
+- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
 - A Mailchimp Marketing API key — the key's `-dc` suffix (e.g. `-us22`) identifies your data center and is parsed at startup.
 
 ### Installation
@@ -421,11 +421,11 @@ The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `
 |:---|:---|
 | `src/index.ts` | `createApp()` entry point — registers tools/resources/prompts and inits services. |
 | `src/config` | Server-specific environment variable parsing and validation with Zod. |
-| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). Seventeen Mailchimp tools. |
+| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). Eighteen always-on tools plus two conditional local-workspace tools. |
 | `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). Four snapshot resources. |
 | `src/mcp-server/prompts` | Prompt definitions (`*.prompt.ts`). Newsletter starter prompt. |
 | `src/services/mailchimp` | Mailchimp client wrapper — HTTP plumbing, retries, normalization, typed surface. |
-| `tests/` | Vitest tests mirroring `src/`. Currently only `config/` is covered; other subdirs are scaffolded for expansion. |
+| `tests/` | Vitest coverage for configuration, services, tool workflows, output formatting, framework contracts, and regressions. |
 
 ## Development guide
 

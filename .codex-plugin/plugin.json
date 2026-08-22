@@ -1,6 +1,6 @@
 {
   "name": "mailchimp-mcp-server",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -14,8 +14,8 @@
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "mailchimp-mcp-server",
-    "shortDescription": "Draft, test, and send Mailchimp campaigns, manage audiences and subscribers, and read post-send analytics via MCP.",
-    "longDescription": "MCP server for Mailchimp — draft, test, and send campaigns behind safe-by-default send gates, manage audiences and subscriber CRUD, and read post-send analytics. STDIO or Streamable HTTP.",
+    "shortDescription": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.",
+    "longDescription": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.",
     "developerName": "cyanheads",
     "category": "productivity",
     "capabilities": ["Read"],

@@ -1,21 +1,23 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-06-12 03:27:49
+Generated on: 2026-08-22 19:20:17
 
 ```text
 mailchimp-mcp-server/
-├── .agents/
-├── .claude/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── .codex-plugin/
 │   ├── mcp.json
 │   └── plugin.json
 ├── .github/
-│   └── ISSUE_TEMPLATE/
-│       ├── bug_report.yml
-│       ├── config.yml
-│       └── feature_request.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── config.yml
+│   │   └── feature_request.yml
+│   ├── CODE_OF_CONDUCT.md
+│   ├── CONTRIBUTING.md
+│   ├── FUNDING.yml
+│   └── SECURITY.md
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
@@ -33,6 +35,7 @@ mailchimp-mcp-server/
 ├── scripts/
 │   ├── build-changelog.ts
 │   ├── build.ts
+│   ├── check-dependency-specifiers.ts
 │   ├── check-docs-sync.ts
 │   ├── check-framework-antipatterns.ts
 │   ├── check-skill-versions.ts
@@ -171,6 +174,7 @@ mailchimp-mcp-server/
 │   │       │   └── mailchimp-upsert-subscriber.tool.ts
 │   │       └── shared/
 │   │           ├── asset-rewrite.ts
+│   │           ├── campaign-dispatch-confirmation.ts
 │   │           ├── resolve-local-template.ts
 │   │           └── template-sections-doc.ts
 │   ├── services/
@@ -208,6 +212,7 @@ mailchimp-mcp-server/
 │   │   └── templates/
 │   │       └── template-service.test.ts
 │   └── tools/
+│       ├── campaign-dispatch-confirmation.test.ts
 │       ├── input-coercion.test.ts
 │       ├── mailchimp-assets.test.ts
 │       ├── mailchimp-campaign-report.test.ts
@@ -218,6 +223,7 @@ mailchimp-mcp-server/
 │       └── template-sections-doc.test.ts
 ├── .dockerignore
 ├── .env.example
+├── .gitattributes
 ├── .gitignore
 ├── .mcpbignore
 ├── biome.json
