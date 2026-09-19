@@ -45,7 +45,7 @@ const ServerConfigSchema = z
       .min(1)
       .max(10)
       .default(4)
-      .describe('Max in-flight upstream requests per workflow tool.'),
+      .describe('Max in-flight upstream requests across this process.'),
     assetsDir: z
       .string()
       .min(1)
