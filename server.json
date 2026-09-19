@@ -47,7 +47,7 @@
         },
         {
           "name": "MAILCHIMP_CONCURRENCY_LIMIT",
-          "description": "Max in-flight upstream requests per workflow tool (1-10).",
+          "description": "Max in-flight upstream requests across this process (1-10).",
           "format": "string",
           "isRequired": false,
           "default": "4"
@@ -66,7 +66,7 @@
         },
         {
           "name": "MCP_LOG_LEVEL",
-          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
+          "description": "Minimum log level for output: debug, info, notice, warning, or error.",
           "format": "string",
           "isRequired": false,
           "default": "info"
@@ -115,7 +115,7 @@
         },
         {
           "name": "MAILCHIMP_CONCURRENCY_LIMIT",
-          "description": "Max in-flight upstream requests per workflow tool (1-10).",
+          "description": "Max in-flight upstream requests across this process (1-10).",
           "format": "string",
           "isRequired": false,
           "default": "4"
@@ -150,7 +150,7 @@
         },
         {
           "name": "MCP_LOG_LEVEL",
-          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
+          "description": "Minimum log level for output: debug, info, notice, warning, or error.",
           "format": "string",
           "isRequired": false,
           "default": "info"

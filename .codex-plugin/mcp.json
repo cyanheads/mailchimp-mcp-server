@@ -3,8 +3,8 @@
     "command": "npx",
     "args": ["-y", "@cyanheads/mailchimp-mcp-server"],
     "env": {
-      "MCP_TRANSPORT_TYPE": "stdio",
-      "MAILCHIMP_API_KEY": ""
-    }
+      "MCP_TRANSPORT_TYPE": "stdio"
+    },
+    "env_vars": ["MAILCHIMP_API_KEY"]
   }
 }
