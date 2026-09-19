@@ -9,18 +9,16 @@
 
 import { createHash } from 'node:crypto';
 import type { Context, ContextLogger } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode, McpError, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
 import {
-  forbidden,
-  JsonRpcErrorCode,
-  McpError,
-  notFound,
-  rateLimited,
-  serviceUnavailable,
-  timeout,
-  unauthorized,
-  validationError,
-} from '@cyanheads/mcp-ts-core/errors';
-import { logger as globalLogger, type Logger, withRetry } from '@cyanheads/mcp-ts-core/utils';
+  createPacer,
+  fetchWithTimeout,
+  logger as globalLogger,
+  type Logger,
+  type Pacer,
+  requestContextService,
+  withRetry,
+} from '@cyanheads/mcp-ts-core/utils';
 import type { ServerConfig } from '@/config/server-config.js';
 import type {
   AbuseReport,
@@ -109,12 +107,23 @@ export class MailchimpService {
   private readonly authHeader: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
+  private readonly pacer: Pacer;
 
   constructor(private readonly config: ServerConfig) {
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
     this.authHeader = `Basic ${Buffer.from(`mcp:${config.apiKey}`).toString('base64')}`;
     this.timeoutMs = config.timeoutMs;
     this.maxRetries = config.maxRetries;
+    this.pacer = createPacer({
+      name: 'mailchimp',
+      maxConcurrent: config.concurrencyLimit,
+      cooldown: { baseMs: 500, maxMs: 10_000 },
+    });
+  }
+
+  /** Release queued requests and the upstream cooldown timer at shutdown. */
+  dispose(): void {
+    this.pacer.dispose();
   }
 
   get dataCenter(): string {
@@ -142,8 +151,16 @@ export class MailchimpService {
   request<T>(method: HttpMethod, path: string, opts: RequestOptions = {}): Promise<T> {
     const url = this.buildUrl(path, opts.query);
     const log = opts.log ?? defaultRequestLogger;
-    const fn = async (): Promise<T> => this.sendOnce<T>(method, url, opts, log);
-    if (opts.noRetry) return fn();
+    const fn = ({ signal }: { signal: AbortSignal }): Promise<T> =>
+      this.pacer.run((signal) => this.sendOnce<T>(method, url, { ...opts, signal }, log), {
+        signal,
+      });
+    if (opts.noRetry) {
+      return this.pacer.run(
+        (signal) => this.sendOnce<T>(method, url, { ...opts, signal }, log),
+        opts.signal ? { signal: opts.signal } : {},
+      );
+    }
     const retryOpts: Parameters<typeof withRetry>[1] = {
       operation: `mailchimp:${method} ${path}`,
       maxRetries: this.maxRetries,
@@ -161,96 +178,119 @@ export class MailchimpService {
     opts: RequestOptions,
     log: RequestLogger,
   ): Promise<T> {
-    const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), this.timeoutMs);
-    const signal = mergeSignals(opts.signal, timeoutController.signal);
-
     const headers: Record<string, string> = {
       Authorization: this.authHeader,
       Accept: 'application/json',
       'User-Agent': 'mailchimp-mcp-server',
     };
-    const init: RequestInit = { method, headers, signal };
+    const init: Parameters<typeof fetchWithTimeout>[3] = {
+      method,
+      headers,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    };
     if (opts.body !== undefined) {
       headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
     }
 
-    let res: Response;
+    let rawText: string;
     try {
-      res = await fetch(url, init);
+      const res = await fetchWithTimeout(
+        url,
+        this.timeoutMs,
+        requestContextService.createRequestContext({ operation: `mailchimp:${method}` }),
+        {
+          ...init,
+          errorBodyLimit: 16_384,
+        },
+      );
+      if (res.status === 204) return undefined as T;
+      rawText = await res.text();
     } catch (err) {
-      clearTimeout(timer);
-      if (opts.signal?.aborted) {
-        throw timeout(
-          'Request cancelled by caller.',
-          { url, method, reason: 'request_cancelled' },
-          { cause: err },
-        );
+      if (!(err instanceof McpError)) throw err;
+      if (typeof err.data?.status !== 'number') {
+        const reason =
+          err.code === JsonRpcErrorCode.RequestCancelled
+            ? 'request_cancelled'
+            : err.code === JsonRpcErrorCode.Timeout
+              ? 'mailchimp_timeout'
+              : 'mailchimp_unavailable';
+        throw new McpError(err.code, err.message, { ...err.data, reason }, { cause: err });
       }
-      if (timeoutController.signal.aborted) {
-        throw timeout(
-          `Mailchimp request timed out after ${this.timeoutMs}ms (${method} ${url}).`,
-          { url, method, timeoutMs: this.timeoutMs, reason: 'mailchimp_timeout' },
-          { cause: err },
-        );
-      }
+      throw this.decorateHttpError(
+        err,
+        err.data.status,
+        method,
+        new URL(url).pathname.slice(new URL(this.baseUrl).pathname.length),
+        log,
+      );
+    }
+    if (rawText.length === 0) return undefined as T;
+    try {
+      return JSON.parse(rawText) as T;
+    } catch (err) {
       throw serviceUnavailable(
-        `Network failure calling Mailchimp (${method} ${url}).`,
-        { url, method, reason: 'mailchimp_unavailable' },
+        'Mailchimp returned a non-JSON successful response (likely a maintenance page).',
+        { method, preview: rawText.slice(0, 200), reason: 'mailchimp_unavailable' },
         { cause: err },
       );
-    } finally {
-      clearTimeout(timer);
     }
+  }
 
-    if (res.status === 204) return undefined as T;
-
-    const rawText = await res.text();
-    if (res.ok) {
-      if (rawText.length === 0) return undefined as T;
-      try {
-        return JSON.parse(rawText) as T;
-      } catch (err) {
-        throw serviceUnavailable(
-          'Mailchimp returned a non-JSON successful response (likely a maintenance page).',
-          { url, method, preview: rawText.slice(0, 200), reason: 'mailchimp_unavailable' },
-          { cause: err },
-        );
-      }
-    }
-
-    // Non-2xx — classify.
+  /** Preserve Mailchimp diagnostics while retaining framework classification and retry hints. */
+  private decorateHttpError(
+    error: McpError,
+    status: number,
+    method: HttpMethod,
+    pathOnly: string,
+    log: RequestLogger,
+  ): McpError {
+    const rawText = typeof error.data?.body === 'string' ? error.data.body : '';
     let body: MailchimpErrorBody | undefined;
     try {
       body = rawText.length > 0 ? (JSON.parse(rawText) as MailchimpErrorBody) : undefined;
     } catch {
       body = undefined;
     }
-    const pathOnly = stripBaseUrl(url, this.baseUrl);
-    const errorData = this.buildErrorData(res.status, body);
-    errorData.url = url;
+    const { url: _url, ...frameworkData } = error.data ?? {};
+    const errorData = { ...frameworkData, ...this.buildErrorData(status, body) };
     errorData.method = method;
-    const recoveryHint = recoveryHintForPath(res.status, method, pathOnly);
+    const recoveryHint = recoveryHintForPath(status, method, pathOnly);
     if (recoveryHint) errorData.recovery = { hint: recoveryHint };
-    const title = body?.title ?? res.statusText;
+    const title = body?.title ?? error.data?.statusText;
     const detail = body?.detail ?? 'No details from Mailchimp.';
     const fieldErrors = body?.errors?.length
       ? ` Field errors: ${body.errors.map((e) => `${e.field}: ${e.message}`).join('; ')}.`
       : '';
-    /** Message stays human-readable but no longer leaks the full data-center URL or HTTP method. Path is included for context (already part of the resource model the agent sees) but the data-center hostname stays in `data.url` only. */
-    const message = `Mailchimp returned ${res.status} ${title} for ${pathOnly}: ${detail}${fieldErrors}`;
+    const message = `Mailchimp returned ${status} ${title} for ${pathOnly}: ${detail}${fieldErrors}`;
 
     log.warning('Mailchimp upstream error', {
-      url,
       method,
-      status: res.status,
+      status,
       title,
       detail: body?.detail,
       errors: body?.errors,
     });
 
-    throw this.classifyStatus(res.status, message, errorData);
+    const reasons: Record<number, string> = {
+      400: 'mailchimp_validation_failed',
+      401: 'mailchimp_unauthorized',
+      403: 'mailchimp_forbidden',
+      404: 'mailchimp_not_found',
+      408: 'mailchimp_timeout',
+      409: 'mailchimp_conflict',
+      422: 'mailchimp_validation_failed',
+      429: 'mailchimp_rate_limited',
+      504: 'mailchimp_timeout',
+    };
+    return new McpError(
+      status === 400 ? JsonRpcErrorCode.ValidationError : error.code,
+      status === 401
+        ? `${message}. Check MAILCHIMP_API_KEY — the key may be invalid or revoked.`
+        : message,
+      { ...errorData, reason: reasons[status] ?? 'mailchimp_unavailable' },
+      { cause: error },
+    );
   }
 
   private buildErrorData(status: number, body: MailchimpErrorBody | undefined): MailchimpErrorData {
@@ -264,22 +304,6 @@ export class MailchimpService {
       data.requiresPlan = /premium/i.test(body.detail) ? 'premium' : 'standard';
     }
     return data;
-  }
-
-  private classifyStatus(status: number, message: string, data: MailchimpErrorData): McpError {
-    if (status === 401) {
-      return unauthorized(
-        `${message}. Check MAILCHIMP_API_KEY — the key may be invalid or revoked.`,
-        { ...data, reason: 'mailchimp_unauthorized' },
-      );
-    }
-    if (status === 403) return forbidden(message, { ...data, reason: 'mailchimp_forbidden' });
-    if (status === 404) return notFound(message, { ...data, reason: 'mailchimp_not_found' });
-    if (status === 422 || status === 400) {
-      return validationError(message, { ...data, reason: 'mailchimp_validation_failed' });
-    }
-    if (status === 429) return rateLimited(message, { ...data, reason: 'mailchimp_rate_limited' });
-    return serviceUnavailable(message, { ...data, reason: 'mailchimp_unavailable' });
   }
 
   // ─── Account ──────────────────────────────────────────────────────
@@ -1316,24 +1340,6 @@ export function setMailchimpServiceForTesting(service: MailchimpService | undefi
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────
-
-function mergeSignals(a: AbortSignal | undefined, b: AbortSignal): AbortSignal {
-  return a ? AbortSignal.any([a, b]) : b;
-}
-
-/** Strip the data-center base URL from a fully-qualified Mailchimp URL, leaving just the API path. Falls back to the input on shape mismatch so debug data is never lost. */
-function stripBaseUrl(fullUrl: string, baseUrl: string): string {
-  if (fullUrl.startsWith(baseUrl)) {
-    const rest = fullUrl.slice(baseUrl.length);
-    return rest.startsWith('/') ? rest : `/${rest}`;
-  }
-  try {
-    const parsed = new URL(fullUrl);
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return fullUrl;
-  }
-}
 
 /**
  * Map an upstream failure to an actionable next-move hint. Status + path is

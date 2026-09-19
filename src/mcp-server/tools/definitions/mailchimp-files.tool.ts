@@ -182,6 +182,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -189,6 +190,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -196,12 +198,14 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — file or folder does not exist or has been deleted.',
       recovery: 'Run mailchimp_files operation:list (or list-folders) to discover valid IDs.',
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — usually file size over 1 MB (image) / 10 MB (other), disallowed extension, or malformed base64.',
       recovery:
@@ -209,6 +213,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

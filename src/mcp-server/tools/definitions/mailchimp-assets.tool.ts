@@ -105,6 +105,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -112,6 +113,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions on File Manager.',
       recovery:
@@ -119,6 +121,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 during upload — usually file size over 1 MB (image) / 10 MB (other) or a disallowed extension.',
       recovery:
@@ -126,6 +129,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests during sync.',
       recovery:

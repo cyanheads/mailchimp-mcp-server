@@ -161,6 +161,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -168,6 +169,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — advanced dynamic-segment conditions require Premium, or the API key lacks scope.',
       recovery:
@@ -175,6 +177,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audience or segment does not exist.',
       recovery:
@@ -182,6 +185,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — usually a malformed condition, unknown field, or non-existent member email.',
       recovery:
@@ -189,6 +193,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

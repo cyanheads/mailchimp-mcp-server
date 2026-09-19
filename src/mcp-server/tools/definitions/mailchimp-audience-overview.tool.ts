@@ -124,6 +124,7 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -131,6 +132,7 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -138,12 +140,14 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audience does not exist or has been deleted.',
       recovery: 'Run mailchimp_audiences operation:list to discover valid audienceId values.',
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

@@ -165,6 +165,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -172,6 +173,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -179,6 +181,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — sourceCampaignId or override ID does not exist.',
       recovery:
@@ -186,6 +189,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — replicated draft body or override payload failed upstream validation.',
       recovery:
@@ -193,6 +197,7 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

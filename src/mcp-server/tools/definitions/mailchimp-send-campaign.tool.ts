@@ -141,6 +141,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -148,6 +149,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -155,6 +157,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audienceId, segmentId, or templateId does not exist.',
       recovery:
@@ -162,6 +165,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — usually a malformed subject/from-name/reply-to, oversized content, or scheduleTime under 15 minutes in the future.',
       recovery:
@@ -169,6 +173,7 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

@@ -98,6 +98,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -105,6 +106,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -112,6 +114,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audienceId points at a list that does not exist (members scope only).',
       recovery:
@@ -119,6 +122,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

@@ -5,6 +5,9 @@
  * @module tests/services/mailchimp/mailchimp-service.test
  */
 
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
@@ -215,7 +218,7 @@ describe('MailchimpService.request', () => {
     });
   });
 
-  it('wraps a caller-aborted request as Timeout', async () => {
+  it('classifies a caller-aborted request as RequestCancelled', async () => {
     const controller = new AbortController();
     fetchStub.mockImplementationOnce(async () => {
       controller.abort();
@@ -224,7 +227,58 @@ describe('MailchimpService.request', () => {
     const svc = makeService({ maxRetries: 0 });
     await expect(
       svc.request('GET', '/', { signal: controller.signal, noRetry: true }),
-    ).rejects.toMatchObject({ code: JsonRpcErrorCode.Timeout });
+    ).rejects.toMatchObject({ code: JsonRpcErrorCode.RequestCancelled });
+  });
+
+  it.each([
+    [408, JsonRpcErrorCode.Timeout],
+    [409, JsonRpcErrorCode.Conflict],
+    [504, JsonRpcErrorCode.Timeout],
+  ])('classifies upstream %s without losing its status', async (status, code) => {
+    fetchStub.mockResolvedValueOnce(fakeResponse(status, { title: 'Failure' }));
+    await expect(makeService().request('GET', '/lists')).rejects.toMatchObject({
+      code,
+      data: { status },
+    });
+  });
+
+  it('does not retry a 501', async () => {
+    fetchStub.mockImplementation(() => fakeResponse(501, { title: 'Not implemented' }));
+    await expect(makeService({ maxRetries: 2 }).request('GET', '/lists')).rejects.toMatchObject({
+      data: { retryable: false },
+    });
+    expect(fetchStub).toHaveBeenCalledOnce();
+  });
+
+  it('preserves Retry-After without exposing the query URL', async () => {
+    fetchStub.mockResolvedValueOnce(
+      new Response('{"title":"Slow down"}', {
+        status: 429,
+        headers: { 'retry-after': '60' },
+      }),
+    );
+    const error = await makeService()
+      .request('GET', '/search-members', {
+        query: { query: 'private@example.com' },
+      })
+      .catch((error: unknown) => error);
+    expect(error).toMatchObject({ data: { retryAfter: '60', reason: 'mailchimp_rate_limited' } });
+    expect(JSON.stringify(error)).not.toContain('private@example.com');
+  });
+
+  it('bounds concurrency across independent requests', async () => {
+    let active = 0;
+    let peak = 0;
+    fetchStub.mockImplementation(async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+      return fakeResponse(200, {});
+    });
+    const service = makeService({ concurrencyLimit: 2 });
+    await Promise.all(Array.from({ length: 6 }, () => service.request('GET', '/lists')));
+    expect(peak).toBe(2);
   });
 
   it('honors `noRetry: true` (does not call fetch more than once on a 5xx)', async () => {
@@ -232,5 +286,29 @@ describe('MailchimpService.request', () => {
     const svc = makeService({ maxRetries: 3 });
     await expect(svc.request('POST', '/campaigns', { noRetry: true })).rejects.toThrow();
     expect(fetchStub).toHaveBeenCalledOnce();
+  });
+
+  it('times out a stalled successful body and preserves the domain reason', async () => {
+    vi.unstubAllGlobals();
+    const upstream = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'application/json' });
+      response.write('{');
+      const timer = setTimeout(() => response.end('}'), 200);
+      response.on('close', () => clearTimeout(timer));
+    });
+    upstream.listen(0, '127.0.0.1');
+    await once(upstream, 'listening');
+    try {
+      const baseUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`;
+      await expect(
+        makeService({ baseUrl, timeoutMs: 30 }).request('GET', '/lists'),
+      ).rejects.toMatchObject({
+        code: JsonRpcErrorCode.Timeout,
+        data: { reason: 'mailchimp_timeout' },
+      });
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
   });
 });

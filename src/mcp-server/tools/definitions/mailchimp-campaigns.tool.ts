@@ -249,6 +249,7 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -256,6 +257,7 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -263,18 +265,21 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — campaign does not exist or has been deleted.',
       recovery: 'Run mailchimp_campaigns operation:list to discover valid campaignId values.',
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — request body failed upstream validation.',
       recovery: 'Inspect data.upstream.errors[] for field-level reasons, fix the input, and retry.',
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

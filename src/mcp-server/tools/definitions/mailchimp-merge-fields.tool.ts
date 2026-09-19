@@ -162,6 +162,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -169,6 +170,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -176,6 +178,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audience or merge field does not exist.',
       recovery:
@@ -183,6 +186,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — usually a duplicate tag, invalid type, or tag over 10 chars.',
       recovery:
@@ -190,6 +194,7 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:

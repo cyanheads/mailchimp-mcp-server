@@ -245,6 +245,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   errors: [
     {
       reason: 'mailchimp_unauthorized',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Unauthorized,
       when: 'Mailchimp returned 401 — API key invalid, revoked, or missing.',
       recovery:
@@ -252,6 +253,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
     },
     {
       reason: 'mailchimp_forbidden',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.Forbidden,
       when: 'Mailchimp returned 403 — paid-tier feature or insufficient permissions.',
       recovery:
@@ -259,6 +261,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
     },
     {
       reason: 'mailchimp_not_found',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
       when: 'Mailchimp returned 404 — audience, subscriber, or note does not exist (subscriber must exist on the audience for non-list reads).',
       recovery:
@@ -266,6 +269,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
     },
     {
       reason: 'mailchimp_validation_failed',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Mailchimp returned 400 or 422 — usually an unknown merge field, invalid status transition, or malformed tag payload.',
       recovery:
@@ -273,6 +277,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
     },
     {
       reason: 'mailchimp_rate_limited',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.RateLimited,
       when: 'Mailchimp returned 429 — too many concurrent requests.',
       recovery:
