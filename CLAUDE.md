@@ -2,10 +2,10 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.3.8
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.12.3`
-**Engines:** Bun ≥1.3.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.6`
+**Engines:** Bun ≥1.4.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` `^2.0.0`
-**Zod:** `^4.4.3`
+**Zod:** `^4.6.5`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
@@ -180,6 +180,10 @@ export function getServerConfig() {
 
 ## Context
 
+**HTTP sessions:** `createApp({ sessionMode: { default: 'stateful', require: 'stateful' } })` keeps campaign confirmation answerable for 2025-era HTTP clients. Explicit `MCP_SESSION_MODE=stateless` refuses HTTP startup; stdio is unaffected. `auto` resolves to stateful. The Mailchimp service's pacer is disposed in `teardown()`.
+
+**Service errors:** annotate reasons emitted below the handler with `thrownBy: 'service'`. Forward every handler-local recovery through `ctx.recoveryFor(reason)` or an explicit runtime hint. `RequestCancelled` is a baseline code and needs no contract entry.
+
 Handlers receive a unified `ctx` object. Used in this server:
 
 | Property | Description |
@@ -309,9 +313,9 @@ src/
 
 ## Skills
 
-Skills are modular instructions in `skills/` at the project root. Read them directly when a task matches — e.g., `skills/add-tool/SKILL.md` when adding a tool.
+Skills are modular instructions in `framework-skills/` at the project root. Read them directly when a task matches — e.g., `framework-skills/add-tool/SKILL.md` when adding a tool. Keep root `skills/` free for installable end-user skills; plugin hosts auto-load it.
 
-**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
+**Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `framework-skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
 
 Available skills:
 
@@ -332,7 +336,8 @@ Available skills:
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `release-and-publish` | Post-wrapup ship workflow: verification gate, push, publish to npm / MCP Registry / GHCR |
-| `git-wrapup` | Land working-tree changes as logical commits — grouped by concern, topped by a release commit and annotated tag |
+| `git-wrapup` | Land working-tree changes as logical commits and open the release PR |
+| `release-pr-review` | Review a gated release PR; fixes land as ordinary commits |
 | `orchestrations` | Pick and run a multi-phase workflow chaining task skills end-to-end |
 | `code-simplifier` | Post-session code review and cleanup — simplify, consolidate, and align changed code |
 | `techniques` | Catalog of reusable response/data-shaping patterns (outline-on-overflow, etc.) |
@@ -373,7 +378,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run bundle` | Build and pack as `.mcpb` for one-click Claude Desktop install |
 | `bun run changelog:build` | Build the root CHANGELOG.md rollup from per-version entries |
 | `bun run changelog:check` | Verify the root CHANGELOG.md rollup is current |
-| `bun run audit:refresh` | Delete `bun.lock`, reinstall, re-audit. Use when `devcheck` flags a transitive advisory — stale lockfile can mask already-patched deps. If advisory survives, it's real. |
+| `bun run audit:fix` | Apply compatible security fixes via `bun audit fix` |
+| `bun run audit:refresh` | Last-resort lockfile refresh after audit:fix, targeted update, and dedupe |
 | `bun run dev` | Watch mode (transport via `MCP_TRANSPORT_TYPE`) |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
@@ -389,6 +395,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 ---
 
 ## Publishing
+
+**Every release goes through a release PR, straight-through** — `git-wrapup`'s "Release PR mode", mode `straight-through`. One run: `git-wrapup` lands the commit stack on `release/<version>`, pushes it, and opens the PR (title = the release commit subject, body = the changelog entry plus a gates section); `release-and-publish` then fast-forwards `main` locally with `git merge --ff-only`, creates the tag on `main`'s tip, pushes `main` and the tag, deletes the branch, and publishes. A caller's brief may run a given release as `gated` instead — a `release-pr-review` pass on the open PR before `release-and-publish`. **Never merge through the GitHub UI or `gh pr merge`**: squash and rebase-merge are disabled in the repo settings because both rewrite the stack (rebase-merge also strips the SSH signatures), and a merge commit breaks the linear history.
 
 Run the `release-and-publish` skill — it runs the verification gate (`devcheck`, `rebuild`, `test`), pushes commits and tags, and publishes to every applicable destination with transient-failure retries. Reference commands:
 
