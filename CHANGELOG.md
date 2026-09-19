@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.9](changelog/0.3.x/0.3.9.md) — 2026-09-19 · 🛡️ Security
+
+Stateful HTTP confirmation, safer upstream request handling, and framework tooling updates.
+
 ## [0.3.8](changelog/0.3.x/0.3.8.md) — 2026-08-22
 
 Campaign send and replicate now use re-entrant confirmation before mutation, with MCP SDK v2 wire behavior and a framework/toolchain refresh.
