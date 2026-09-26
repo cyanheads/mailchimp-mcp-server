@@ -60,7 +60,7 @@
         },
         {
           "name": "MAILCHIMP_TEMPLATES_DIR",
-          "description": "Absolute path to a local templates directory. When set (Node-only), enables the `mailchimp_local_templates` tool and support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional `<name>.meta.yaml` sidecars. Canonical write path on free-tier Mailchimp.",
+          "description": "Absolute path to a local templates directory. When set (Node-only), enables the `mailchimp_local_templates` tool and support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional YAML frontmatter; legacy `<name>.meta.yaml` sidecars are read when frontmatter is absent. Canonical write path on free-tier Mailchimp.",
           "format": "string",
           "isRequired": false
         },

@@ -15,10 +15,52 @@
   "userConfig": {
     "MAILCHIMP_API_KEY": {
       "type": "string",
-      "title": "Mailchimp API key",
-      "description": "Required. Mailchimp Marketing API key including the -dc data-center suffix (e.g. abc…-us22). Generate at Mailchimp → Account → Extras → API keys.",
+      "title": "Mailchimp API Key",
+      "description": "Mailchimp Marketing API key, including the '-dc' data-center suffix (e.g. 'abc...-us22'). Generate at Mailchimp → Account → Extras → API keys.",
       "sensitive": true,
       "required": true
+    },
+    "MAILCHIMP_BASE_URL": {
+      "type": "string",
+      "title": "Mailchimp Base URL",
+      "description": "Override the API base URL (for mock servers or testing). Defaults to 'https://{dc}.api.mailchimp.com/3.0' derived from the API key suffix.",
+      "default": ""
+    },
+    "MAILCHIMP_TIMEOUT_MS": {
+      "type": "string",
+      "title": "Request Timeout (ms)",
+      "description": "Per-request timeout in milliseconds.",
+      "default": ""
+    },
+    "MAILCHIMP_MAX_RETRIES": {
+      "type": "string",
+      "title": "Max Retries",
+      "description": "Max retry attempts for transient upstream failures (0-10).",
+      "default": ""
+    },
+    "MAILCHIMP_CONCURRENCY_LIMIT": {
+      "type": "string",
+      "title": "Concurrency Limit",
+      "description": "Max in-flight upstream requests across this process (1-10).",
+      "default": ""
+    },
+    "MAILCHIMP_ASSETS_DIR": {
+      "type": "string",
+      "title": "Assets Directory",
+      "description": "Absolute path to a local assets directory. When set, enables the mailchimp_assets tool and auto-uploads @assets/<path> references in campaign HTML to Mailchimp File Manager at send time.",
+      "default": ""
+    },
+    "MAILCHIMP_TEMPLATES_DIR": {
+      "type": "string",
+      "title": "Templates Directory",
+      "description": "Absolute path to a local templates directory. When set, enables the mailchimp_local_templates tool and support for content.localTemplate on campaign tools.",
+      "default": ""
+    },
+    "MCP_LOG_LEVEL": {
+      "type": "string",
+      "title": "Log Level",
+      "description": "Minimum log level for output (debug, info, notice, warning, error).",
+      "default": ""
     }
   },
   "mcpServers": {
@@ -27,7 +69,14 @@
       "args": ["-y", "@cyanheads/mailchimp-mcp-server"],
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
-        "MAILCHIMP_API_KEY": "${user_config.MAILCHIMP_API_KEY}"
+        "MAILCHIMP_API_KEY": "${user_config.MAILCHIMP_API_KEY}",
+        "MAILCHIMP_BASE_URL": "${user_config.MAILCHIMP_BASE_URL}",
+        "MAILCHIMP_TIMEOUT_MS": "${user_config.MAILCHIMP_TIMEOUT_MS}",
+        "MAILCHIMP_MAX_RETRIES": "${user_config.MAILCHIMP_MAX_RETRIES}",
+        "MAILCHIMP_CONCURRENCY_LIMIT": "${user_config.MAILCHIMP_CONCURRENCY_LIMIT}",
+        "MAILCHIMP_ASSETS_DIR": "${user_config.MAILCHIMP_ASSETS_DIR}",
+        "MAILCHIMP_TEMPLATES_DIR": "${user_config.MAILCHIMP_TEMPLATES_DIR}",
+        "MCP_LOG_LEVEL": "${user_config.MCP_LOG_LEVEL}"
       }
     }
   }

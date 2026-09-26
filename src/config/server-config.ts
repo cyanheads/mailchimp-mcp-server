@@ -58,7 +58,7 @@ const ServerConfigSchema = z
       .min(1)
       .optional()
       .describe(
-        "Absolute path to a local templates directory. When set (and the runtime has filesystem access), enables the `mailchimp_local_templates` tool plus support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional `<name>.meta.yaml` sidecars for subject / preview defaults. Partials live alongside the templates and are referenced via Eta's `include()`. Leave unset to disable the L2 surface.",
+        "Absolute path to a local templates directory. When set (and the runtime has filesystem access), enables the `mailchimp_local_templates` tool plus support for `content.localTemplate` on campaign tools. Templates are `.eta` files with optional YAML frontmatter for subject / preview / vars defaults (a legacy `<name>.meta.yaml` sidecar is read when a template has no frontmatter). Partials live alongside the templates and are referenced via Eta's `include()`. Leave unset to disable the L2 surface.",
       ),
   })
   .transform((raw) => {

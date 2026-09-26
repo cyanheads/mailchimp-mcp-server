@@ -5,6 +5,15 @@
     "env": {
       "MCP_TRANSPORT_TYPE": "stdio"
     },
-    "env_vars": ["MAILCHIMP_API_KEY"]
+    "env_vars": [
+      "MAILCHIMP_API_KEY",
+      "MAILCHIMP_BASE_URL",
+      "MAILCHIMP_TIMEOUT_MS",
+      "MAILCHIMP_MAX_RETRIES",
+      "MAILCHIMP_CONCURRENCY_LIMIT",
+      "MAILCHIMP_ASSETS_DIR",
+      "MAILCHIMP_TEMPLATES_DIR",
+      "MCP_LOG_LEVEL"
+    ]
   }
 }

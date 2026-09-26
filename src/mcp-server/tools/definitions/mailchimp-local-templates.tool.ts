@@ -3,7 +3,7 @@
  * Conditionally registered when `MAILCHIMP_TEMPLATES_DIR` is set. **This is the
  * canonical write path for templates on free-tier Mailchimp accounts**, where
  * the upstream `/templates` endpoint is read-only. Templates are `.eta` files
- * with optional `<name>.meta.yaml` sidecars. Use `seed-from-mailchimp` to
+ * with optional YAML frontmatter (legacy `<name>.meta.yaml` sidecars are still read). Use `seed-from-mailchimp` to
  * bootstrap a local template from a Mailchimp `base` or `user` template.
  * @module mcp-server/tools/definitions/mailchimp-local-templates.tool
  */
@@ -48,29 +48,31 @@ const TemplateSummarySchema = z
     name: z.string().describe('Template name without extension.'),
     relPath: z.string().describe('Path relative to MAILCHIMP_TEMPLATES_DIR (with `.eta`).'),
     size: z.number().describe('Body file size in bytes.'),
-    hasMeta: z.boolean().describe('Whether a `<name>.meta.yaml` sidecar was found.'),
+    hasMeta: z
+      .boolean()
+      .describe('Whether the template has YAML frontmatter or a `<name>.meta.yaml` sidecar.'),
   })
   .describe('Local template summary.');
 
 const TemplateMetaSchema = z
   .object({
-    subject: z.string().optional().describe('Default subject from sidecar metadata.'),
-    previewText: z.string().optional().describe('Default preview text from sidecar metadata.'),
+    subject: z.string().optional().describe('Default subject from template metadata.'),
+    previewText: z.string().optional().describe('Default preview text from template metadata.'),
     vars: z
       .array(z.string())
       .optional()
       .describe('Declared variable names (informational; not schema-enforced).'),
   })
-  .describe('Parsed sidecar metadata.');
+  .describe('Parsed template metadata (frontmatter, or the legacy sidecar).');
 
 const TemplateDetailSchema = z
   .object({
     name: z.string().describe('Template name without extension.'),
     relPath: z.string().describe('Path relative to MAILCHIMP_TEMPLATES_DIR.'),
     size: z.number().describe('Body file size in bytes.'),
-    hasMeta: z.boolean().describe('Whether a sidecar was found.'),
+    hasMeta: z.boolean().describe('Whether frontmatter or a sidecar was found.'),
     source: z.string().describe('Raw `.eta` template source.'),
-    meta: TemplateMetaSchema.optional().describe('Parsed sidecar metadata, if present.'),
+    meta: TemplateMetaSchema.optional().describe('Parsed template metadata, if present.'),
   })
   .describe('Local template detail returned by `get`.');
 
@@ -78,8 +80,8 @@ const RenderResultSchema = z
   .object({
     name: z.string().describe('Template name that was rendered.'),
     html: z.string().describe('Rendered HTML body.'),
-    subject: z.string().optional().describe('Subject from sidecar metadata, if any.'),
-    previewText: z.string().optional().describe('Preview text from sidecar metadata, if any.'),
+    subject: z.string().optional().describe('Subject from template metadata, if any.'),
+    previewText: z.string().optional().describe('Preview text from template metadata, if any.'),
   })
   .describe('Result of `render-preview`.');
 
@@ -115,7 +117,7 @@ function requireService(): NonNullable<ReturnType<typeof getTemplateService>> {
 
 export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
   description:
-    "Author and render local email templates. **Canonical write path for templates on free-tier Mailchimp accounts** — Mailchimp's upstream `/templates` API is read-only on free, so this tool is how you create reusable templates programmatically. Templates are `.eta` files in `MAILCHIMP_TEMPLATES_DIR`, with optional `<name>.meta.yaml` sidecars (subject, previewText, vars). Eta supports partials via `<%~ include('partials/header', it) %>`, conditionals (`<% if (it.x) { %>`), and loops. Use `seed-from-mailchimp` to bootstrap a template from a Mailchimp `base` or `user` starter. Once authored, reference a template from any campaign tool via `content.localTemplate: '<name>'` and `content.localTemplateVars: { … }`.",
+    "Author and render local email templates. **Canonical write path for templates on free-tier Mailchimp accounts** — Mailchimp's upstream `/templates` API is read-only on free, so this tool is how you create reusable templates programmatically. Templates are `.eta` files in `MAILCHIMP_TEMPLATES_DIR`, with optional YAML frontmatter (subject, previewText, vars); legacy `<name>.meta.yaml` sidecars are read when frontmatter is absent. Eta supports partials via `<%~ include('partials/header', it) %>`, conditionals (`<% if (it.x) { %>`), and loops. Use `seed-from-mailchimp` to bootstrap a template from a Mailchimp `base` or `user` starter. Once authored, reference a template from any campaign tool via `content.localTemplate: '<name>'` and `content.localTemplateVars: { … }`.",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -241,7 +243,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
       lines.push(`# Local templates (${result.templates.length})`, '');
       if (result.templates.length === 0) {
         lines.push(
-          '_No `.eta` files found. Create `<name>.eta` in the templates dir, optionally with a `<name>.meta.yaml` sidecar for subject/preview defaults._',
+          '_No `.eta` files found. Create `<name>.eta` in the templates dir, optionally with YAML frontmatter for subject/preview defaults._',
         );
       } else {
         for (const t of result.templates) {
