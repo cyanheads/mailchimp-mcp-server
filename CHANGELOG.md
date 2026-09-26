@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.10](changelog/0.3.x/0.3.10.md) — 2026-09-26 · ⚠️ Breaking
+
+Framework maintenance updates client error handling and input repair, with optional Mailchimp settings available through both plugins.
+
 ## [0.3.9](changelog/0.3.x/0.3.9.md) — 2026-09-19 · 🛡️ Security
 
 Stateful HTTP confirmation, safer upstream request handling, and framework tooling updates.
