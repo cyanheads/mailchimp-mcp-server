@@ -240,8 +240,63 @@ describe('HTTP campaign confirmation', () => {
       error: { code: -32600, data: { reason: 'client_capability_missing' } },
     });
     expect(JSON.stringify(result?.content)).toContain('elicitation.form');
+    expect(JSON.stringify(result?.content)).toContain('Reconnect');
+    expect(JSON.stringify(result)).not.toContain('argument');
+    for (const field of [
+      'originalStack',
+      'causeChain',
+      'requestId',
+      'tenantId',
+      'inputResponses',
+    ]) {
+      expect(JSON.stringify(result)).not.toContain(`"${field}"`);
+    }
     expect(mutations).toEqual([]);
   });
+
+  it('repairs stringified content and integer audience IDs before confirmation', async () => {
+    mutations = [];
+    const post = await connect({});
+    const response = await post({
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'mailchimp_send_campaign',
+        arguments: { ...args, audienceId: 123, content: JSON.stringify(args.content) },
+      },
+    });
+    let result: Record<string, unknown> | undefined;
+    for await (const message of messages(response)) {
+      if (message.id === 2) result = message.result;
+    }
+    expect(result?.structuredContent).toMatchObject({
+      error: { code: -32600, data: { reason: 'client_capability_missing' } },
+    });
+    expect(JSON.stringify(result?.content)).toContain('elicitation.form');
+    expect(mutations).toEqual([]);
+  });
+
+  it.each([true, 1.5])(
+    'rejects an unrepairable audience ID %s before upstream work',
+    async (audienceId) => {
+      mutations = [];
+      const post = await connect({});
+      const callsBefore = upstreamCalls;
+      const response = await post({
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'mailchimp_send_campaign', arguments: { ...args, audienceId } },
+      });
+      let result: Record<string, unknown> | undefined;
+      for await (const message of messages(response)) {
+        if (message.id === 2) result = message.result;
+      }
+      expect(result?.structuredContent).toMatchObject({ error: { code: -32602 } });
+      expect(JSON.stringify(result?.content)).toContain('audienceId');
+      expect(upstreamCalls).toBe(callsBefore);
+      expect(mutations).toEqual([]);
+    },
+  );
 
   it('preserves the 2026 input-required round without mutation', async () => {
     mutations = [];
