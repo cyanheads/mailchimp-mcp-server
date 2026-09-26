@@ -4,7 +4,7 @@
 # This stage installs all dependencies (including dev), builds the TypeScript
 # source code into JavaScript, and prepares the production assets.
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.0 AS build
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2 AS build
 
 WORKDIR /usr/src/app
 
@@ -30,7 +30,7 @@ RUN bun run build
 # application. It uses a slim base image and only includes production
 # dependencies and build artifacts.
 # ==============================================================================
-FROM oven/bun:1.4.0-slim AS production
+FROM oven/bun:1.4.2-slim AS production
 
 WORKDIR /usr/src/app
 
@@ -46,8 +46,10 @@ LABEL org.opencontainers.image.source="https://github.com/cyanheads/mailchimp-mc
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 
-# Copy dependency manifests
-COPY package.json bun.lock ./
+# Preserve the release-age gate and security scanner for production installs.
+COPY package.json bun.lock bunfig.toml ./
+# The scanner is a devDependency, so seed it before the production-only install.
+COPY --from=build /usr/src/app/node_modules/@socketsecurity/bun-security-scanner ./node_modules/@socketsecurity/bun-security-scanner
 
 # Install only production dependencies, ignoring lifecycle scripts and the
 # framework's optional peer tiers. Anything this server imports directly stays
@@ -61,16 +63,27 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
 ARG OTEL_ENABLED=true
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     if [ "$OTEL_ENABLED" = "true" ]; then \
-      bun add --omit=dev --omit=peer --ignore-scripts @hono/otel \
-        @opentelemetry/instrumentation-http \
+      specs=$(bun -e ' \
+        const { peerDependencies: peers } = await Bun.file("node_modules/@cyanheads/mcp-ts-core/package.json").json(); \
+        const names = process.argv.slice(1); \
+        const missing = names.filter((name) => !peers?.[name]); \
+        if (missing.length > 0) throw new Error(`no peerDependencies range for ${missing.join(", ")}`); \
+        console.log(names.map((name) => `${name}@${peers[name]}`).join(" ")); \
+      ' \
+        @hono/otel \
+        @opentelemetry/api-logs \
+        @opentelemetry/exporter-logs-otlp-http \
         @opentelemetry/exporter-metrics-otlp-http \
         @opentelemetry/exporter-trace-otlp-http \
+        @opentelemetry/instrumentation-http \
         @opentelemetry/instrumentation-pino \
         @opentelemetry/resources \
+        @opentelemetry/sdk-logs \
         @opentelemetry/sdk-metrics \
         @opentelemetry/sdk-node \
         @opentelemetry/sdk-trace-node \
-        @opentelemetry/semantic-conventions; \
+        @opentelemetry/semantic-conventions) \
+      && bun add --omit=dev --omit=peer --ignore-scripts $specs; \
     fi
 
 # Copy the compiled application code from the build stage
@@ -97,7 +110,6 @@ ENV MCP_TRANSPORT_TYPE="http"
 ENV MCP_SESSION_MODE="stateful"
 ENV MCP_LOG_LEVEL="info"
 ENV LOGS_DIR="/var/log/mailchimp-mcp-server"
-ENV MCP_FORCE_CONSOLE_LOGGING="true"
 
 # Expose the port the server listens on
 EXPOSE ${MCP_HTTP_PORT}
