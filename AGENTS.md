@@ -2,9 +2,9 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.3.9
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.6`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.9`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` `^2.0.0`
+**MCP SDK:** `@modelcontextprotocol/server` `^2.1.0`
 **Zod:** `^4.6.5`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
@@ -36,9 +36,10 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 - **Logic throws, framework catches.** Tool/resource handlers are pure — throw on failure, no `try/catch`. Plain `Error` is fine; the framework catches, classifies, and formats. Use error factories (`notFound()`, `validationError()`, etc.) when the error code matters.
 - **Use `ctx.log`** for request-scoped logging. No `console` calls.
-- **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
+- **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly. Values round-trip as JSON on every provider; validate reads as JSON data, not object instances.
 - **Need input the caller didn't supply?** `return ctx.requestInput(...)` and read `ctx.inputs` when the handler is re-entered. Never `await` for user input mid-handler.
 - **Secrets in env vars only** — never hardcoded.
+- **Cut noise.** Add only what earns its place: no speculative generality, no guards for states the framework already prevents, no abstraction until a third caller proves it, no option nothing sets.
 - **Close the loop on issues.** When implementing work tracked by a GitHub issue, comment on the issue with what landed and close it. Do both — a comment without a close leaves stale issues open; a close without a comment leaves no record of what shipped. The comment is for future readers — state the concrete changes, not the conversation that produced them.
 
 ---
@@ -188,7 +189,7 @@ Handlers receive a unified `ctx` object. Used in this server:
 
 | Property | Description |
 |:---------|:------------|
-| `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
+| `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. Reaches Pino and client `notifications/message`; treat it as client-visible. |
 | `ctx.requestInput` | Always-present control-flow helper used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request confirmation before any campaign mutation. The handler returns through it, then restarts on the next round. |
 | `ctx.inputs` | Reads and validates re-entry responses. Use `.view(key)` to distinguish accept/decline/cancel/missing and `.accepted(key, schema)` to validate accepted content. |
 | `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
@@ -335,9 +336,9 @@ Available skills:
 | `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
-| `release-and-publish` | Post-wrapup ship workflow: verification gate, push, publish to npm / MCP Registry / GHCR |
-| `git-wrapup` | Land working-tree changes as logical commits and open the release PR |
-| `release-pr-review` | Review a gated release PR; fixes land as ordinary commits |
+| `release-and-publish` | Verify, fast-forward merge the release PR, tag, push, and publish to npm / MCP Registry / GitHub Releases / GHCR |
+| `git-wrapup` | Land a commit stack with dependency changes first, verify each work commit, then bump the version and open the release PR; no tag or push to main |
+| `release-pr-review` | Review the open release PR, land ordinary fix commits, reconcile code-scanning findings, keep the PR body current, and report finished or halted |
 | `orchestrations` | Pick and run a multi-phase workflow chaining task skills end-to-end |
 | `code-simplifier` | Post-session code review and cleanup — simplify, consolidate, and align changed code |
 | `techniques` | Catalog of reusable response/data-shaping patterns (outline-on-overflow, etc.) |
@@ -391,6 +392,8 @@ When you complete a skill's checklist, check the boxes and add a completion time
 `bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. MCPB is stdio-only — HTTP deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match.
+
+**CI is one file.** `.github/workflows/codeql.yml` is template-identical and the only GitHub Actions workflow. CodeQL default setup stays off; verification and release gates run locally.
 
 ---
 
