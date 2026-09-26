@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.11](changelog/0.3.x/0.3.11.md) — 2026-09-26
+
+Run guarded Docker dependency installation on the native build platform.
+
 ## [0.3.10](changelog/0.3.x/0.3.10.md) — 2026-09-26 · ⚠️ Breaking
 
 Framework maintenance updates client error handling and input repair, with optional Mailchimp settings available through both plugins.
