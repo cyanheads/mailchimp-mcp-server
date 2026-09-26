@@ -24,27 +24,19 @@ RUN bun run build
 
 
 # ==============================================================================
-# Production Stage
+# Production Dependencies
 #
-# This stage creates a minimal, optimized, and secure image for running the
-# application. It uses a slim base image and only includes production
-# dependencies and build artifacts.
+# Run Bun and its security scanner natively: Bun's JavaScriptCore allocator can
+# abort under QEMU. This server's production dependencies are JavaScript-only,
+# so the installed tree can be copied into either runtime architecture.
 # ==============================================================================
-FROM oven/bun:1.4.2-slim AS production
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-slim AS production-dependencies
 
 WORKDIR /usr/src/app
 
 # Set the environment to production for performance and to ensure only
 # production dependencies are installed.
 ENV NODE_ENV=production
-
-# OCI image metadata (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
-ARG APP_VERSION
-LABEL org.opencontainers.image.title="mailchimp-mcp-server"
-LABEL org.opencontainers.image.description="Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP."
-LABEL org.opencontainers.image.source="https://github.com/cyanheads/mailchimp-mcp-server"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
-LABEL org.opencontainers.image.version="${APP_VERSION}"
 
 # Preserve the release-age gate and security scanner for production installs.
 COPY package.json bun.lock bunfig.toml ./
@@ -86,14 +78,31 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
       && bun add --omit=dev --omit=peer --ignore-scripts $specs; \
     fi
 
-# Copy the compiled application code from the build stage
+# The scanner is needed only while installing. Prepare the writable log
+# directory here too, so the final stage executes no commands under emulation.
+RUN rm -r node_modules/@socketsecurity/bun-security-scanner \
+    && mkdir -p /var/log/mailchimp-mcp-server
+
+# ==============================================================================
+# Production Runtime
+# ==============================================================================
+FROM oven/bun:1.4.2-slim AS production
+
+WORKDIR /usr/src/app
+ENV NODE_ENV=production
+
+# OCI image metadata (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
+ARG APP_VERSION
+LABEL org.opencontainers.image.title="mailchimp-mcp-server"
+LABEL org.opencontainers.image.description="Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP."
+LABEL org.opencontainers.image.source="https://github.com/cyanheads/mailchimp-mcp-server"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.version="${APP_VERSION}"
+
+COPY --from=production-dependencies /usr/src/app/package.json ./
+COPY --from=production-dependencies /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
-
-# The 'oven/bun' image already provides a non-root user named 'bun'.
-# We will use this existing user for enhanced security.
-
-# Create and set permissions for the log directory, assigning ownership to the 'bun' user.
-RUN mkdir -p /var/log/mailchimp-mcp-server && chown -R bun:bun /var/log/mailchimp-mcp-server
+COPY --from=production-dependencies --chown=bun:bun /var/log/mailchimp-mcp-server /var/log/mailchimp-mcp-server
 
 # Switch to the non-root user
 USER bun
