@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.12](changelog/0.3.x/0.3.12.md) — 2026-10-10 · 🛡️ Security
+
+Bind campaign dispatch to single-use consent and adopt mcp-ts-core 0.13.14.
+
 ## [0.3.11](changelog/0.3.x/0.3.11.md) — 2026-09-26
 
 Run guarded Docker dependency installation on the native build platform.
