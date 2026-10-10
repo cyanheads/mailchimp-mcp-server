@@ -27,10 +27,10 @@ RUN bun run build
 # Production Dependencies
 #
 # Run Bun and its security scanner natively: Bun's JavaScriptCore allocator can
-# abort under QEMU. This server's production dependencies are JavaScript-only,
-# so the installed tree can be copied into either runtime architecture.
+# abort under QEMU. Cross-install for the target architecture, then copy the
+# installed tree into its runtime image.
 # ==============================================================================
-FROM --platform=$BUILDPLATFORM oven/bun:1.4.2-slim AS production-dependencies
+FROM --platform=$BUILDPLATFORM oven/bun:1.4.2 AS deps
 
 WORKDIR /usr/src/app
 
@@ -46,37 +46,29 @@ COPY --from=build /usr/src/app/node_modules/@socketsecurity/bun-security-scanner
 # Install only production dependencies, ignoring lifecycle scripts and the
 # framework's optional peer tiers. Anything this server imports directly stays
 # installed through its own dependencies.
+ARG TARGETOS
+ARG TARGETARCH
+RUN case "$TARGETARCH" in \
+      amd64) echo x64 ;; \
+      arm64) echo arm64 ;; \
+      *) echo "Unsupported TARGETARCH '$TARGETARCH': expected amd64 or arm64" >&2; exit 1 ;; \
+    esac > .bun-cpu
 RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --production --omit=peer --frozen-lockfile --ignore-scripts
+    bun install --production --omit=peer --frozen-lockfile --ignore-scripts \
+      --os="$TARGETOS" --cpu="$(cat .bun-cpu)"
 
 # Conditionally install OpenTelemetry optional peer dependencies (Tier 3).
 # Bundled by default so tracing works out of the box. Omit at build time
 # with: docker build --build-arg OTEL_ENABLED=false
+COPY scripts/install-otel.ts ./scripts/
 ARG OTEL_ENABLED=true
 RUN --mount=type=cache,target=/root/.bun/install/cache \
     if [ "$OTEL_ENABLED" = "true" ]; then \
-      specs=$(bun -e ' \
-        const { peerDependencies: peers } = await Bun.file("node_modules/@cyanheads/mcp-ts-core/package.json").json(); \
-        const names = process.argv.slice(1); \
-        const missing = names.filter((name) => !peers?.[name]); \
-        if (missing.length > 0) throw new Error(`no peerDependencies range for ${missing.join(", ")}`); \
-        console.log(names.map((name) => `${name}@${peers[name]}`).join(" ")); \
-      ' \
-        @hono/otel \
-        @opentelemetry/api-logs \
-        @opentelemetry/exporter-logs-otlp-http \
-        @opentelemetry/exporter-metrics-otlp-http \
-        @opentelemetry/exporter-trace-otlp-http \
-        @opentelemetry/instrumentation-http \
-        @opentelemetry/instrumentation-pino \
-        @opentelemetry/resources \
-        @opentelemetry/sdk-logs \
-        @opentelemetry/sdk-metrics \
-        @opentelemetry/sdk-node \
-        @opentelemetry/sdk-trace-node \
-        @opentelemetry/semantic-conventions) \
-      && bun add --omit=dev --omit=peer --ignore-scripts $specs; \
+      bun scripts/install-otel.ts --os="$TARGETOS" --cpu="$(cat .bun-cpu)"; \
     fi
+
+COPY scripts/prune-musl-packages.ts ./scripts/
+RUN bun scripts/prune-musl-packages.ts
 
 # The scanner is needed only while installing. Prepare the writable log
 # directory here too, so the final stage executes no commands under emulation.
@@ -99,10 +91,10 @@ LABEL org.opencontainers.image.source="https://github.com/cyanheads/mailchimp-mc
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="${APP_VERSION}"
 
-COPY --from=production-dependencies /usr/src/app/package.json ./
-COPY --from=production-dependencies /usr/src/app/node_modules ./node_modules
+COPY package.json ./
+COPY --from=deps /usr/src/app/node_modules ./node_modules
 COPY --from=build /usr/src/app/dist ./dist
-COPY --from=production-dependencies --chown=bun:bun /var/log/mailchimp-mcp-server /var/log/mailchimp-mcp-server
+COPY --from=deps --chown=bun:bun /var/log/mailchimp-mcp-server /var/log/mailchimp-mcp-server
 
 # Switch to the non-root user
 USER bun

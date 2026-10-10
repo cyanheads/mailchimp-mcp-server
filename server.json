@@ -12,12 +12,8 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/mailchimp-mcp-server",
-      "runtimeHint": "bun",
+      "runtimeHint": "npx",
       "version": "0.3.11",
-      "packageArguments": [
-        { "type": "positional", "value": "run" },
-        { "type": "positional", "value": "start:stdio" }
-      ],
       "environmentVariables": [
         {
           "name": "MAILCHIMP_API_KEY",
@@ -80,13 +76,15 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/mailchimp-mcp-server",
-      "runtimeHint": "bun",
+      "runtimeHint": "npx",
       "version": "0.3.11",
-      "packageArguments": [
-        { "type": "positional", "value": "run" },
-        { "type": "positional", "value": "start:http" }
-      ],
       "environmentVariables": [
+        {
+          "name": "MCP_TRANSPORT_TYPE",
+          "description": "Selects the HTTP transport.",
+          "format": "string",
+          "value": "http"
+        },
         {
           "name": "MAILCHIMP_API_KEY",
           "description": "Mailchimp Marketing API key, including the '-dc' data-center suffix (e.g. 'abc...-us22'). Generate at Mailchimp → Account → Extras → API keys.",
