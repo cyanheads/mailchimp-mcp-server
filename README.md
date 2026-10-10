@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.3.11-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.1.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.3.11-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -149,6 +149,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 - `audienceId`, `subject`, `fromName`, `replyTo`, and `content` (at least one of `html`, `plainText`, `templateId`, `localTemplate`) required; `mode` is `draft` (default), `test` (needs `testEmails`, max 50), `send`, or `schedule` (needs `scheduleTime` at least 15 minutes out)
 - Returns `campaignId`, the effective `mode`, `status`, `recipientCount`, `webUrl`, and non-blocking `checklistWarnings`; blocking checklist errors throw `pre_send_checklist_failed` outside `draft`, and `cleanupOnError` (default `true`) deletes the draft after a mid-flow failure
 - `send` and `schedule` require `confirmSend: true`, then a confirmation prompt before any campaign is created; declining leaves a draft and sets `cancelledByUser`
+- Confirmation is single-use and bound to the caller, audience, mode, and resolved content. Changed content or a replay requests fresh confirmation; campaign creation and replication are never automatically retried after an ambiguous upstream failure.
 
 ---
 
@@ -382,6 +383,7 @@ cp .env.example .env
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
 | `MCP_SESSION_MODE` | Explicitly `stateful` for campaign confirmation. The framework schema default, `auto`, resolves to stateful. `stateless` refuses HTTP startup; stdio is unaffected. | `stateful` |
+| `MCP_REQUEST_STATE_KEY` | Optional sealing key of at least 32 bytes. Consent records remain single-use and process-bound; a restart or a retry reaching another instance requires fresh confirmation. | none |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.). | `info` |
 | `LOGS_DIR` | Directory for log files (Node.js only). | `<app-root>/logs` |

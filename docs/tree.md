@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-09-19 18:41:22
+Generated on: 2026-10-10 23:42:36
 
 ```text
 mailchimp-mcp-server/
@@ -132,9 +132,11 @@ mailchimp-mcp-server/
 │   ├── clean-mcpb.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
+│   ├── install-otel.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
@@ -178,6 +180,7 @@ mailchimp-mcp-server/
 │   │       │   └── mailchimp-upsert-subscriber.tool.ts
 │   │       └── shared/
 │   │           ├── asset-rewrite.ts
+│   │           ├── campaign-content-snapshot.ts
 │   │           ├── campaign-dispatch-confirmation.ts
 │   │           ├── resolve-local-template.ts
 │   │           └── template-sections-doc.ts

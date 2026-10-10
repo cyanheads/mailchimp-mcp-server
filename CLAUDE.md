@@ -2,9 +2,9 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.3.11
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.9`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.14`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` `^2.1.0`
+**MCP SDK:** `@modelcontextprotocol/server` `^2.2.0` (resolved 2.3.1)
 **Zod:** `^4.6.5`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
@@ -76,52 +76,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
 
 ### Tool (workflow — orchestrates multi-step flows, requests confirmation)
 
-```ts
-// src/mcp-server/tools/definitions/mailchimp-send-campaign.tool.ts
-import { inputRequired, tool, z } from '@cyanheads/mcp-ts-core';
-
-const ConfirmationSchema = z.object({
-  confirmed: z.boolean().describe('Confirm campaign dispatch.'),
-});
-
-export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
-  description: 'Compose and send (or schedule/test) a campaign in one call.',
-  annotations: { destructiveHint: true, openWorldHint: true },
-  input: InputSchema,
-  output: OutputSchema,
-  async handler(input, ctx) {
-    const svc = getMailchimpService();
-    let confirmed = input.mode !== 'send';
-
-    if (input.mode === 'send') {
-      const view = ctx.inputs.view('campaignDispatchConfirmation');
-      if (view.kind === 'missing') {
-        return ctx.requestInput({
-          inputRequests: {
-            campaignDispatchConfirmation: inputRequired.elicit({
-              message: `Send "${input.subject}" now?`,
-              requestedSchema: ConfirmationSchema,
-            }),
-          },
-        });
-      }
-      confirmed =
-        view.kind === 'elicit' &&
-        view.action === 'accept' &&
-        ctx.inputs.accepted('campaignDispatchConfirmation', ConfirmationSchema)?.confirmed === true;
-    }
-
-    const effectiveMode = confirmed ? input.mode : 'draft';
-    const draftId = await svc.campaigns.create(ctx, input);
-    try {
-      return await svc.campaigns.finalize(ctx, draftId, { ...input, mode: effectiveMode });
-    } catch (err) {
-      if (input.cleanupOnError !== false) await svc.campaigns.deleteDraft(ctx, draftId).catch(() => {});
-      throw err;
-    }
-  },
-});
-```
+Read `src/mcp-server/tools/definitions/mailchimp-send-campaign.tool.ts` and `mailchimp-replicate-campaign.tool.ts` for the workflow implementations. Both call `confirmCampaignDispatch` before creating a campaign, bind the consent to resolved content with `campaignContentSnapshot`, and reuse checked local HTML afterward. A valid decline leaves a draft; any mismatched or spent record asks again. Cleanup catches only failures after draft creation.
 
 ### Resource
 
@@ -181,9 +136,9 @@ export function getServerConfig() {
 
 ## Context
 
-**HTTP sessions:** `createApp({ sessionMode: { default: 'stateful', require: 'stateful' } })` keeps campaign confirmation answerable for 2025-era HTTP clients. Explicit `MCP_SESSION_MODE=stateless` refuses HTTP startup; stdio is unaffected. `auto` resolves to stateful. The Mailchimp service's pacer is disposed in `teardown()`.
+**HTTP sessions:** `createApp({ sessionMode: { require: 'stateful' } })` keeps campaign confirmation answerable for 2025-era HTTP clients. Explicit `MCP_SESSION_MODE=stateless` refuses HTTP startup; stdio is unaffected. `auto` resolves to stateful. The Mailchimp service's pacer is disposed in `teardown()`.
 
-**Service errors:** annotate reasons emitted below the handler with `thrownBy: 'service'`. Forward every handler-local recovery through `ctx.recoveryFor(reason)` or an explicit runtime hint. `RequestCancelled` is a baseline code and needs no contract entry.
+**Service errors:** annotate reasons emitted below the handler with `thrownBy: 'service'`. The framework fills a declared recovery hint whenever the failure carries its reason and no explicit hint. `RequestCancelled` is a baseline code and needs no contract entry.
 
 Handlers receive a unified `ctx` object. Used in this server:
 
@@ -193,9 +148,9 @@ Handlers receive a unified `ctx` object. Used in this server:
 | `ctx.requestInput` | Always-present control-flow helper used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request confirmation before any campaign mutation. The handler returns through it, then restarts on the next round. |
 | `ctx.inputs` | Reads and validates re-entry responses. Use `.view(key)` to distinguish accept/decline/cancel/missing and `.accepted(key, schema)` to validate accepted content. |
 | `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
-| `ctx.requestId` / `ctx.traceId` | Appended to the `X-Request-Id` header for correlation with Mailchimp support cases. |
+| `ctx.requestId` / `ctx.traceId` | Framework-generated correlation IDs in the request's log records; errors return `data.requestId`. |
 
-Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is already fast + cheap).
+**Consent:** `ctx.state` holds ten-minute single-use records bound to the operation, caller, target, resolved content, and issuing process. Redeem before mutation; an unknown, changed, expired, replayed, or foreign-instance record asks again. Local redemption excludes concurrent use; another process must re-prompt because storage has no atomic take. Only the random ID crosses rounds; optionally set `MCP_REQUEST_STATE_KEY` to seal it. Restarting invalidates outstanding confirmations.
 
 ---
 
@@ -203,7 +158,7 @@ Not currently used: `ctx.state` (no tenant-scoped caching needed — upstream is
 
 Handlers throw — the framework catches, classifies, and formats.
 
-**Recommended: typed error contract.** Declare `errors: [{ reason, code, when, recovery, retryable? }]` on `tool()` / `resource()` to get a typed `ctx.fail(reason, …)` keyed by the declared reason union (TS catches `ctx.fail('typo')` at compile time), auto-populated `data.reason` for observability, and lint-enforced conformance against the handler body. The `recovery` field is required (≥5 words, lint-validated) — single source of truth for the agent's next move. Spread `ctx.recoveryFor('reason')` to flow the contract recovery onto the wire (mirrored into `content[]` text); override with explicit `{ recovery: { hint: '...' } }` when runtime context matters. Baseline codes (`InternalError`, `ServiceUnavailable`, `Timeout`, `ValidationError`, `SerializationError`) bubble freely and don't need declaring.
+**Recommended: typed error contract.** Declare `errors: [{ reason, code, when, recovery, retryable?, severity?, thrownBy? }]` on `tool()` / `resource()` to get typed `ctx.fail(reason, …)`, auto-populated `data.reason`, and lint-enforced conformance. `recovery` is required (≥5 words): the framework fills it on both client surfaces when a failure carries the reason without a hint. Explicit `{ recovery: { hint: '...' } }` overrides it when runtime context matters. Error envelopes also carry `data.requestId`, matching the call's logs. Baseline codes (`InternalError`, `ServiceUnavailable`, `Timeout`, `ValidationError`, `SerializationError`, `RequestCancelled`) bubble freely and don't need declaring.
 
 ```ts
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
@@ -217,8 +172,7 @@ errors: [
     recovery: 'Re-invoke and confirm at the campaign dispatch prompt to send.' },
 ],
 async handler(input, ctx) {
-  if (!found) throw ctx.fail('audience_not_found', `No audience ${input.id}`,
-    { ...ctx.recoveryFor('audience_not_found') });
+  if (!found) throw ctx.fail('audience_not_found', `No audience ${input.id}`);
 }
 ```
 
@@ -331,7 +285,7 @@ Available skills:
 | `add-service` | Scaffold a new service integration |
 | `add-test` | Scaffold test file for a tool, resource, or service |
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
-| `tool-defs-analysis` | Read-only audit of LLM-facing definition language across tools/resources/prompts |
+| `tool-defs-analysis` | Read-only audit of MCP definition language across the surface — voice, leaks, defaults, recovery hints, output descriptions |
 | `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
 | `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
@@ -348,13 +302,13 @@ Available skills:
 | `api-canvas` | DataCanvas: register tabular data, run SQL, export, plus the `spillover()` helper for big result sets — Tier 3 opt-in (not used by this server) |
 | `api-mirror` | MirrorService: persistent, self-refreshing local mirror of a bulk upstream dataset (embedded SQLite + FTS5) |
 | `api-config` | AppConfig, parseConfig, env vars |
-| `api-context` | Context interface, logger, state, and multi-round input requests |
+| `api-context` | Context interface, RequestContext, logger, state, multi-round-trip input |
 | `api-errors` | McpError, JsonRpcErrorCode, error patterns |
 | `api-linter` | MCP definition lint rules — every `format-parity`, `schema-*`, `name-*`, `server-json-*` rule ID the linter emits |
 | `api-services` | LLM, Speech, Graph services |
 | `api-telemetry` | OTel catalog: spans, metrics, completion logs, env config, cardinality rules |
 | `api-testing` | createMockContext, test patterns |
-| `api-utils` | Formatting, parsing, security, pagination, scheduling |
+| `api-utils` | Formatting, parsing, security, pagination, scheduling, telemetry helpers |
 | `api-workers` | Cloudflare Workers runtime |
 
 When you complete a skill's checklist, check the boxes and add a completion timestamp at the end (e.g., `Completed: 2026-03-11`).
@@ -399,7 +353,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Publishing
 
-**Every release goes through a release PR, straight-through** — `git-wrapup`'s "Release PR mode", mode `straight-through`. One run: `git-wrapup` lands the commit stack on `release/<version>`, pushes it, and opens the PR (title = the release commit subject, body = the changelog entry plus a gates section); `release-and-publish` then fast-forwards `main` locally with `git merge --ff-only`, creates the tag on `main`'s tip, pushes `main` and the tag, deletes the branch, and publishes. A caller's brief may run a given release as `gated` instead — a `release-pr-review` pass on the open PR before `release-and-publish`. **Never merge through the GitHub UI or `gh pr merge`**: squash and rebase-merge are disabled in the repo settings because both rewrite the stack (rebase-merge also strips the SSH signatures), and a merge commit breaks the linear history.
+**Every release goes through a release PR, straight-through** — `git-wrapup`'s "Release PR mode", mode `straight-through`. One run: `git-wrapup` lands the commit stack on `release/<version>`, pushes it, and opens the PR (title = the release commit subject, body = the release digest: theme line, `## Changes`, `## Gates`, changelog link last); `release-and-publish` then fast-forwards `main` locally with `git merge --ff-only`, creates the tag on `main`'s tip, pushes `main` and the tag, deletes the branch, and publishes. A caller's brief may run a given release as `gated` instead — a `release-pr-review` pass on the open PR before `release-and-publish`. **Never merge through the GitHub UI or `gh pr merge`**: squash and rebase-merge are disabled in the repo settings because both rewrite the stack (rebase-merge also strips the SSH signatures), and a merge commit breaks the linear history.
 
 Run the `release-and-publish` skill — it runs the verification gate (`devcheck`, `rebuild`, `test`), pushes commits and tags, and publishes to every applicable destination with transient-failure retries. Reference commands:
 
