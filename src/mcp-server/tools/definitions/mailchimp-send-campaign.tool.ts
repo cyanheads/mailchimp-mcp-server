@@ -10,6 +10,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { campaignContentSnapshot } from '@/mcp-server/tools/shared/campaign-content-snapshot.js';
 import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
@@ -217,22 +218,36 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
       );
     }
 
+    let content = input.content;
     let cancelledByUser = false;
     if (input.mode === 'send' || input.mode === 'schedule') {
-      const confirmed = await confirmCampaignDispatch(ctx, async () => {
-        const audience = await svc.audiences
-          .get(ctx, input.audienceId, { fields: ['name', 'stats.member_count'] })
-          .catch(() => null);
-        const audienceLabel = audience?.name ?? input.audienceId;
-        const count = audience?.stats?.member_count;
-        return input.mode === 'send'
-          ? `Send "${input.subject}" to ${count ?? 'all'} subscribers in "${audienceLabel}" now?`
-          : `Schedule "${input.subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
-      });
+      const confirmed = await confirmCampaignDispatch(
+        ctx,
+        {
+          operation: `mailchimp_send_campaign:${input.mode}`,
+          target: input.audienceId,
+          content: async () => {
+            content = await resolveLocalTemplate(ctx, input.content);
+            return { input, snapshot: await campaignContentSnapshot(ctx, content) };
+          },
+        },
+        async () => {
+          const audience = await svc.audiences
+            .get(ctx, input.audienceId, { fields: ['name', 'stats.member_count'] })
+            .catch(() => null);
+          const audienceLabel = audience?.name ?? input.audienceId;
+          const count = audience?.stats?.member_count;
+          return input.mode === 'send'
+            ? `Send "${input.subject}" to ${count ?? 'all'} subscribers in "${audienceLabel}" now?`
+            : `Schedule "${input.subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
+        },
+      );
       cancelledByUser = !confirmed;
     }
 
-    const content = await resolveLocalTemplate(ctx, input.content);
+    if (input.mode !== 'send' && input.mode !== 'schedule') {
+      content = await resolveLocalTemplate(ctx, input.content);
+    }
 
     let campaignId: string | undefined;
     let cleanedUp = false;
@@ -288,7 +303,6 @@ export const mailchimpSendCampaignTool = tool('mailchimp_send_campaign', {
             .join('; ')}`,
           {
             errors: errors.map((e) => ({ heading: e.heading, details: e.details })),
-            ...ctx.recoveryFor('pre_send_checklist_failed'),
           },
         );
       }

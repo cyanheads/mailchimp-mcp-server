@@ -30,7 +30,7 @@ async function listen(server: Server): Promise<number> {
   return (server.address() as AddressInfo).port;
 }
 
-function launch(port: number, mode: string, transport = 'http'): ChildProcess {
+function launch(port: number, mode: string | undefined, transport = 'http'): ChildProcess {
   return spawn('bun', ['--no-env-file', new URL('../../src/index.ts', import.meta.url).pathname], {
     cwd: '/tmp',
     env: {
@@ -38,7 +38,8 @@ function launch(port: number, mode: string, transport = 'http'): ChildProcess {
       MCP_TRANSPORT_TYPE: transport,
       MCP_HTTP_HOST: '127.0.0.1',
       MCP_HTTP_PORT: String(port),
-      MCP_SESSION_MODE: mode,
+      ...(mode ? { MCP_SESSION_MODE: mode } : {}),
+      MCP_REQUEST_STATE_KEY: 'test-only-request-state-key-32-bytes',
       MCP_AUTH_MODE: 'none',
       MCP_LOG_LEVEL: 'error',
       OTEL_ENABLED: 'false',
@@ -154,7 +155,7 @@ beforeAll(async () => {
   const port = await listen(reservation);
   await new Promise<void>((resolve) => reservation.close(() => resolve()));
   endpoint = `http://127.0.0.1:${port}/mcp`;
-  child = launch(port, 'stateful');
+  child = launch(port, undefined);
   child.stdout!.on('data', (data) => {
     output += data.toString();
   });
@@ -182,6 +183,68 @@ afterAll(async () => {
 });
 
 describe('HTTP campaign confirmation', () => {
+  it('spends one sealed 2026 consent across concurrent retries and rejects tampering', async () => {
+    mutations = [];
+    async function call(extra: Record<string, unknown> = {}) {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+          'MCP-Protocol-Version': '2026-07-28',
+          'Mcp-Method': 'tools/call',
+          'Mcp-Name': 'mailchimp_send_campaign',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 22,
+          method: 'tools/call',
+          params: {
+            name: 'mailchimp_send_campaign',
+            arguments: args,
+            ...extra,
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientInfo': { name: 'confirmation-test', version: '1' },
+              'io.modelcontextprotocol/clientCapabilities': { elicitation: { form: {} } },
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      let result: Record<string, unknown> | undefined;
+      for await (const message of messages(response))
+        if (message.id === 22)
+          result = message.error ? { rpcError: message.error } : message.result;
+      return result;
+    }
+    const inputResponses = {
+      campaignDispatchConfirmation: { action: 'accept', content: { confirmed: true } },
+    };
+    const asked = await call({ inputResponses });
+    expect(asked?.resultType).toBe('input_required');
+    expect(mutations).toEqual([]);
+    const results = await Promise.all([
+      call({ requestState: asked?.requestState, inputResponses }),
+      call({ requestState: asked?.requestState, inputResponses }),
+    ]);
+    const completed = results.filter((result) => result?.structuredContent);
+    expect(completed).toHaveLength(1);
+    expect(completed[0]?.structuredContent).toMatchObject({ campaignId: 'draft-1', mode: 'send' });
+    expect(JSON.stringify(completed[0]?.content)).toContain('Campaign send');
+    expect(mutations.filter((entry) => entry === 'POST /campaigns')).toHaveLength(1);
+    expect(mutations.filter((entry) => entry.endsWith('/actions/send'))).toHaveLength(1);
+    expect((await call({ requestState: asked?.requestState, inputResponses }))?.resultType).toBe(
+      'input_required',
+    );
+    const before = upstreamCalls;
+    const tampered = await call({ requestState: 'not-server-issued', inputResponses });
+    expect(tampered?.rpcError).toMatchObject({
+      code: -32602,
+      data: { reason: 'invalid_request_state' },
+    });
+    expect(upstreamCalls).toBe(before);
+  });
   it.each(['accept', 'decline'] as const)(
     'handles a 2025 form %s before mutation',
     async (action) => {
@@ -242,16 +305,13 @@ describe('HTTP campaign confirmation', () => {
     expect(JSON.stringify(result?.content)).toContain('elicitation.form');
     expect(JSON.stringify(result?.content)).toContain('Reconnect');
     expect(JSON.stringify(result)).not.toContain('argument');
-    for (const field of [
-      'originalStack',
-      'causeChain',
-      'requestId',
-      'tenantId',
-      'inputResponses',
-    ]) {
+    for (const field of ['originalStack', 'causeChain', 'tenantId', 'inputResponses']) {
       expect(JSON.stringify(result)).not.toContain(`"${field}"`);
     }
     expect(mutations).toEqual([]);
+    expect(result?.structuredContent).toMatchObject({
+      error: { data: { requestId: expect.any(String) } },
+    });
   });
 
   it('repairs stringified content and integer audience IDs before confirmation', async () => {

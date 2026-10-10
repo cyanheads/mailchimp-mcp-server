@@ -9,6 +9,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { campaignContentSnapshot } from '@/mcp-server/tools/shared/campaign-content-snapshot.js';
 import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
@@ -228,28 +229,61 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
       );
     }
 
+    let contentOverride = input.contentOverride;
+    let sourceSnapshot: Awaited<ReturnType<typeof svc.campaigns.get>>;
     let cancelledByUser = false;
     if (input.mode === 'send' || input.mode === 'schedule') {
-      const confirmed = await confirmCampaignDispatch(ctx, async () => {
-        const source = await svc.campaigns.get(ctx, input.sourceCampaignId);
-        const subject = input.subjectOverride ?? source.settings?.subject_line ?? '(no subject)';
-        const audienceId = input.audienceOverride ?? source.recipients?.list_id;
-        let audienceLabel = source.recipients?.list_name ?? audienceId ?? '?';
-        let count = source.recipients?.recipient_count;
+      const confirmed = await confirmCampaignDispatch(
+        ctx,
+        {
+          operation: `mailchimp_replicate_campaign:${input.mode}`,
+          target: input.sourceCampaignId,
+          content: async () => {
+            const [source, sourceContent] = await Promise.all([
+              svc.campaigns.get(ctx, input.sourceCampaignId),
+              svc.campaigns.getContent(ctx, input.sourceCampaignId),
+            ]);
+            sourceSnapshot = source;
+            if (input.contentOverride) {
+              contentOverride = await resolveLocalTemplate(ctx, input.contentOverride);
+            }
+            return {
+              input,
+              source: {
+                settings: source.settings,
+                recipients: source.recipients,
+                type: source.type,
+              },
+              sourceContent,
+              contentOverride: contentOverride
+                ? await campaignContentSnapshot(ctx, contentOverride)
+                : undefined,
+            };
+          },
+        },
+        async () => {
+          const source = sourceSnapshot;
+          const subject = input.subjectOverride ?? source.settings?.subject_line ?? '(no subject)';
+          const audienceId = input.audienceOverride ?? source.recipients?.list_id;
+          let audienceLabel = source.recipients?.list_name ?? audienceId ?? '?';
+          let count = source.recipients?.recipient_count;
 
-        if (input.audienceOverride) {
-          const audience = await svc.audiences
-            .get(ctx, input.audienceOverride, { fields: ['name', 'stats.member_count'] })
-            .catch(() => null);
-          audienceLabel = audience?.name ?? input.audienceOverride;
-          count = audience?.stats?.member_count;
-        }
+          if (input.audienceOverride) {
+            const audience = await svc.audiences
+              .get(ctx, input.audienceOverride, { fields: ['name', 'stats.member_count'] })
+              .catch(() => null);
+            audienceLabel = audience?.name ?? input.audienceOverride;
+            count = audience?.stats?.member_count;
+          }
 
-        return input.mode === 'send'
-          ? `Send replica "${subject}" to ${count ?? '?'} subscribers in "${audienceLabel}" now?`
-          : `Schedule replica "${subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
-      });
+          return input.mode === 'send'
+            ? `Send replica "${subject}" to ${count ?? '?'} subscribers in "${audienceLabel}" now?`
+            : `Schedule replica "${subject}" to "${audienceLabel}" (${count ?? '?'} subscribers) for ${input.scheduleTime}?`;
+        },
+      );
       cancelledByUser = !confirmed;
+    } else if (contentOverride) {
+      contentOverride = await resolveLocalTemplate(ctx, contentOverride);
     }
 
     const overridesApplied: string[] = [];
@@ -310,8 +344,8 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
       }
 
       // 3. Content override.
-      if (input.contentOverride) {
-        const override = await resolveLocalTemplate(ctx, input.contentOverride);
+      if (contentOverride) {
+        const override = contentOverride;
         const contentBody: Parameters<typeof svc.campaigns.setContent>[2] = {};
         if (override.html) contentBody.html = override.html;
         if (override.plainText) contentBody.plain_text = override.plainText;
@@ -346,7 +380,6 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
             .join('; ')}`,
           {
             errors: errors.map((e) => ({ heading: e.heading, details: e.details })),
-            ...ctx.recoveryFor('pre_send_checklist_failed'),
           },
         );
       }

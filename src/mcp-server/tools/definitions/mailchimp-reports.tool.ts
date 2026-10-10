@@ -208,7 +208,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
           throw ctx.fail(
             'campaign_not_sent',
             `Campaign '${campaignId}' has not been sent yet — no report data available.`,
-            { campaignId, ...ctx.recoveryFor('campaign_not_sent') },
+            { campaignId },
           );
         }
         return { operation: 'get', campaignId: r.id, report: summarize(r) };

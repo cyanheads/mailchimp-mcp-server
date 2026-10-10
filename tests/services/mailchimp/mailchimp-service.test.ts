@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { MailchimpService, mailchimpMemberHash } from '@/services/mailchimp/mailchimp-service.js';
@@ -287,6 +288,43 @@ describe('MailchimpService.request', () => {
     await expect(svc.request('POST', '/campaigns', { noRetry: true })).rejects.toThrow();
     expect(fetchStub).toHaveBeenCalledOnce();
   });
+
+  it.each(['create', 'replicate'] as const)(
+    'does not retry campaign %s after an ambiguous upstream failure',
+    async (operation) => {
+      vi.unstubAllGlobals();
+      let mutations = 0;
+      const upstream = createServer((_request, response) => {
+        mutations++;
+        response
+          .writeHead(503, { 'Content-Type': 'application/json' })
+          .end('{"title":"Unavailable"}');
+      });
+      upstream.listen(0, '127.0.0.1');
+      await once(upstream, 'listening');
+      const service = makeService({
+        baseUrl: `http://127.0.0.1:${(upstream.address() as AddressInfo).port}`,
+        maxRetries: 2,
+      });
+      const ctx = createMockContext();
+      try {
+        await expect(
+          operation === 'create'
+            ? service.campaigns.create(ctx, {
+                type: 'regular',
+                recipients: { list_id: 'list' },
+                settings: { subject_line: 'test' },
+              })
+            : service.campaigns.replicate(ctx, 'source'),
+        ).rejects.toMatchObject({ code: JsonRpcErrorCode.ServiceUnavailable });
+        expect(mutations).toBe(1);
+      } finally {
+        service.dispose();
+        upstream.closeAllConnections();
+        await new Promise<void>((resolve) => upstream.close(() => resolve()));
+      }
+    },
+  );
 
   it('times out a stalled successful body and preserves the domain reason', async () => {
     vi.unstubAllGlobals();

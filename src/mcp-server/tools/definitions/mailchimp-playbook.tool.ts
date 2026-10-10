@@ -470,7 +470,6 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         if (!top) {
           throw ctx.fail('subscriber_search_no_usable_match', undefined, {
             email: input.email,
-            ...ctx.recoveryFor('subscriber_search_no_usable_match'),
           });
         }
         const instructions = [

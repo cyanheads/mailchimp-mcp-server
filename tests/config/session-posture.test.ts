@@ -14,7 +14,6 @@ vi.mock('@cyanheads/mcp-ts-core', async (original) => ({
 it('requires a durable HTTP session at every entry point', async () => {
   await import('@/index.js');
   expect(createApp.mock.calls[0]?.[0].sessionMode).toEqual({
-    default: 'stateful',
     require: 'stateful',
   });
   expect(readFileSync('Dockerfile', 'utf8')).toContain('ENV MCP_SESSION_MODE="stateful"');

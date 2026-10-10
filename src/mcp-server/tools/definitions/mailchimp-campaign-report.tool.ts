@@ -176,7 +176,6 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
         {
           campaignId: input.campaignId,
           status: report.type ?? 'unsent',
-          ...ctx.recoveryFor('campaign_not_sent'),
         },
       );
     }

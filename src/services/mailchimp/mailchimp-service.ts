@@ -849,7 +849,7 @@ export class MailchimpService {
         settings: Partial<Campaign['settings']>;
       },
     ): Promise<Campaign> =>
-      this.request('POST', '/campaigns', { signal: ctx.signal, log: ctx.log, body }),
+      this.request('POST', '/campaigns', { signal: ctx.signal, log: ctx.log, body, noRetry: true }),
 
     update: (
       ctx: Pick<Context, 'signal' | 'log'>,
@@ -862,6 +862,7 @@ export class MailchimpService {
       this.request('POST', `/campaigns/${id}/actions/replicate`, {
         signal: ctx.signal,
         log: ctx.log,
+        noRetry: true,
       }),
 
     delete: async (ctx: Pick<Context, 'signal' | 'log'>, id: string): Promise<void> => {
