@@ -10,9 +10,9 @@
 |:-----|:------------|:-----------|:------------|
 | `mailchimp_send_campaign` | Compose and send (or schedule/test) a campaign in one call: create the campaign, set content, run send-checklist, optionally send a test, then send or schedule. Failed drafts are auto-deleted when `cleanupOnError: true` (default); declined confirmation leaves a draft. Requests human confirmation through a re-entrant input round on `mode: 'send' \| 'schedule'` before any campaign mutation. | `audienceId`, `subject`, `fromName`, `replyTo`, `content` (html \| plaintext \| templateId+templateSections \| localTemplate), `segmentId?`, `mode` (`draft`\|`test`\|`send`\|`schedule`), `scheduleTime?`, `testEmails?`, `cleanupOnError?` (default `true`) | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
 | `mailchimp_replicate_campaign` | Duplicate an existing campaign, optionally override subject/content/recipients, then send or leave as draft. Same re-entrant confirmation + cleanup semantics as `send_campaign`. | `sourceCampaignId`, `subjectOverride?`, `fromNameOverride?`, `contentOverride?`, `audienceOverride?`, `segmentOverride?`, `mode`, `scheduleTime?`, `testEmails?`, `cleanupOnError?` | `destructiveHint: true` (when mode=send/schedule), `openWorldHint: true` |
-| `mailchimp_upsert_subscriber` | Add or update a subscriber with status, merge fields, tags, and optional note in a single idempotent call. Uses PUT /members/{hash} + tag sync. `status: 'pending'` triggers Mailchimp's double-opt-in flow (user must click the confirmation email) — use `'subscribed'` for immediate opt-in. | `audienceId`, `email`, `status` (`subscribed`\|`unsubscribed`\|`cleaned`\|`pending`\|`transactional`), `mergeFields?`, `tags?`, `note?`, `vip?`, `language?` | `idempotentHint: true` |
-| `mailchimp_import_subscribers` | Batch add/update subscribers via POST /lists/{id}, returns per-row succeeded/failed with reasons. **Status defaults to `pending`** (double-opt-in) to prevent accidental mass-sends; set `status: 'subscribed'` explicitly to import as already-opted-in. Capped at 500 per call. | `audienceId`, `subscribers[]` (≤500), `status?` (default `'pending'`), `updateExisting?`, `skipMergeValidation?` | `openWorldHint: true` |
-| `mailchimp_find_subscriber` | Search for a subscriber by email across one or all audiences. Wraps `/search-members` and enriches with member detail + tags + last activity. | `email`, `audienceId?` | `readOnlyHint: true` |
+| `mailchimp_upsert_subscriber` | Add or update a subscriber with status, merge fields, tags, and optional note. Reads first, then PUT for new members or PATCH for existing members. New/resumed subscribed status requires bound confirmation before any write; pending uses double-opt-in without an extra round. | `audienceId`, `email`, `status` (`subscribed`\|`unsubscribed`\|`cleaned`\|`pending`\|`transactional`), `mergeFields?`, `tags?`, `preserveTags?`, `note?`, `vip?`, `language?`, `updateExistingStatus?` | `idempotentHint: true` |
+| `mailchimp_import_subscribers` | Batch add/update via POST /lists/{id}, returning per-row results. Defaults to pending; any valid effective subscribed row requires one confirmation before batch writes. Incomplete addresses become row failures. Capped at 500 per call. | `audienceId`, `subscribers[]` (≤500), `status?` (default `'pending'`), `updateExisting?`, `skipMergeValidation?`, `skipDuplicateCheck?`, `syncTags?` | `openWorldHint: true` |
+| `mailchimp_find_subscriber` | Search by address or free-form fragment across one or all audiences. Wraps `/search-members` and enriches with member details and optional tags. | `email`, `audienceId?`, `includeTags?` | `readOnlyHint: true` |
 | `mailchimp_campaign_report` | Aggregated post-send analytics for one campaign: headline stats, top clicked links, open timeline, top locations, unsubscribes, abuse reports. | `campaignId`, `includeTopN?` (default 10) | `readOnlyHint: true` |
 | `mailchimp_audience_overview` | Audience health digest: info, stats, last 12 months of growth history, top email clients, merge-field schema, recent activity. | `audienceId` | `readOnlyHint: true` |
 
@@ -230,19 +230,21 @@ GET    /campaigns/{newId}                        → post-action state
 ```
 Same `cleanupOnError` + re-entrant confirmation semantics as `send_campaign`. Common agent pattern: "send a new version of campaign X with an updated subject line and a fresh intro paragraph."
 
-**`mailchimp_upsert_subscriber`** (2–3 calls):
+**`mailchimp_upsert_subscriber`** (1–5 calls per round):
 ```
-PUT    /lists/{id}/members/{hash}            → idempotent upsert with merge/status
+GET    /lists/{id}/members/{hash}            → read existing status, genuine 404 selects create
+PUT    /lists/{id}/members/{hash}            → create (otherwise PATCH for changed fields)
+GET    /lists/{id}/members/{hash}/tags       → (existing member with tags provided) read active tags
 POST   /lists/{id}/members/{hash}/tags       → (if tags provided) sync tags
 POST   /lists/{id}/members/{hash}/notes      → (if note provided) attach note
 ```
-Uses PUT to avoid the "already subscribed" race. `status_if_new` preserves existing status when updating. Tags are synced — provided tag set becomes the set (agents pass the full desired state, not deltas, to keep the tool declarative). `status: 'pending'` triggers double-opt-in — documented in param description to prevent the common agent misreading.
+Upsert reads the member first, uses PUT only for a genuine member 404, and otherwise uses PATCH (skipping merge validation only when merge fields are untouched). Other read errors propagate. `updateExistingStatus: false` preserves existing status. New or resumed `subscribed` status requests bound confirmation before any write; already-subscribed updates omit redundant status to avoid reversing a concurrent unsubscribe. Tags are synced declaratively and notes are included in the consent binding. `pending` retains Mailchimp's double-opt-in flow without an extra confirmation round.
 
 **`mailchimp_import_subscribers`** (1 call, batch):
 ```
 POST   /lists/{id}                           → batch with members[] array, status defaults to 'pending'
 ```
-Wraps the native batch subscribe. Returns per-row `total_created`, `total_updated`, `error_count` plus per-error `email_address`, `error`, `error_code`. **Status defaults to `'pending'`** — callers must explicitly pass `status: 'subscribed'` to import as already-opted-in. Caps input at 500 per call (Mailchimp hard limit).
+Wraps native batch subscribe. Incomplete addresses become local `failed[]` entries while valid rows retain upstream partial results; all-invalid input makes no request. Status defaults to `pending`, with per-row overrides. Any valid effective `subscribed` row prompts once for the complete resolved batch and options, avoiding per-row status reads. Decline/cancel writes nothing for the whole request. Successful `pending` results await double-opt-in; neither failed rows nor other statuses imply an email. Caps input at 500 per call.
 
 **`mailchimp_find_subscriber`** (2–N calls):
 ```
@@ -352,7 +354,11 @@ z.object({
 
 **Re-entrant confirmation for sends.** `mailchimp_send_campaign` and `mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'` request input before any campaign mutation — "Send campaign X to N recipients?" — then inspect `ctx.inputs` on re-entry. Decline or cancel downgrades to draft. The framework serves the round trip on both current clients and legacy clients through its compatibility shim.
 
-**`import_subscribers` defaults to pending (double-opt-in).** Agents routinely pass lists of emails without thinking through the consent chain. Defaulting to `pending` forces Mailchimp's double-opt-in flow — each subscriber confirms via email before being added — and requires an explicit `status: 'subscribed'` for the "I already have consent for these" path.
+**Subscription consent uses the campaign record primitive.** Ten-minute single-use server-held approval binds caller, operation, audience, target and complete resolved writes. Upsert reuses its existing read; primitive `update` adds a status read only when requesting `subscribed`. Imports confirm any valid effective subscribed row without per-row lookups. Reentry always redeems approval, even after an earlier accepted write changed upstream status. Pending/double-opt-in requires no extra round. A decline/cancel terminates all subscription writes, while campaign decline still creates a draft.
+
+**Address validation is structural.** Trimmed input needs an `@` with nonempty local and domain parts. Mailchimp owns broader syntax validation; schemas retain string inputs without email format narrowing. `mailchimp_find_subscriber` remains free-form fuzzy search.
+
+**Campaign content is projected locally.** `get-content` supports `html`, `plainText`, `archiveHtml`, and default `all`. Projection makes the same single upstream request and preserves exact bytes and sparse omission; `set-content` is unchanged.
 
 **`mailchimp_reports` uses `operation` + `dimension`.** The report slice endpoints all return rows-per-dimension with the same shape. `operation: 'list' \| 'get' \| 'slice'` with a `dimension` discriminator cuts the enum from 13 values down to 3 operations + a discriminator.
 

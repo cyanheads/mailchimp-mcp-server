@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.3.12-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.2-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.3.12-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -95,6 +95,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_subscribers` <sub>tool</sub>
 
 - `audienceId` on every call and `email` on every operation except `list` (filterable by `status`); operations: `list`, `get`, `update`, `archive`, `list-tags`, `set-tags`, `list-notes` / `add-note` / `update-note` / `delete-note` (by `noteId`), and `list-activity` / `list-events` / `list-goals`
+- Address-based operations trim the address and reject missing local/domain parts before calling Mailchimp; omitted or empty `list` email remains unfiltered. `update` to `subscribed` confirms resumed subscriptions before any write; already-subscribed members need no new confirmation and their status is not rewritten.
 - `set-tags` is declarative: `tags` becomes the full active set and every other tag is removed unless named in `preserveTags`. Mailchimp stores static-segment membership as a tag, so an unguarded sync drops it. Returns `tagsAdded`, `tagsRemoved`, and `tagsActive`
 
 ---
@@ -103,13 +104,13 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `audienceId`, `email`, and `status` required; optional `mergeFields`, `tags` + `preserveTags` (same declarative sync as `set-tags`), `note`, `vip`, `language`; `updateExistingStatus: false` applies `status` to new records only
 - Returns `isNew`, the resulting `status`, `tagsAdded` / `tagsRemoved` / `tagsFinal`, `noteAttached`, and `webUrl`
-- `status: "pending"` sends Mailchimp's double opt-in email; `"subscribed"` needs documented consent
+- `status: "pending"` uses Mailchimp's double opt-in flow. New or resumed `subscribed` status requires a confirmation of documented consent before any write, including tags and notes. Decline/cancel writes nothing. Already-subscribed updates and `updateExistingStatus: false` preserve existing status without new confirmation.
 
 ---
 
 ### `mailchimp_find_subscriber` <sub>tool</sub>
 
-- `email`, scoped to one `audienceId` or, when omitted, every audience on the account (echoed as `searchedAcross`)
+- `email` accepts an address or free-form search fragment, including a fragment without `@`, scoped to one `audienceId` or, when omitted, every audience on the account (echoed as `searchedAcross`)
 - Returns `exactMatches` and `fuzzyMatches` with merge fields and stats; `includeTags` (default `true`) adds each match's tags at one extra call per match
 
 ---
@@ -117,7 +118,8 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_import_subscribers` <sub>tool</sub>
 
 - `audienceId` and 1–500 `subscribers` rows per call; `status` defaults to `pending` (double opt-in) and a per-row `status` overrides it; `updateExisting` defaults to `false`, so existing records are skipped
-- Returns `totalCreated`, `totalUpdated`, `errorCount`, and per-row `succeeded` and `failed` entries, failures carrying Mailchimp's `errorCode`
+- Any valid effective `subscribed` row requires one confirmation before the whole batch writes; decline/cancel writes nothing. Pending-only imports require no new confirmation. Approval is single-use and bound to the caller, audience, resolved rows, and write options.
+- Returns `totalCreated`, `totalUpdated`, `errorCount`, and per-row `succeeded` and `failed` entries. Incomplete addresses return `invalid_email` failures; remaining valid rows preserve Mailchimp's per-row errors. An all-invalid batch makes no upstream request. Only successful rows returned as `pending` await double opt-in.
 
 ---
 
@@ -140,6 +142,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - Operations: `list` (filter by `status`, `listId`, `sinceSendTime` / `beforeSendTime`), `get`, `create` (`type` of `regular` / `plaintext` / `rss`, plus `recipients` and `settings`), `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss`; all but `list` and `create` take `campaignId`
 - `set-content` accepts `html`, `plainText`, `templateId` + `templateSections`, `archiveContent`, `url`, or `localTemplate` (exclusive with `html` and `templateId`); `get-checklist` returns `isReady` and typed items
+- `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`). A single variant returns only that populated representation and preview; absent or empty bodies are omitted. Content bytes, including footer/legal markup, are preserved.
 - No send, test, schedule, or delete here; dispatch goes through `mailchimp_send_campaign` or `mailchimp_replicate_campaign`
 
 ---
@@ -259,7 +262,7 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 Mailchimp-specific:
 
 - Marketing API v3 client that derives the API host and data center from the key's `-<dc>` suffix, with retries, a process-wide concurrency limit (`MAILCHIMP_CONCURRENCY_LIMIT`), and a cooldown after a 429
-- Send gates: campaign workflows default to `draft`, `send` / `schedule` need `confirmSend: true` plus a confirmation prompt, and bulk imports default to `pending`
+- Send gates: campaign workflows default to `draft`, `send` / `schedule` need `confirmSend: true` plus a confirmation prompt. New/resumed single subscriptions and imports with valid effective `subscribed` rows require single-use confirmation; bulk imports default to `pending` without that extra round.
 - No irreversible deletes: removing audiences, merge fields, or campaigns, and permanently deleting subscribers, stay in the Mailchimp UI; `archive` is the strongest subscriber removal
 - Local authoring: `@assets/<path>` files upload and rewrite at send time, and `.eta` templates render locally, which covers free plans where the Templates API is read-only
 - List operations page with `count` (max 1000) and `offset`
@@ -382,7 +385,7 @@ cp .env.example .env
 | `MAILCHIMP_TEMPLATES_DIR` | Absolute path to a local templates directory. Enables `mailchimp_local_templates` and `content.localTemplate` on campaign tools. | none |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
-| `MCP_SESSION_MODE` | Explicitly `stateful` for campaign confirmation. The framework schema default, `auto`, resolves to stateful. `stateless` refuses HTTP startup; stdio is unaffected. | `stateful` |
+| `MCP_SESSION_MODE` | Explicitly `stateful` for campaign and subscription confirmation. The framework schema default, `auto`, resolves to stateful. `stateless` refuses HTTP startup; stdio is unaffected. | `stateful` |
 | `MCP_REQUEST_STATE_KEY` | Optional sealing key of at least 32 bytes. Consent records remain single-use and process-bound; a restart or a retry reaching another instance requires fresh confirmation. | none |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.). | `info` |

@@ -2,9 +2,9 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.3.12
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.14`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` `^2.2.0` (resolved 2.3.1)
+**MCP SDK:** `@modelcontextprotocol/server` `^2.3.1` (resolved 2.3.1)
 **Zod:** `^4.6.5`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
 
@@ -145,12 +145,14 @@ Handlers receive a unified `ctx` object. Used in this server:
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. Reaches Pino and client `notifications/message`; treat it as client-visible. |
-| `ctx.requestInput` | Always-present control-flow helper used by `mailchimp_send_campaign` / `mailchimp_replicate_campaign` to request confirmation before any campaign mutation. The handler returns through it, then restarts on the next round. |
+| `ctx.requestInput` | Always-present control-flow helper for campaign dispatch and new/resumed subscription confirmation before any request writes. The handler returns through it, then restarts on the next round. |
 | `ctx.inputs` | Reads and validates re-entry responses. Use `.view(key)` to distinguish accept/decline/cancel/missing and `.accepted(key, schema)` to validate accepted content. |
 | `ctx.signal` | Forwarded to the `fetch` call inside `mailchimp-service.ts` so cancellation propagates upstream. |
 | `ctx.requestId` / `ctx.traceId` | Framework-generated correlation IDs in the request's log records; errors return `data.requestId`. |
 
 **Consent:** `ctx.state` holds ten-minute single-use records bound to the operation, caller, target, resolved content, and issuing process. Redeem before mutation; an unknown, changed, expired, replayed, or foreign-instance record asks again. Local redemption excludes concurrent use; another process must re-prompt because storage has no atomic take. Only the random ID crosses rounds; optionally set `MCP_REQUEST_STATE_KEY` to seal it. Restarting invalidates outstanding confirmations.
+
+**Subscriptions:** `confirmSubscription` shares the consent-record primitive with campaign dispatch. Upsert and primitive update confirm new/resumed `subscribed` status before any writes; already-subscribed first calls omit redundant status. Import confirms once for any valid effective subscribed row without per-row reads. Decline/cancel writes nothing. Reentry must redeem even after upstream status becomes subscribed, so replay cannot repeat notes/tags. Pending/double-opt-in and status-preserving upserts need no extra round. Member creation follows only a typed upstream member 404; other errors and cancellation propagate. Address checks require nonempty parts around `@` after trim; find accepts free-form fragments. `get-content` projects its selected variant locally while preserving bytes and omitted empty bodies.
 
 ---
 
@@ -343,9 +345,9 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. MCPB is stdio-only — HTTP deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
+`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. After packing, `scripts/clean-mcpb.ts` prunes dev dependencies and strips dependency-shipped agent docs and platform-specific native bindings. MCPB is stdio-only — HTTP deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
 
-**Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match.
+**Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"`, and optional string options carry `"default": ""`.
 
 **CI is one file.** `.github/workflows/codeql.yml` is template-identical and the only GitHub Actions workflow. CodeQL default setup stays off; verification and release gates run locally.
 
