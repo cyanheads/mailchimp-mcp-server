@@ -10,7 +10,11 @@ import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
 
 const InputSchema = z.object({
-  email: z.string().describe('Email address to search for.'),
+  email: z
+    .string()
+    .describe(
+      'Email address or free-form search fragment (including a local-part fragment without @).',
+    ),
   audienceId: z
     .string()
     .optional()
@@ -106,7 +110,7 @@ function summarize(s: Subscriber, tags: string[] | undefined): z.infer<typeof Ma
 
 export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
   description:
-    'Locate a subscriber by email across one audience (when `audienceId` is provided) or all audiences on the account. Returns exact and fuzzy matches from Mailchimp search, enriched with merge fields, stats, and active tags. Most free accounts have a single audience, so this is usually a fast one-call lookup.',
+    'Locate a subscriber by email address or free-form search fragment across one audience (when `audienceId` is provided) or all audiences on the account. Fragments without @ are accepted. Returns exact and fuzzy matches from Mailchimp search, enriched with merge fields, stats, and active tags. Most free accounts have a single audience, so this is usually a fast one-call lookup.',
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,

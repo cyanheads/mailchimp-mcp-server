@@ -134,7 +134,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '2. **See what audiences exist.** `mailchimp_audiences` with `operation: list`. Free plan allows 1 audience.',
           '3. **If no audience exists**, create one with `mailchimp_audiences` `operation: create`. Required fields: name, contact.{company,address1,city,state,zip,country}, permissionReminder, campaignDefaults.{fromName,fromEmail,language}.',
           '4. **Review the audience schema.** `mailchimp_merge_fields` `operation: list` shows which subscriber attributes you can personalize on.',
-          '5. **Add your first subscribers.** `mailchimp_upsert_subscriber` for one email at a time, or `mailchimp_import_subscribers` for a batch. Status defaults to `pending` for double-opt-in — change to `subscribed` only if you have explicit consent.',
+          '5. **Add your first subscribers.** `mailchimp_upsert_subscriber` for one email at a time (status required), or `mailchimp_import_subscribers` for a batch (status defaults to `pending`). Use `pending` for double-opt-in. New or resumed `subscribed` status requires a confirmation round for documented consent before any writes; subscribed imports prompt once for the batch.',
           '6. **Snapshot the audience before sending.** `mailchimp_audience_overview` returns stats + growth + email clients + merge-field schema in one call.',
           '7. **Send your first campaign.** `mailchimp_send_campaign` with `mode: draft` or `mode: test` before doing `mode: send`.',
         ].join('\n');
@@ -447,7 +447,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
               '',
               '**No matches** across search-members. They are not currently on any audience on this account.',
               '',
-              '1. **If they should be here:** call `mailchimp_upsert_subscriber` to create them (status `pending` for double-opt-in, `subscribed` for immediate opt-in).',
+              '1. **If they should be here:** call `mailchimp_upsert_subscriber` to create them (`pending` for double-opt-in; `subscribed` requires a confirmation of documented consent before writes).',
               '2. **If they were archived:** archived subscribers are not returned by search. Re-subscribing via `mailchimp_upsert_subscriber` will resurrect the record.',
               "3. **If permanently deleted:** Mailchimp blocks re-adding GDPR-deleted emails. You'd need to use a different address.",
             ].join('\n'),

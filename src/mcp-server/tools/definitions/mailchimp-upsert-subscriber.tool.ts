@@ -7,17 +7,19 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import {
   getMailchimpService,
   mailchimpMemberHash,
 } from '@/services/mailchimp/mailchimp-service.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
+import { requireSubscriberAddress } from '../shared/subscriber-address.js';
+import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
 const StatusSchema = z
   .enum(['subscribed', 'unsubscribed', 'cleaned', 'pending', 'transactional'])
   .describe(
-    "Subscriber status. `subscribed` = active opt-in. `pending` = triggers Mailchimp's double-opt-in flow (the user must click the confirmation email before they go active). `unsubscribed`/`cleaned`/`transactional` are applied as-is.",
+    "Subscriber status. `subscribed` enables marketing delivery and requires confirmation for new or resumed subscriptions. `pending` uses Mailchimp's double-opt-in flow without an additional confirmation round. `unsubscribed`/`cleaned`/`transactional` are applied as-is.",
   );
 
 const InputSchema = z.object({
@@ -70,11 +72,24 @@ type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber', {
   description:
-    "Add or update a subscriber in one idempotent call. Skips merge-field revalidation on updates that don't touch merge fields, so a stored malformed value can't block other writes. Tags are synced declaratively — pass the desired active set and the tool computes the add/remove delta. **Important:** Mailchimp stores static-segment membership as a tag, so a declarative sync will remove the subscriber from any named segment not listed in `tags`; use `preserveTags` to protect them. Use `status: 'pending'` to trigger Mailchimp's double-opt-in email; `'subscribed'` for immediate opt-in (make sure you have consent).",
+    "Add or update a subscriber in one idempotent call. Skips merge-field revalidation on updates that don't touch merge fields, so a stored malformed value can't block other writes. Tags are synced declaratively — pass the desired active set and the tool computes the add/remove delta. **Important:** Mailchimp stores static-segment membership as a tag, so a declarative sync will remove the subscriber from any named segment not listed in `tags`; use `preserveTags` to protect them. New or resumed `subscribed` status requires a confirmation round before any write, including tags and notes; decline/cancel writes nothing. Already-subscribed updates and status-preserving upserts skip new confirmation. Use `pending` for Mailchimp's double-opt-in flow.",
   annotations: { idempotentHint: true, openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
+    {
+      reason: 'invalid_email',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'The member address lacks nonempty local or domain parts.',
+      recovery: 'Provide an address with nonempty local and domain parts separated by @.',
+    },
+    {
+      reason: 'subscription_cancelled',
+      code: JsonRpcErrorCode.InvalidRequest,
+      when: 'The user declined or cancelled subscription confirmation.',
+      recovery:
+        'Invoke the request again and confirm documented consent to enable marketing delivery.',
+    },
     {
       reason: 'mailchimp_unauthorized',
       thrownBy: 'service',
@@ -119,15 +134,39 @@ export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber',
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
-    const hash = mailchimpMemberHash(input.email);
+    const email = requireSubscriberAddress(input.email);
+    const hash = mailchimpMemberHash(email);
 
-    const before = await svc.subscribers.get(ctx, input.audienceId, hash).catch(() => null);
+    const before = await svc.subscribers
+      .get(ctx, input.audienceId, hash)
+      .catch((error: unknown) => {
+        if (
+          error instanceof McpError &&
+          error.code === JsonRpcErrorCode.NotFound &&
+          error.data?.status === 404 &&
+          error.data?.reason === 'mailchimp_not_found'
+        )
+          return null;
+        throw error;
+      });
     const isNew = before === null;
+    if (
+      isSubscriptionReentry(ctx) ||
+      (input.status === 'subscribed' &&
+        (isNew || (input.updateExistingStatus && before.status !== 'subscribed')))
+    ) {
+      await confirmSubscription(
+        ctx,
+        'subscriber-upsert',
+        JSON.stringify([input.audienceId, hash]),
+        { ...input, email },
+      );
+    }
 
     let subscriber: Subscriber;
     if (isNew) {
       const createBody: Parameters<typeof svc.subscribers.upsert>[3] = {
-        email_address: input.email,
+        email_address: email,
         status_if_new: input.status,
         status: input.status,
       };
@@ -137,7 +176,11 @@ export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber',
       subscriber = await svc.subscribers.upsert(ctx, input.audienceId, hash, createBody);
     } else {
       const updateBody: Partial<Subscriber> = {};
-      if (input.updateExistingStatus) updateBody.status = input.status;
+      if (
+        input.updateExistingStatus &&
+        !(input.status === 'subscribed' && before.status === 'subscribed')
+      )
+        updateBody.status = input.status;
       if (input.mergeFields) updateBody.merge_fields = input.mergeFields;
       if (typeof input.vip === 'boolean') updateBody.vip = input.vip;
       if (input.language) updateBody.language = input.language;

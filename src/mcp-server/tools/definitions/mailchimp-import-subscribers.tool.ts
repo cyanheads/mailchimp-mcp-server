@@ -1,21 +1,23 @@
 /**
  * @fileoverview `mailchimp_import_subscribers` — batch add/update via
  * POST /lists/{id}. Status defaults to `pending` (double-opt-in) to prevent
- * accidental mass-sends. Caller must explicitly pass `status: 'subscribed'`
- * for the "I already have consent" path.
+ * accidental mass-sends. Effective subscribed rows require one bound
+ * confirmation before the entire batch writes.
  * @module mcp-server/tools/definitions/mailchimp-import-subscribers.tool
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { hasSubscriberAddress } from '../shared/subscriber-address.js';
+import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
 const MAX_ROWS = 500;
 
 const StatusSchema = z
   .enum(['subscribed', 'pending', 'unsubscribed', 'cleaned', 'transactional'])
   .describe(
-    "Status applied to every row. Defaults to `pending` — Mailchimp will email each recipient for double-opt-in confirmation. Pass `'subscribed'` ONLY when you have a clean record of consent.",
+    "Default row status, overridden by each row's status when supplied. `pending` uses Mailchimp's double-opt-in flow. Any valid effective `subscribed` row requires one confirmation of documented consent before the batch writes.",
   );
 
 const SubscriberRowSchema = z
@@ -89,22 +91,32 @@ const OutputSchema = z.object({
       z
         .object({
           email: z.string().describe('Email that failed.'),
-          error: z.string().describe('Human-readable error message from Mailchimp.'),
-          errorCode: z.string().optional().describe('Machine-readable Mailchimp error code.'),
+          error: z.string().describe('Human-readable local validation or Mailchimp error message.'),
+          errorCode: z
+            .string()
+            .optional()
+            .describe('Machine-readable local or Mailchimp error code.'),
         })
         .describe('One per-row failure.'),
     )
-    .describe('Per-row failures with Mailchimp error code + message.'),
+    .describe('Per-row failures with local validation or Mailchimp error code and message.'),
 });
 
 type Output = z.infer<typeof OutputSchema>;
 
 export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers', {
-  description: `Batch add (and optionally update) subscribers in one call. Capped at ${MAX_ROWS} rows per request — chunk larger imports client-side. **Status defaults to \`pending\`** (Mailchimp's double-opt-in flow) to prevent accidental mass-sends; set \`status: 'subscribed'\` explicitly only when you have documented consent. Returns per-row succeeded/failed with error reasons.`,
+  description: `Batch add (and optionally update) subscribers in one call. Capped at ${MAX_ROWS} rows per request — chunk larger imports client-side. **Status defaults to \`pending\`** (Mailchimp's double-opt-in flow). Any valid row whose effective status is \`subscribed\`, including a per-row override, requires one confirmation of documented consent before any batch write; decline/cancel writes nothing. Incomplete addresses return in failed[] while valid rows proceed. Returns per-row succeeded/failed with error reasons.`,
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
+    {
+      reason: 'subscription_cancelled',
+      code: JsonRpcErrorCode.InvalidRequest,
+      when: 'The user declined or cancelled subscription confirmation.',
+      recovery:
+        'Invoke the request again and confirm documented consent to enable marketing delivery.',
+    },
     {
       reason: 'mailchimp_unauthorized',
       thrownBy: 'service',
@@ -149,22 +161,44 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
 
   async handler(input, ctx): Promise<Output> {
     const svc = getMailchimpService();
-    const rows = input.subscribers.map((row) => ({
-      email_address: row.email,
-      status: row.status ?? input.status,
-      ...(row.mergeFields ? { merge_fields: row.mergeFields } : {}),
-      ...(row.tags ? { tags: row.tags } : {}),
-      ...(row.language ? { language: row.language } : {}),
-      ...(typeof row.vip === 'boolean' ? { vip: row.vip } : {}),
-    }));
+    const invalid: Output['failed'] = input.subscribers
+      .filter((row) => !hasSubscriberAddress(row.email))
+      .map((row) => ({
+        email: row.email,
+        error: 'Email must contain @ with nonempty local and domain parts.',
+        errorCode: 'invalid_email',
+      }));
+    const rows = input.subscribers
+      .filter((row) => hasSubscriberAddress(row.email))
+      .map((row) => ({
+        email_address: row.email.trim(),
+        status: row.status ?? input.status,
+        ...(row.mergeFields ? { merge_fields: row.mergeFields } : {}),
+        ...(row.tags ? { tags: row.tags } : {}),
+        ...(row.language ? { language: row.language } : {}),
+        ...(typeof row.vip === 'boolean' ? { vip: row.vip } : {}),
+      }));
 
-    const resp = await svc.subscribers.batch(ctx, input.audienceId, {
+    const body = {
       members: rows,
       sync_tags: input.syncTags,
       update_existing: input.updateExisting,
       skip_merge_validation: input.skipMergeValidation,
       skip_duplicate_check: input.skipDuplicateCheck,
-    });
+    };
+    if (isSubscriptionReentry(ctx) || rows.some((row) => row.status === 'subscribed'))
+      await confirmSubscription(ctx, 'subscriber-import', input.audienceId, { body, invalid });
+    const resp =
+      rows.length > 0
+        ? await svc.subscribers.batch(ctx, input.audienceId, body)
+        : {
+            new_members: [],
+            updated_members: [],
+            errors: [],
+            total_created: 0,
+            total_updated: 0,
+            error_count: 0,
+          };
 
     ctx.log.info('import_subscribers complete', {
       audienceId: input.audienceId,
@@ -188,17 +222,20 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
       })),
     ];
 
-    const failed = resp.errors.map((e) => {
-      const entry: Output['failed'][number] = { email: e.email_address, error: e.error };
-      if (e.error_code) entry.errorCode = e.error_code;
-      return entry;
-    });
+    const failed = [
+      ...invalid,
+      ...resp.errors.map((e) => {
+        const entry: Output['failed'][number] = { email: e.email_address, error: e.error };
+        if (e.error_code) entry.errorCode = e.error_code;
+        return entry;
+      }),
+    ];
 
     return {
       audienceId: input.audienceId,
       totalCreated: resp.total_created,
       totalUpdated: resp.total_updated,
-      errorCount: resp.error_count,
+      errorCount: resp.error_count + invalid.length,
       statusApplied: input.status,
       succeeded,
       failed,
@@ -215,10 +252,10 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
       `**Updated:** ${result.totalUpdated}  `,
       `**Failed:** ${result.errorCount}  `,
     ];
-    if (result.statusApplied === 'pending') {
+    if (result.succeeded.some((row) => row.status === 'pending')) {
       lines.push(
         '',
-        "> Status is `pending` — every row will receive Mailchimp's double-opt-in email. None will be active until they confirm.",
+        '> Successful rows returned as `pending` require double-opt-in confirmation before becoming active. Failed rows and rows with other statuses are not pending subscriptions.',
       );
     }
     if (result.failed.length > 0) {

@@ -15,6 +15,8 @@ import {
 } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
+import { requireSubscriberAddress } from '../shared/subscriber-address.js';
+import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
 const OperationSchema = z
   .enum([
@@ -48,7 +50,9 @@ const InputSchema = z.object({
   status: z
     .enum(['subscribed', 'unsubscribed', 'cleaned', 'pending', 'transactional'])
     .optional()
-    .describe('Filter (for `list`) or new status (for `update`).'),
+    .describe(
+      'Filter (for `list`) or new status (for `update`). Resuming marketing delivery with `subscribed` requires confirmation; already-subscribed members keep their status without rewriting it.',
+    ),
   mergeFields: z
     .record(z.string(), z.unknown())
     .optional()
@@ -231,18 +235,26 @@ function summarize(s: Subscriber): z.infer<typeof SubscriberSummarySchema> {
   return out;
 }
 
-function requireEmail(email: string | undefined, op: string): string {
-  if (!email) throw validationError(`'email' is required for operation '${op}'.`);
-  return email;
-}
-
 export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   description:
-    "Manage subscribers (Mailchimp 'list members') — CRUD except permanent-delete, plus tags/notes/activity. Use `mailchimp_upsert_subscriber` to add a new subscriber (that tool handles tags and notes in one idempotent call). `archive` is the strongest removal available; it takes the subscriber out of the active audience but preserves the record, so they can resubscribe. GDPR-forget (`delete-permanent`) is NOT exposed — do it in the Mailchimp UI.",
+    "Manage subscribers (Mailchimp 'list members') — CRUD except permanent-delete, plus tags/notes/activity. `update` to `subscribed` requests confirmation before writes when resuming marketing delivery; decline/cancel writes nothing. Already-subscribed members need no new confirmation and their subscribed status is not rewritten. Use `mailchimp_upsert_subscriber` to add a new subscriber (that tool handles tags and notes in one idempotent call). `archive` is the strongest removal available; it takes the subscriber out of the active audience but preserves the record, so they can resubscribe. GDPR-forget (`delete-permanent`) is NOT exposed — do it in the Mailchimp UI.",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   errors: [
+    {
+      reason: 'invalid_email',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'The member address lacks nonempty local or domain parts.',
+      recovery: 'Provide an address with nonempty local and domain parts separated by @.',
+    },
+    {
+      reason: 'subscription_cancelled',
+      code: JsonRpcErrorCode.InvalidRequest,
+      when: 'The user declined or cancelled subscription confirmation.',
+      recovery:
+        'Invoke the request again and confirm documented consent to enable marketing delivery.',
+    },
     {
       reason: 'mailchimp_unauthorized',
       thrownBy: 'service',
@@ -297,7 +309,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
           offset: input.offset,
         };
         if (input.status) listOpts.status = input.status;
-        if (input.email) listOpts.email = input.email;
+        if (input.email) listOpts.email = requireSubscriberAddress(input.email);
         const { members, total_items } = await svc.subscribers.list(ctx, audienceId, listOpts);
         return {
           operation: 'list',
@@ -307,13 +319,13 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'get': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'get'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const sub = await svc.subscribers.get(ctx, audienceId, hash);
         return { operation: 'get', subscriber: summarize(sub) };
       }
 
       case 'update': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'update'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const body: Partial<Subscriber> = {};
         if (input.status) body.status = input.status;
         if (input.mergeFields) body.merge_fields = input.mergeFields;
@@ -324,6 +336,20 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
             "At least one of `status`, `mergeFields`, `language`, or `vip` must be provided for 'update'.",
           );
         }
+        if (input.status === 'subscribed' || isSubscriptionReentry(ctx)) {
+          const before = await svc.subscribers.get(ctx, audienceId, hash);
+          if (isSubscriptionReentry(ctx) || before.status !== 'subscribed') {
+            await confirmSubscription(
+              ctx,
+              'subscriber-update',
+              JSON.stringify([audienceId, hash]),
+              { ...input, email: requireSubscriberAddress(input.email) },
+            );
+          }
+          if (before.status === 'subscribed' && input.status === 'subscribed') delete body.status;
+          if (Object.keys(body).length === 0)
+            return { operation: 'update', subscriber: summarize(before) };
+        }
         // Mailchimp revalidates existing merge fields on every PATCH. Skip
         // that validation only when the caller isn't touching merge fields.
         const sub = await svc.subscribers.update(ctx, audienceId, hash, body, {
@@ -333,14 +359,14 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'archive': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'archive'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         await svc.subscribers.archive(ctx, audienceId, hash);
         ctx.log.info('subscriber archived', { email: input.email });
         return { operation: 'archive', archived: true };
       }
 
       case 'list-tags': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-tags'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { tags, total_items } = await svc.subscribers.listTags(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -362,7 +388,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
             "'tags' is required for 'set-tags' (pass an empty array to remove all).",
           );
         }
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'set-tags'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { tags: currentTags } = await svc.subscribers.listTags(ctx, audienceId, hash, {
           count: 1000,
         });
@@ -396,7 +422,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-notes': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-notes'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { notes, total_items } = await svc.subscribers.listNotes(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -416,7 +442,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'add-note': {
         if (!input.note) throw validationError("'note' is required for 'add-note'.");
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'add-note'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const note = await svc.subscribers.addNote(ctx, audienceId, hash, input.note);
         const out: NonNullable<Output['note']> = { id: note.id, note: note.note };
         if (note.created_at) out.createdAt = note.created_at;
@@ -427,7 +453,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         if (!input.note) throw validationError("'note' is required for 'update-note'.");
         if (input.noteId === undefined)
           throw validationError("'noteId' is required for 'update-note'.");
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'update-note'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const note = await svc.subscribers.updateNote(
           ctx,
           audienceId,
@@ -443,13 +469,13 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       case 'delete-note': {
         if (input.noteId === undefined)
           throw validationError("'noteId' is required for 'delete-note'.");
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'delete-note'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         await svc.subscribers.deleteNote(ctx, audienceId, hash, input.noteId);
         return { operation: 'delete-note', deleted: true };
       }
 
       case 'list-activity': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-activity'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { activity, total_items } = await svc.subscribers.listActivity(
           ctx,
           audienceId,
@@ -464,7 +490,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-events': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-events'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { events, total_items } = await svc.subscribers.listEvents(ctx, audienceId, hash, {
           count: input.count,
           offset: input.offset,
@@ -477,7 +503,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       }
 
       case 'list-goals': {
-        const hash = mailchimpMemberHash(requireEmail(input.email, 'list-goals'));
+        const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
         const { goals, total_items } = await svc.subscribers.listGoals(ctx, audienceId, hash);
         return {
           operation: 'list-goals',
