@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-10-10 23:42:36
+Generated on: 2026-10-13 14:24:49
 
 ```text
 mailchimp-mcp-server/
@@ -26,6 +26,7 @@ mailchimp-mcp-server/
 ├── assets/
 ├── changelog/
 │   ├── 0.3.x/
+│   ├── 0.4.x/
 │   └── template.md
 ├── docs/
 │   ├── reference/
@@ -182,7 +183,10 @@ mailchimp-mcp-server/
 │   │           ├── asset-rewrite.ts
 │   │           ├── campaign-content-snapshot.ts
 │   │           ├── campaign-dispatch-confirmation.ts
+│   │           ├── consent-record.ts
 │   │           ├── resolve-local-template.ts
+│   │           ├── subscriber-address.ts
+│   │           ├── subscription-confirmation.ts
 │   │           └── template-sections-doc.ts
 │   ├── services/
 │   │   ├── assets/
@@ -207,6 +211,8 @@ mailchimp-mcp-server/
 │   │   └── tools/
 │   │       └── shared/
 │   │           └── resolve-local-template.test.ts
+│   ├── packaging/
+│   │   └── cache-exclusion.test.ts
 │   ├── prompts/
 │   │   └── newsletter-from-source.test.ts
 │   ├── resources/
@@ -220,6 +226,7 @@ mailchimp-mcp-server/
 │   │   └── templates/
 │   │       └── template-service.test.ts
 │   └── tools/
+│       ├── campaign-content.test.ts
 │       ├── campaign-dispatch-confirmation.test.ts
 │       ├── campaign-dispatch-http.test.ts
 │       ├── input-coercion.test.ts
@@ -229,6 +236,7 @@ mailchimp-mcp-server/
 │       ├── mailchimp-local-templates.test.ts
 │       ├── mailchimp-playbook.test.ts
 │       ├── mailchimp-templates.test.ts
+│       ├── subscriber-safety.test.ts
 │       └── template-sections-doc.test.ts
 ├── .dockerignore
 ├── .env.example

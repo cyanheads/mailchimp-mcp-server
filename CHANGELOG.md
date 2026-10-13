@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-10-13 · ⚠️ Breaking · 🛡️ Security
+
+Bound confirmation for new and resumed subscriptions, with selectable campaign content.
+
 ## [0.3.12](changelog/0.3.x/0.3.12.md) — 2026-10-10 · 🛡️ Security
 
 Bind campaign dispatch to single-use consent and adopt mcp-ts-core 0.13.14.
