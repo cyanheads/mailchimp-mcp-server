@@ -1,4 +1,6 @@
 .env*
+.mailchimp-cache.json
+.mailchimp-cache.json.*.tmp
 .mcpregistry_*
 /.claude/
 /.agents/
