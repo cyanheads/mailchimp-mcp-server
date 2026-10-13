@@ -96,6 +96,12 @@ const ContentSchema = z.object({
 
 const InputSchema = z.object({
   operation: OperationSchema,
+  variant: z
+    .enum(['html', 'plainText', 'archiveHtml', 'all'])
+    .default('all')
+    .describe(
+      'Representation returned by `get-content`; `all` preserves every populated body. Ignored by other operations.',
+    ),
   campaignId: z
     .string()
     .optional()
@@ -242,7 +248,7 @@ function buildSettings(settings: z.infer<typeof SettingsSchema> | undefined) {
 
 export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   description:
-    'Campaign record management: list/get/create/update, replicate, content read/write, send-checklist, and RSS/resend controls. DELETE is intentionally not exposed — deleting a sent campaign destroys its historical reports; use `cancel-send` to abort an in-flight send, or delete via the Mailchimp UI if you truly need to. Use the `mailchimp_send_campaign` workflow tool to actually send a campaign (it chains create/content/checklist/send and requires explicit `confirmSend: true`).',
+    'Campaign record management: list/get/create/update, replicate, content read/write, get-checklist, and RSS/resend controls. DELETE is intentionally not exposed — deleting a sent campaign destroys its historical reports; use `cancel-send` to abort an in-flight send, or delete via the Mailchimp UI if you truly need to. Use the `mailchimp_send_campaign` workflow tool to actually send a campaign (it chains create/content/checklist/send and requires explicit `confirmSend: true`).',
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -364,9 +370,12 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
       case 'get-content': {
         const content = await svc.campaigns.getContent(ctx, requireCampaignId(input));
         const out: NonNullable<Output['content']> = {};
-        if (content.html) out.html = content.html;
-        if (content.plain_text) out.plainText = content.plain_text;
-        if (content.archive_html) out.archiveHtml = content.archive_html;
+        if (content.html && (input.variant === 'all' || input.variant === 'html'))
+          out.html = content.html;
+        if (content.plain_text && (input.variant === 'all' || input.variant === 'plainText'))
+          out.plainText = content.plain_text;
+        if (content.archive_html && (input.variant === 'all' || input.variant === 'archiveHtml'))
+          out.archiveHtml = content.archive_html;
         return { operation: 'get-content', content: out };
       }
 
