@@ -23,7 +23,7 @@
 
 ## Overview
 
-Mailchimp campaign management over the Mailchimp Marketing API v3. Draft, test, and send email campaigns, manage audiences and subscribers, and review post-send analytics from any MCP client, with optional local image and template directories for authoring. Runs as a stdio process or a local Streamable HTTP server.
+Mailchimp campaign management. Draft, test, and send email campaigns, manage audiences and subscribers, and review post-send analytics, with optional local image and template directories for authoring.
 
 ### Tools
 
@@ -95,8 +95,8 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_subscribers` <sub>tool</sub>
 
 - `audienceId` on every call and `email` on every operation except `list` (filterable by `status`); operations: `list`, `get`, `update`, `archive`, `list-tags`, `set-tags`, `list-notes` / `add-note` / `update-note` / `delete-note` (by `noteId`), and `list-activity` / `list-events` / `list-goals`
-- Address-based operations trim the address and reject missing local/domain parts before calling Mailchimp; omitted or empty `list` email remains unfiltered. `update` to `subscribed` confirms resumed subscriptions before any write; already-subscribed members need no new confirmation and their status is not rewritten.
-- `set-tags` is declarative: `tags` becomes the full active set and every other tag is removed unless named in `preserveTags`. Mailchimp stores static-segment membership as a tag, so an unguarded sync drops it. Returns `tagsAdded`, `tagsRemoved`, and `tagsActive`
+- Addresses are trimmed and rejected if the local or domain part is missing; an empty `list` email stays unfiltered. `update` to `subscribed` asks for confirmation when resuming a subscription; already-subscribed members are left as they are
+- `set-tags` is declarative: `tags` becomes the full active set and every other tag is removed unless named in `preserveTags` (static-segment membership is stored as a tag). Returns `tagsAdded`, `tagsRemoved`, and `tagsActive`
 
 ---
 
@@ -104,7 +104,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `audienceId`, `email`, and `status` required; optional `mergeFields`, `tags` + `preserveTags` (same declarative sync as `set-tags`), `note`, `vip`, `language`; `updateExistingStatus: false` applies `status` to new records only
 - Returns `isNew`, the resulting `status`, `tagsAdded` / `tagsRemoved` / `tagsFinal`, `noteAttached`, and `webUrl`
-- `status: "pending"` uses Mailchimp's double opt-in flow. New or resumed `subscribed` status requires a confirmation of documented consent before any write, including tags and notes. Decline/cancel writes nothing. Already-subscribed updates and `updateExistingStatus: false` preserve existing status without new confirmation.
+- `status: "pending"` uses Mailchimp's double opt-in flow. New or resumed `subscribed` status asks for confirmation of documented consent before anything is written; declining writes nothing. Already-subscribed updates and `updateExistingStatus: false` keep the existing status without asking
 
 ---
 
@@ -118,8 +118,8 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_import_subscribers` <sub>tool</sub>
 
 - `audienceId` and 1–500 `subscribers` rows per call; `status` defaults to `pending` (double opt-in) and a per-row `status` overrides it; `updateExisting` defaults to `false`, so existing records are skipped
-- Any valid effective `subscribed` row requires one confirmation before the whole batch writes; decline/cancel writes nothing. Pending-only imports require no new confirmation. Approval is single-use and bound to the caller, audience, resolved rows, and write options.
-- Returns `totalCreated`, `totalUpdated`, `errorCount`, and per-row `succeeded` and `failed` entries. Incomplete addresses return `invalid_email` failures; remaining valid rows preserve Mailchimp's per-row errors. An all-invalid batch makes no upstream request. Only successful rows returned as `pending` await double opt-in.
+- Any row that would be `subscribed` needs one confirmation before the whole batch writes; declining writes nothing. Pending-only imports need none
+- Returns `totalCreated`, `totalUpdated`, `errorCount`, and per-row `succeeded` and `failed` entries; incomplete addresses fail as `invalid_email`, and a batch with no valid rows makes no upstream request
 
 ---
 
@@ -142,7 +142,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - Operations: `list` (filter by `status`, `listId`, `sinceSendTime` / `beforeSendTime`), `get`, `create` (`type` of `regular` / `plaintext` / `rss`, plus `recipients` and `settings`), `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss`; all but `list` and `create` take `campaignId`
 - `set-content` accepts `html`, `plainText`, `templateId` + `templateSections`, `archiveContent`, `url`, or `localTemplate` (exclusive with `html` and `templateId`); `get-checklist` returns `isReady` and typed items
-- `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`). A single variant returns only that populated representation and preview; absent or empty bodies are omitted. Content bytes, including footer/legal markup, are preserved.
+- `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`); empty bodies are omitted
 - No send, test, schedule, or delete here; dispatch goes through `mailchimp_send_campaign` or `mailchimp_replicate_campaign`
 
 ---
@@ -151,8 +151,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `audienceId`, `subject`, `fromName`, `replyTo`, and `content` (at least one of `html`, `plainText`, `templateId`, `localTemplate`) required; `mode` is `draft` (default), `test` (needs `testEmails`, max 50), `send`, or `schedule` (needs `scheduleTime` at least 15 minutes out)
 - Returns `campaignId`, the effective `mode`, `status`, `recipientCount`, `webUrl`, and non-blocking `checklistWarnings`; blocking checklist errors throw `pre_send_checklist_failed` outside `draft`, and `cleanupOnError` (default `true`) deletes the draft after a mid-flow failure
-- `send` and `schedule` require `confirmSend: true`, then a confirmation prompt before any campaign is created; declining leaves a draft and sets `cancelledByUser`
-- Confirmation is single-use and bound to the caller, audience, mode, and resolved content. Changed content or a replay requests fresh confirmation; campaign creation and replication are never automatically retried after an ambiguous upstream failure.
+- `send` and `schedule` require `confirmSend: true`, then a single-use confirmation prompt before any campaign is created; declining leaves a draft and sets `cancelledByUser`. Changed content or a replay asks again, and creation is never retried after an ambiguous upstream failure
 
 ---
 
@@ -262,7 +261,7 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 Mailchimp-specific:
 
 - Marketing API v3 client that derives the API host and data center from the key's `-<dc>` suffix, with retries, a process-wide concurrency limit (`MAILCHIMP_CONCURRENCY_LIMIT`), and a cooldown after a 429
-- Send gates: campaign workflows default to `draft`, `send` / `schedule` need `confirmSend: true` plus a confirmation prompt. New/resumed single subscriptions and imports with valid effective `subscribed` rows require single-use confirmation; bulk imports default to `pending` without that extra round.
+- Send gates: campaigns default to `draft`, `send` / `schedule` need `confirmSend: true` plus a confirmation prompt, and new or resumed `subscribed` subscriptions need confirmation too; imports default to `pending`
 - No irreversible deletes: removing audiences, merge fields, or campaigns, and permanently deleting subscribers, stay in the Mailchimp UI; `archive` is the strongest subscriber removal
 - Local authoring: `@assets/<path>` files upload and rewrite at send time, and `.eta` templates render locally, which covers free plans where the Templates API is read-only
 - List operations page with `count` (max 1000) and `offset`
@@ -385,14 +384,14 @@ cp .env.example .env
 | `MAILCHIMP_TEMPLATES_DIR` | Absolute path to a local templates directory. Enables `mailchimp_local_templates` and `content.localTemplate` on campaign tools. | none |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
-| `MCP_SESSION_MODE` | Explicitly `stateful` for campaign and subscription confirmation. The framework schema default, `auto`, resolves to stateful. `stateless` refuses HTTP startup; stdio is unaffected. | `stateful` |
-| `MCP_REQUEST_STATE_KEY` | Optional sealing key of at least 32 bytes. Consent records remain single-use and process-bound; a restart or a retry reaching another instance requires fresh confirmation. | none |
+| `MCP_SESSION_MODE` | Session mode; confirmations need `stateful`, and `stateless` refuses HTTP startup (stdio is unaffected). | `stateful` |
+| `MCP_REQUEST_STATE_KEY` | Optional sealing key, at least 32 bytes. Confirmations are single-use and tied to one process, so a restart or another instance asks again. | none |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.). | `info` |
 | `LOGS_DIR` | Directory for log files (Node.js only). | `<app-root>/logs` |
 | `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Base URL for traces and metrics; appends `/v1/traces` and `/v1/metrics`. Signal-specific endpoint overrides are listed in `.env.example`. | none |
-| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | Opt-in OTLP log endpoint, used as-is. The base endpoint does not enable log export. | none |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Base URL for traces and metrics. | none |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | OTLP log endpoint; log export is off unless this is set. | none |
 | `LOG_TOOL_FAILURE_PAYLOADS` | Log failed-call arguments and results, redacted by key name and capped at `LOG_TOOL_FAILURE_PAYLOAD_MAX_BYTES` (default `16384`). Secrets inside free-form values remain visible. | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
