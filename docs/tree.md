@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-10-13 14:24:49
+Generated on: 2026-10-30 09:59:09
 
 ```text
 mailchimp-mcp-server/
@@ -27,6 +27,7 @@ mailchimp-mcp-server/
 ├── changelog/
 │   ├── 0.3.x/
 │   ├── 0.4.x/
+│   ├── 0.5.x/
 │   └── template.md
 ├── docs/
 │   ├── reference/
@@ -43,6 +44,8 @@ mailchimp-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -141,6 +144,9 @@ mailchimp-mcp-server/
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
+├── skills/
+│   └── mailchimp-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -184,7 +190,9 @@ mailchimp-mcp-server/
 │   │           ├── campaign-content-snapshot.ts
 │   │           ├── campaign-dispatch-confirmation.ts
 │   │           ├── consent-record.ts
+│   │           ├── list-enrichment.ts
 │   │           ├── resolve-local-template.ts
+│   │           ├── row-table.ts
 │   │           ├── subscriber-address.ts
 │   │           ├── subscription-confirmation.ts
 │   │           └── template-sections-doc.ts
@@ -216,6 +224,8 @@ mailchimp-mcp-server/
 │   ├── prompts/
 │   │   └── newsletter-from-source.test.ts
 │   ├── resources/
+│   ├── scripts/
+│   │   └── bundle-agent-docs.test.ts
 │   ├── services/
 │   │   ├── assets/
 │   │   │   ├── asset-service.test.ts
@@ -226,15 +236,25 @@ mailchimp-mcp-server/
 │   │   └── templates/
 │   │       └── template-service.test.ts
 │   └── tools/
+│       ├── shared/
+│       │   ├── list-enrichment.test.ts
+│       │   └── row-table.test.ts
 │       ├── campaign-content.test.ts
 │       ├── campaign-dispatch-confirmation.test.ts
 │       ├── campaign-dispatch-http.test.ts
 │       ├── input-coercion.test.ts
 │       ├── mailchimp-assets.test.ts
+│       ├── mailchimp-audiences.test.ts
 │       ├── mailchimp-campaign-report.test.ts
+│       ├── mailchimp-campaigns.test.ts
 │       ├── mailchimp-files.test.ts
 │       ├── mailchimp-local-templates.test.ts
+│       ├── mailchimp-merge-fields.test.ts
+│       ├── mailchimp-playbook-suggestions.test.ts
 │       ├── mailchimp-playbook.test.ts
+│       ├── mailchimp-reports.test.ts
+│       ├── mailchimp-segments.test.ts
+│       ├── mailchimp-subscribers.test.ts
 │       ├── mailchimp-templates.test.ts
 │       ├── subscriber-safety.test.ts
 │       └── template-sections-doc.test.ts
@@ -253,7 +273,9 @@ mailchimp-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json

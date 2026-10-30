@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-10-30 · ⚠️ Breaking
+
+mailchimp_playbook suggestions use { toolName, reason, args }, list reads echo their filters and explain empty pages, and the server publishes the mailchimp-guide agent skill.
+
 ## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-10-13 · ⚠️ Breaking · 🛡️ Security
 
 Bound confirmation for new and resumed subscriptions, with selectable campaign content.
