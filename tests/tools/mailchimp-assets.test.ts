@@ -10,7 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpAssetsTool } from '@/mcp-server/tools/definitions/mailchimp-assets.tool.js';
@@ -182,18 +182,51 @@ describe('mailchimpAssetsTool — operations', () => {
   });
 });
 
-describe('mailchimpAssetsTool — format()', () => {
-  it('list result with empty assets prompts to drop files in', () => {
-    const out = formatTool({
-      operation: 'list',
-      assetsDir: '/tmp/a',
-      assets: [],
-      cacheSize: 0,
-    });
-    const text = out[0]?.type === 'text' ? out[0].text : '';
-    expect(text).toContain('Drop image or document');
+describe('mailchimpAssetsTool — list notice (structuredContent + content[] trailer)', () => {
+  const EMPTY_NOTICE =
+    'No files in the assets directory. Drop image or document files into it and rerun `operation: list`.';
+
+  let emptyDir: string;
+
+  beforeEach(async () => {
+    emptyDir = await mkdtemp(join(tmpdir(), 'mailchimp-assets-empty-'));
+    const cache = new AssetCache(emptyDir);
+    await cache.load();
+    setAssetServiceForTesting(new AssetService(emptyDir, cache, 4));
   });
 
+  afterEach(async () => {
+    await rm(emptyDir, { recursive: true, force: true });
+    setAssetServiceForTesting(undefined);
+  });
+
+  it('empty assets dir: one notice, rendered once as a blockquote trailer; no filters', async () => {
+    const result = await runToolContract(mailchimpAssetsTool, { operation: 'list' });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      assetsDir: emptyDir,
+      assets: [],
+      cacheSize: 0,
+      notice: EMPTY_NOTICE,
+    });
+    expect(result.structuredContent).not.toHaveProperty('filters');
+    const [body, trailer] = result.content.map((b) => (b.type === 'text' ? b.text : ''));
+    expect(body).toBe(
+      `Operation: list\n_Assets dir: ${emptyDir}_\n\n# Local assets (0 files, cache: 0)`,
+    );
+    expect(trailer).toBe(`\n\n> ${EMPTY_NOTICE}`);
+    expect(result.content).toHaveLength(2);
+  });
+
+  it('non-empty assets dir: no notice', async () => {
+    await writeFile(join(emptyDir, 'hero.png'), Buffer.from('AAAA'), 'binary');
+    const result = await runToolContract(mailchimpAssetsTool, { operation: 'list' });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(result.content).toHaveLength(1);
+  });
+});
+
+describe('mailchimpAssetsTool — format()', () => {
   it('info result without cache shows "Not yet uploaded"', () => {
     const out = formatTool({
       operation: 'info',

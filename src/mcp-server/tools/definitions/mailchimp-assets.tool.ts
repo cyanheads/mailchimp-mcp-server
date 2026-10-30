@@ -15,6 +15,7 @@ import {
   JsonRpcErrorCode,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
+import { listEnrichment } from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getAssetService } from '@/services/assets/asset-service.js';
 
 const OperationSchema = z
@@ -102,6 +103,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: { notice: listEnrichment.notice },
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -151,6 +153,11 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
     switch (input.operation) {
       case 'list': {
         const entries = await svc.list();
+        if (entries.length === 0) {
+          ctx.enrich.notice(
+            'No files in the assets directory. Drop image or document files into it and rerun `operation: list`.',
+          );
+        }
         return {
           operation: 'list',
           assetsDir: svc.directory,
@@ -224,20 +231,16 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
         `# Local assets (${result.assets.length} file${result.assets.length === 1 ? '' : 's'}, cache: ${result.cacheSize ?? 0})`,
         '',
       );
-      if (result.assets.length === 0) {
-        lines.push('_Drop image or document files into the assets directory and rerun._');
-      } else {
-        for (const a of result.assets) {
-          const sizeLabel =
-            a.sizeInBytes < 1024
-              ? `${a.sizeInBytes} B`
-              : a.sizeInBytes < 1024 * 1024
-                ? `${(a.sizeInBytes / 1024).toFixed(1)} KB (${a.sizeInBytes} B)`
-                : `${(a.sizeInBytes / 1024 / 1024).toFixed(2)} MB (${a.sizeInBytes} B)`;
-          lines.push(
-            `- **${a.relPath}** — ${a.isImage ? 'image' : 'file'} · ${sizeLabel} · \`${a.ext}\``,
-          );
-        }
+      for (const a of result.assets) {
+        const sizeLabel =
+          a.sizeInBytes < 1024
+            ? `${a.sizeInBytes} B`
+            : a.sizeInBytes < 1024 * 1024
+              ? `${(a.sizeInBytes / 1024).toFixed(1)} KB (${a.sizeInBytes} B)`
+              : `${(a.sizeInBytes / 1024 / 1024).toFixed(2)} MB (${a.sizeInBytes} B)`;
+        lines.push(
+          `- **${a.relPath}** — ${a.isImage ? 'image' : 'file'} · ${sizeLabel} · \`${a.ext}\``,
+        );
       }
     }
 

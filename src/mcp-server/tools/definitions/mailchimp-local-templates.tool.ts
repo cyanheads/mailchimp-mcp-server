@@ -14,6 +14,7 @@ import {
   JsonRpcErrorCode,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
+import { listEnrichment } from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getTemplateService } from '@/services/templates/template-service.js';
 
 const OperationSchema = z
@@ -121,6 +122,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: { notice: listEnrichment.notice },
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -175,6 +177,11 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
     switch (input.operation) {
       case 'list': {
         const templates = await svc.list();
+        if (templates.length === 0) {
+          ctx.enrich.notice(
+            'No `.eta` files found. Create `<name>.eta` in the templates dir, optionally with YAML frontmatter for subject/preview defaults, or bootstrap one with `operation: seed-from-mailchimp`.',
+          );
+        }
         return {
           operation: 'list',
           templatesDir: svc.directory,
@@ -241,18 +248,12 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
 
     if (result.templates) {
       lines.push(`# Local templates (${result.templates.length})`, '');
-      if (result.templates.length === 0) {
+      for (const t of result.templates) {
+        const sizeLabel =
+          t.size < 1024 ? `${t.size} B` : `${(t.size / 1024).toFixed(1)} KB (${t.size} B)`;
         lines.push(
-          '_No `.eta` files found. Create `<name>.eta` in the templates dir, optionally with YAML frontmatter for subject/preview defaults._',
+          `- **${t.name}** — \`${t.relPath}\` · ${sizeLabel}${t.hasMeta ? ' · meta' : ''}`,
         );
-      } else {
-        for (const t of result.templates) {
-          const sizeLabel =
-            t.size < 1024 ? `${t.size} B` : `${(t.size / 1024).toFixed(1)} KB (${t.size} B)`;
-          lines.push(
-            `- **${t.name}** — \`${t.relPath}\` · ${sizeLabel}${t.hasMeta ? ' · meta' : ''}`,
-          );
-        }
       }
     }
 

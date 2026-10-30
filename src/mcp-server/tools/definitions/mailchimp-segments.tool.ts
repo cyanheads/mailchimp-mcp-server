@@ -7,6 +7,11 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Segment } from '@/services/mailchimp/types.js';
 
@@ -158,6 +163,8 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -208,11 +215,23 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
 
     switch (input.operation) {
       case 'list': {
-        const { segments, total_items } = await svc.segments.list(ctx, audienceId, {
+        const query = {
           count: input.count,
           offset: input.offset,
           ...(input.type ? { type: input.type } : {}),
-        });
+        };
+        const { segments, total_items } = await svc.segments.list(ctx, audienceId, query);
+        ctx.enrich({ filters: query });
+        if (segments.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'segments',
+              input.offset,
+              total_items,
+              'No segments matched. Drop the `type` filter to list every segment type; with no `type` set, this audience has no segments yet — create one with `operation: create`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           totalItems: total_items,
@@ -252,12 +271,24 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
       }
 
       case 'list-members': {
+        const query = { count: input.count, offset: input.offset };
         const { members, total_items } = await svc.segments.listMembers(
           ctx,
           audienceId,
           requireSegmentId(input),
-          { count: input.count, offset: input.offset },
+          query,
         );
+        ctx.enrich({ filters: query });
+        if (members.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'members',
+              input.offset,
+              total_items,
+              'This segment has no members. Add subscribers to a static segment with `operation: batch-update-members`; a saved segment fills as subscribers meet its conditions.',
+            ),
+          );
+        }
         return {
           operation: 'list-members',
           totalItems: total_items,

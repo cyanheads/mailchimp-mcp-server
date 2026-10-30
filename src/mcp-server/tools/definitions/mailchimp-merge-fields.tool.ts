@@ -7,6 +7,11 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { MergeField } from '@/services/mailchimp/types.js';
 
@@ -159,6 +164,8 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -209,10 +216,19 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
 
     switch (input.operation) {
       case 'list': {
-        const { merge_fields, total_items } = await svc.mergeFields.list(ctx, audienceId, {
-          count: input.count,
-          offset: input.offset,
-        });
+        const query = { count: input.count, offset: input.offset };
+        const { merge_fields, total_items } = await svc.mergeFields.list(ctx, audienceId, query);
+        ctx.enrich({ filters: query });
+        if (merge_fields.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'merge fields',
+              input.offset,
+              total_items,
+              'This audience has no merge fields. Add one with `operation: create`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           totalItems: total_items,

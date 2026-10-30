@@ -10,6 +10,11 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
@@ -252,6 +257,8 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -299,15 +306,26 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
 
     switch (input.operation) {
       case 'list': {
-        const query: Parameters<typeof svc.campaigns.list>[1] = {
+        const query = {
           count: input.count,
           offset: input.offset,
+          ...(input.status ? { status: input.status } : {}),
+          ...(input.listId ? { listId: input.listId } : {}),
+          ...(input.sinceSendTime ? { sinceSendTime: input.sinceSendTime } : {}),
+          ...(input.beforeSendTime ? { beforeSendTime: input.beforeSendTime } : {}),
         };
-        if (input.status) query.status = input.status;
-        if (input.listId) query.listId = input.listId;
-        if (input.sinceSendTime) query.sinceSendTime = input.sinceSendTime;
-        if (input.beforeSendTime) query.beforeSendTime = input.beforeSendTime;
         const { campaigns, total_items } = await svc.campaigns.list(ctx, query);
+        ctx.enrich({ filters: query });
+        if (campaigns.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'campaigns',
+              input.offset,
+              total_items,
+              'No campaigns matched. Widen or drop `status`, `listId`, `sinceSendTime`, and `beforeSendTime`; with none set, the account has no campaigns yet — create a draft with `operation: create`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           totalItems: total_items,

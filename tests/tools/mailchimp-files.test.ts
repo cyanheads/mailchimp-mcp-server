@@ -7,7 +7,7 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpFilesTool } from '@/mcp-server/tools/definitions/mailchimp-files.tool.js';
@@ -29,9 +29,10 @@ const createToolContext = () => createMockContext({ errors: mailchimpFilesTool.e
 const formatTool = mailchimpFilesTool.format;
 if (!formatTool) throw new Error('mailchimpFilesTool must define format().');
 
+/** A 204 carries a null body, which Node's `Response` requires. */
 function fakeResponse(status: number, body: unknown = ''): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
-  return new Response(text, {
+  return new Response(status === 204 ? null : text, {
     status,
     statusText: status >= 200 && status < 300 ? 'OK' : 'Error',
     headers: { 'content-type': 'application/json' },
@@ -351,7 +352,7 @@ describe('mailchimpFilesTool — format()', () => {
     expect(text).toContain('1×1');
   });
 
-  it('list result with empty files prompts upload', () => {
+  it('list result with empty files renders only the header — the next step lives in the notice', () => {
     const out = formatTool({
       operation: 'list',
       files: [],
@@ -359,13 +360,158 @@ describe('mailchimpFilesTool — format()', () => {
       totalFileSizeInBytes: 0,
     });
     const text = out[0]?.type === 'text' ? out[0].text : '';
-    expect(text).toContain('No files');
-    expect(text).toContain('operation: upload');
+    expect(text).toBe('Operation: list\n\n# Files (0 of 0, total 0 B)');
   });
 
   it('delete result reports deleted: true', () => {
     const out = formatTool({ operation: 'delete', deleted: true });
     const text = out[0]?.type === 'text' ? out[0].text : '';
     expect(text).toContain('Deleted: true');
+  });
+});
+
+describe('mailchimpFilesTool — list enrichment (structuredContent + content[] trailer)', () => {
+  const FILES_NO_MATCH =
+    'No files matched. Widen or drop `type`, `folderId`, `beforeCreatedAt`, and `sinceCreatedAt`; with none set, File Manager is empty — add a file with `operation: upload`.';
+  const FILES_PAST_END =
+    'No files on this page: `offset` is at or past `totalItems`. Lower `offset` to page back into the results.';
+  const FOLDERS_NO_MATCH =
+    'No folders matched. Drop `createdBy` to list every folder; with it unset, there are no folders — files upload to the root folder when `folderId` is omitted.';
+  const FOLDERS_PAST_END =
+    'No folders on this page: `offset` is at or past `totalItems`. Lower `offset` to page back into the results.';
+
+  let urls: string[];
+  const stubList = (body: unknown) => {
+    urls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+        urls.push(String(input));
+        return fakeResponse(200, body);
+      }),
+    );
+  };
+  const sentQuery = () => Object.fromEntries(new URL(urls[0] ?? '').searchParams);
+  const texts = (result: Awaited<ReturnType<typeof runToolContract>>) =>
+    result.content.map((block) => (block.type === 'text' ? block.text : ''));
+
+  beforeEach(() => {
+    setMailchimpServiceForTesting(new MailchimpService(BASE_CONFIG));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setMailchimpServiceForTesting(undefined);
+  });
+
+  it('list: non-empty page echoes the defaulted query; no notice', async () => {
+    stubList({ files: [FILE_FIXTURE], total_file_size: 68, total_items: 12 });
+    const result = await runToolContract(mailchimpFilesTool, { operation: 'list' });
+    expect(sentQuery()).toEqual({ count: '10', offset: '0' });
+    expect(result.structuredContent).toMatchObject({
+      totalItems: 12,
+      totalFileSizeInBytes: 68,
+      filters: { count: 10, offset: 0 },
+    });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(texts(result)[1]).toBe('\n\n**Filters:** count `10` · offset `0`');
+  });
+
+  it('list: empty filtered page echoes every filter (folderId 0 included) and renders the notice once', async () => {
+    stubList({ files: [], total_file_size: 0, total_items: 0 });
+    const result = await runToolContract(mailchimpFilesTool, {
+      operation: 'list',
+      type: 'image',
+      folderId: 0,
+      beforeCreatedAt: '2026-02-01',
+      sinceCreatedAt: '2026-01-01',
+    });
+    expect(sentQuery()).toEqual({
+      count: '10',
+      offset: '0',
+      type: 'image',
+      folder_id: '0',
+      before_created_at: '2026-02-01',
+      since_created_at: '2026-01-01',
+    });
+    expect(result.structuredContent).toMatchObject({
+      totalItems: 0,
+      files: [],
+      filters: {
+        count: 10,
+        offset: 0,
+        type: 'image',
+        folderId: 0,
+        beforeCreatedAt: '2026-02-01',
+        sinceCreatedAt: '2026-01-01',
+      },
+      notice: FILES_NO_MATCH,
+    });
+    const [body, trailer] = texts(result);
+    expect(body).toBe('Operation: list\n\n# Files (0 of 0, total 0 B)');
+    expect(trailer).toBe(
+      `\n\n**Filters:** count \`10\` · offset \`0\` · type \`image\` · folderId \`0\` · beforeCreatedAt \`2026-02-01\` · sinceCreatedAt \`2026-01-01\`\n> ${FILES_NO_MATCH}`,
+    );
+    expect(result.content.map((b) => (b.type === 'text' ? b.text : '')).join('')).not.toContain(
+      '_No files',
+    );
+  });
+
+  it('list: offset past a nonzero totalItems gets the past-end notice', async () => {
+    stubList({ files: [], total_file_size: 680, total_items: 12 });
+    const result = await runToolContract(mailchimpFilesTool, { operation: 'list', offset: 20 });
+    expect(result.structuredContent).toMatchObject({ totalItems: 12, notice: FILES_PAST_END });
+  });
+
+  it('list-folders: non-empty page echoes the defaulted query; no notice', async () => {
+    stubList({ folders: [FOLDER_FIXTURE], total_items: 1 });
+    const result = await runToolContract(mailchimpFilesTool, { operation: 'list-folders' });
+    expect(sentQuery()).toEqual({ count: '10', offset: '0' });
+    expect(result.structuredContent).toMatchObject({
+      totalItems: 1,
+      filters: { count: 10, offset: 0 },
+    });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(texts(result)[0]).toContain('- **Brand assets** (`42`) — 3 files');
+  });
+
+  it('list-folders: empty page with createdBy echoes it; the notice replaces the format() prose', async () => {
+    stubList({ folders: [], total_items: 0 });
+    const result = await runToolContract(mailchimpFilesTool, {
+      operation: 'list-folders',
+      createdBy: 'Casey',
+    });
+    expect(sentQuery()).toEqual({ count: '10', offset: '0', created_by: 'Casey' });
+    expect(result.structuredContent).toMatchObject({
+      folders: [],
+      filters: { count: 10, offset: 0, createdBy: 'Casey' },
+      notice: FOLDERS_NO_MATCH,
+    });
+    const [body, trailer] = texts(result);
+    expect(body).toBe('Operation: list-folders\n\n# Folders (0 of 0)');
+    expect(trailer).toBe(
+      `\n\n**Filters:** count \`10\` · offset \`0\` · createdBy \`Casey\`\n> ${FOLDERS_NO_MATCH}`,
+    );
+  });
+
+  it('list-folders: offset past a nonzero totalItems gets the past-end notice', async () => {
+    stubList({ folders: [], total_items: 4 });
+    const result = await runToolContract(mailchimpFilesTool, {
+      operation: 'list-folders',
+      offset: 4,
+    });
+    expect(result.structuredContent).toMatchObject({ totalItems: 4, notice: FOLDERS_PAST_END });
+  });
+
+  it('non-list operations carry neither field', async () => {
+    stubList(FOLDER_FIXTURE);
+    const result = await runToolContract(mailchimpFilesTool, {
+      operation: 'get-folder',
+      folderId: 42,
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).not.toHaveProperty('filters');
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(result.content).toHaveLength(1);
   });
 });

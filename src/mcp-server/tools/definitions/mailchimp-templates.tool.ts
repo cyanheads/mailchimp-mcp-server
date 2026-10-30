@@ -13,6 +13,11 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Template } from '@/services/mailchimp/types.js';
 
@@ -117,10 +122,12 @@ function requireTemplateId(input: z.infer<typeof InputSchema>): number {
 
 export const mailchimpTemplatesTool = tool('mailchimp_templates', {
   description:
-    "Mailchimp-hosted template surface. **For authoring new templates, prefer `mailchimp_local_templates` — that tool works on every plan tier (including free, where the writes here are forbidden) and templates live as `.eta` files under `MAILCHIMP_TEMPLATES_DIR`, git-versionable and composable via partials.** Use this tool for reading existing Mailchimp templates (`list`, `get`, `get-default-content` — work on free for `base`/`user` types) or, on paid plans, syncing changes upstream via `create`/`update`/`delete`. **All writes require a paid plan regardless of `type`** and return `Forbidden` with `requiresPlan: 'standard'`. `gallery` (paid drag-and-drop) is read-gated too. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose. **Per-section editing is not supported here** — Mailchimp's templates PATCH endpoint only accepts `name`, `html`, and `folderId`; to change one block, GET the template, edit its HTML, then `update` with the full new HTML. Per-section overrides (by edit-region ID) live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`. **To bootstrap a local template from a Mailchimp `base`/`user` starter, use `mailchimp_local_templates` with `operation: seed-from-mailchimp`.**",
+    "Mailchimp-hosted template surface. **For authoring new templates, prefer `mailchimp_local_templates` — that tool works on every plan tier (including free, where the writes here are forbidden) and templates live as `.eta` files under `MAILCHIMP_TEMPLATES_DIR`, git-versionable and composable via partials.** Use this tool for reading existing Mailchimp templates (`list`, `get`, `get-default-content` — work on free for `base`/`user` types) or, on paid plans, syncing changes upstream via `create`/`update`/`delete`. **All writes require a paid plan regardless of `type`** and return `Forbidden` with `requiresPlan: 'standard'`. `gallery` (paid drag-and-drop) is read-gated too. Deleting a template doesn't affect campaigns already built from it, so delete is safe to expose. **Per-section editing is not supported here** — Mailchimp's templates PATCH endpoint only accepts `name`, `html`, and `folderId`; to change one block, edit the template's source HTML where it was authored, then `update` with the full new HTML (`get` returns metadata only, not HTML). Per-section overrides (by edit-region ID) live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`. **To bootstrap a local template from a Mailchimp `base`/`user` starter, use `mailchimp_local_templates` with `operation: seed-from-mailchimp`.**",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -169,14 +176,25 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
 
     switch (input.operation) {
       case 'list': {
-        const q: Parameters<typeof svc.templates.list>[1] = {
+        const query = {
           count: input.count,
           offset: input.offset,
+          ...(input.type ? { type: input.type } : {}),
+          ...(input.category ? { category: input.category } : {}),
+          ...(input.folderId ? { folderId: input.folderId } : {}),
         };
-        if (input.type) q.type = input.type;
-        if (input.category) q.category = input.category;
-        if (input.folderId) q.folderId = input.folderId;
-        const { templates, total_items } = await svc.templates.list(ctx, q);
+        const { templates, total_items } = await svc.templates.list(ctx, query);
+        ctx.enrich({ filters: query });
+        if (templates.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'templates',
+              input.offset,
+              total_items,
+              'No templates matched. Widen or drop `type`, `category`, and `folderId`; to author a template on any plan, use `mailchimp_local_templates`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           totalItems: total_items,
@@ -207,7 +225,7 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
         if (input.folderId) body.folder_id = input.folderId;
         if (Object.keys(body).length === 0)
           throw validationError(
-            'Provide at least one of `name`, `html`, or `folderId`. To edit one block of the template, GET the template, modify its HTML, then call `update` with the full new HTML — Mailchimp does not support patching individual sections here. Per-section overrides live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`.',
+            'Provide at least one of `name`, `html`, or `folderId`. To edit one block, change the template source HTML where it was authored (`get` returns metadata only, not HTML), then call `update` with the full new HTML — Mailchimp does not support patching individual sections here. Per-section overrides live on campaigns built from a template, via `mailchimp_campaigns` (`set-content`) or `mailchimp_send_campaign` with `templateSections`.',
           );
         const t = await svc.templates.update(ctx, id, body);
         return { operation: 'update', template: summarize(t) };
@@ -266,7 +284,7 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
       lines.push('', `# Default content sections (${count})`, '');
       if (count === 0) {
         lines.push(
-          '_No default sections recorded. Mailchimp only populates this map for drag-and-drop templates; for user-uploaded HTML templates that use `mc:edit`, read the HTML directly (`operation: get`) and pull the region names from the `mc:edit="…"` attributes. Use those names as the keys in `templateSections` when building a campaign from this template._',
+          '_No default sections recorded. Mailchimp only populates this map for drag-and-drop templates; for user-uploaded HTML templates that use `mc:edit`, take the region names from the `mc:edit="…"` attributes in the template source HTML (`get` returns metadata only, not HTML; `mailchimp_local_templates` reads templates kept locally). Use those names as the keys in `templateSections` when building a campaign from this template._',
         );
       } else {
         lines.push('```json', JSON.stringify(sections, null, 2), '```');

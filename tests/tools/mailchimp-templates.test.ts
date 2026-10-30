@@ -10,7 +10,7 @@
  */
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpTemplatesTool } from '@/mcp-server/tools/definitions/mailchimp-templates.tool.js';
@@ -32,9 +32,10 @@ const createToolContext = () => createMockContext({ errors: mailchimpTemplatesTo
 const formatTool = mailchimpTemplatesTool.format;
 if (!formatTool) throw new Error('mailchimpTemplatesTool must define format().');
 
+/** A 204 carries a null body, which Node's `Response` requires. */
 function fakeResponse(status: number, body: unknown = ''): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
-  return new Response(text, {
+  return new Response(status === 204 ? null : text, {
     status,
     statusText: status >= 200 && status < 300 ? 'OK' : 'Error',
     headers: { 'content-type': 'application/json' },
@@ -261,6 +262,13 @@ describe('mailchimpTemplatesTool — handler', () => {
       code: JsonRpcErrorCode.ValidationError,
       message: expect.stringContaining('Per-section overrides live on campaigns'),
     });
+    // `GET /templates/{id}` carries no HTML, so the hint must not send callers there for it.
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
+      message: expect.not.stringContaining('GET the template'),
+    });
+    await expect(mailchimpTemplatesTool.handler(input, createToolContext())).rejects.toMatchObject({
+      message: expect.stringContaining('`get` returns metadata only, not HTML'),
+    });
     expect(stub).not.toHaveBeenCalled();
   });
 
@@ -332,6 +340,11 @@ describe('mailchimpTemplatesTool — metadata', () => {
     expect(mailchimpTemplatesTool.description).toContain('mailchimp_campaigns');
     expect(mailchimpTemplatesTool.description).toContain('templateSections');
   });
+
+  it('tool description does not claim `get` returns template HTML', () => {
+    expect(mailchimpTemplatesTool.description).not.toContain('GET the template');
+    expect(mailchimpTemplatesTool.description).toContain('`get` returns metadata only, not HTML');
+  });
 });
 
 describe('mailchimpTemplatesTool — format', () => {
@@ -388,6 +401,8 @@ describe('mailchimpTemplatesTool — format', () => {
     expect(block.text).toContain('Mailchimp only populates this map for drag-and-drop templates');
     expect(block.text).toContain('`mc:edit="…"`');
     expect(block.text).toContain('templateSections');
+    expect(block.text).not.toContain('read the HTML directly');
+    expect(block.text).toContain('`get` returns metadata only, not HTML');
   });
 
   it('default-content: shows sections as JSON when populated', () => {
@@ -410,5 +425,97 @@ describe('mailchimpTemplatesTool — format', () => {
     const block = text[0];
     if (block?.type !== 'text') throw new Error('expected text block');
     expect(block.text).toContain('Deleted: true');
+  });
+});
+
+describe('mailchimpTemplatesTool — list enrichment (structuredContent + content[] trailer)', () => {
+  const NO_MATCH =
+    'No templates matched. Widen or drop `type`, `category`, and `folderId`; to author a template on any plan, use `mailchimp_local_templates`.';
+  const PAST_END =
+    'No templates on this page: `offset` is at or past `totalItems`. Lower `offset` to page back into the results.';
+
+  let urls: string[];
+  const stubList = (body: unknown) => {
+    urls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+        urls.push(String(input));
+        return fakeResponse(200, body);
+      }),
+    );
+  };
+  const trailerOf = (result: Awaited<ReturnType<typeof runToolContract>>) => {
+    const block = result.content[1];
+    return block?.type === 'text' ? block.text : undefined;
+  };
+
+  beforeEach(() => {
+    setMailchimpServiceForTesting(new MailchimpService(BASE_CONFIG));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setMailchimpServiceForTesting(undefined);
+  });
+
+  it('non-empty page: filters equal the defaulted query sent upstream; no notice', async () => {
+    stubList({ templates: [TEMPLATE_FIXTURE], total_items: 7 });
+    const result = await runToolContract(mailchimpTemplatesTool, { operation: 'list' });
+    expect(Object.fromEntries(new URL(urls[0] ?? '').searchParams)).toEqual({
+      count: '20',
+      offset: '0',
+    });
+    expect(result.structuredContent).toMatchObject({
+      totalItems: 7,
+      filters: { count: 20, offset: 0 },
+    });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(trailerOf(result)).toBe('\n\n**Filters:** count `20` · offset `0`');
+  });
+
+  it('empty filtered page: every sent filter is echoed and the no-match notice renders as a blockquote', async () => {
+    stubList({ templates: [], total_items: 0 });
+    const result = await runToolContract(mailchimpTemplatesTool, {
+      operation: 'list',
+      type: 'user',
+      category: 'promos',
+      folderId: 'f9',
+      count: 5,
+    });
+    expect(Object.fromEntries(new URL(urls[0] ?? '').searchParams)).toEqual({
+      count: '5',
+      offset: '0',
+      type: 'user',
+      category: 'promos',
+      folder_id: 'f9',
+    });
+    expect(result.structuredContent).toMatchObject({
+      totalItems: 0,
+      templates: [],
+      filters: { count: 5, offset: 0, type: 'user', category: 'promos', folderId: 'f9' },
+      notice: NO_MATCH,
+    });
+    expect(trailerOf(result)).toBe(
+      `\n\n**Filters:** count \`5\` · offset \`0\` · type \`user\` · category \`promos\` · folderId \`f9\`\n> ${NO_MATCH}`,
+    );
+  });
+
+  it('empty page at or past a nonzero totalItems gets the past-end notice', async () => {
+    stubList({ templates: [], total_items: 3 });
+    const result = await runToolContract(mailchimpTemplatesTool, { operation: 'list', offset: 3 });
+    expect(result.structuredContent).toMatchObject({ totalItems: 3, notice: PAST_END });
+  });
+
+  it('non-list operations carry neither field', async () => {
+    stubList(TEMPLATE_FIXTURE);
+    const result = await runToolContract(mailchimpTemplatesTool, {
+      operation: 'get',
+      templateId: 10012367,
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).not.toHaveProperty('filters');
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(result.content).toHaveLength(1);
   });
 });

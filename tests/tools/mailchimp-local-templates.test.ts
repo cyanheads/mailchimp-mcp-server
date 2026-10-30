@@ -9,7 +9,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpLocalTemplatesTool } from '@/mcp-server/tools/definitions/mailchimp-local-templates.tool.js';
@@ -184,17 +184,46 @@ describe('mailchimpLocalTemplatesTool — operations', () => {
   });
 });
 
-describe('mailchimpLocalTemplatesTool — format()', () => {
-  it('list with empty templates prompts to create one', () => {
-    const out = formatTool({
-      operation: 'list',
-      templatesDir: '/tmp/t',
-      templates: [],
-    });
-    const text = out[0]?.type === 'text' ? out[0].text : '';
-    expect(text).toContain('No `.eta` files');
+describe('mailchimpLocalTemplatesTool — list notice (structuredContent + content[] trailer)', () => {
+  const EMPTY_NOTICE =
+    'No `.eta` files found. Create `<name>.eta` in the templates dir, optionally with YAML frontmatter for subject/preview defaults, or bootstrap one with `operation: seed-from-mailchimp`.';
+
+  let emptyDir: string;
+
+  beforeEach(async () => {
+    emptyDir = await mkdtemp(join(tmpdir(), 'mailchimp-local-templates-empty-'));
+    setTemplateServiceForTesting(new TemplateService(emptyDir));
   });
 
+  afterEach(async () => {
+    await rm(emptyDir, { recursive: true, force: true });
+    setTemplateServiceForTesting(undefined);
+  });
+
+  it('empty templates dir: one notice, rendered once as a blockquote trailer; no filters', async () => {
+    const result = await runToolContract(mailchimpLocalTemplatesTool, { operation: 'list' });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      templatesDir: emptyDir,
+      templates: [],
+      notice: EMPTY_NOTICE,
+    });
+    expect(result.structuredContent).not.toHaveProperty('filters');
+    const [body, trailer] = result.content.map((b) => (b.type === 'text' ? b.text : ''));
+    expect(body).toBe(`Operation: list\n_Templates dir: ${emptyDir}_\n\n# Local templates (0)`);
+    expect(trailer).toBe(`\n\n> ${EMPTY_NOTICE}`);
+    expect(result.content).toHaveLength(2);
+  });
+
+  it('non-empty templates dir: no notice', async () => {
+    await writeFile(join(emptyDir, 'welcome.eta'), '<p>hi</p>', 'utf8');
+    const result = await runToolContract(mailchimpLocalTemplatesTool, { operation: 'list' });
+    expect(result.structuredContent).not.toHaveProperty('notice');
+    expect(result.content).toHaveLength(1);
+  });
+});
+
+describe('mailchimpLocalTemplatesTool — format()', () => {
   it('render-preview output includes html in a code fence', () => {
     const out = formatTool({
       operation: 'render-preview',

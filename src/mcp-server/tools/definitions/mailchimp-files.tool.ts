@@ -11,6 +11,11 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { FileFolder, File as MailchimpFile } from '@/services/mailchimp/types.js';
 
@@ -179,6 +184,8 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -227,15 +234,26 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
 
     switch (input.operation) {
       case 'list': {
-        const params: Parameters<typeof svc.files.list>[1] = {
+        const query = {
           count: input.count,
           offset: input.offset,
+          ...(input.type ? { type: input.type } : {}),
+          ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
+          ...(input.beforeCreatedAt ? { beforeCreatedAt: input.beforeCreatedAt } : {}),
+          ...(input.sinceCreatedAt ? { sinceCreatedAt: input.sinceCreatedAt } : {}),
         };
-        if (input.type) params.type = input.type;
-        if (input.folderId !== undefined) params.folderId = input.folderId;
-        if (input.beforeCreatedAt) params.beforeCreatedAt = input.beforeCreatedAt;
-        if (input.sinceCreatedAt) params.sinceCreatedAt = input.sinceCreatedAt;
-        const { files, total_file_size, total_items } = await svc.files.list(ctx, params);
+        const { files, total_file_size, total_items } = await svc.files.list(ctx, query);
+        ctx.enrich({ filters: query });
+        if (files.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'files',
+              input.offset,
+              total_items,
+              'No files matched. Widen or drop `type`, `folderId`, `beforeCreatedAt`, and `sinceCreatedAt`; with none set, File Manager is empty — add a file with `operation: upload`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           totalItems: total_items,
@@ -276,12 +294,23 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
         return { operation: 'delete', deleted: true };
       }
       case 'list-folders': {
-        const params: Parameters<typeof svc.files.listFolders>[1] = {
+        const query = {
           count: input.count,
           offset: input.offset,
+          ...(input.createdBy ? { createdBy: input.createdBy } : {}),
         };
-        if (input.createdBy) params.createdBy = input.createdBy;
-        const { folders, total_items } = await svc.files.listFolders(ctx, params);
+        const { folders, total_items } = await svc.files.listFolders(ctx, query);
+        ctx.enrich({ filters: query });
+        if (folders.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'folders',
+              input.offset,
+              total_items,
+              'No folders matched. Drop `createdBy` to list every folder; with it unset, there are no folders — files upload to the root folder when `folderId` is omitted.',
+            ),
+          );
+        }
         return {
           operation: 'list-folders',
           totalItems: total_items,
@@ -334,11 +363,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
         `# Files (${result.files.length} of ${result.totalItems ?? '?'}, total ${formatBytes(result.totalFileSizeInBytes)})`,
         '',
       );
-      if (result.files.length === 0) {
-        lines.push('_No files. Use `operation: upload` to add one._');
-      } else {
-        for (const f of result.files) renderFile(f, true);
-      }
+      for (const f of result.files) renderFile(f, true);
     }
 
     if (result.file) {
@@ -356,13 +381,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
 
     if (result.folders) {
       lines.push(`# Folders (${result.folders.length} of ${result.totalItems ?? '?'})`, '');
-      if (result.folders.length === 0) {
-        lines.push(
-          '_No folders. Files default to the root folder when uploaded without `folderId`._',
-        );
-      } else {
-        for (const f of result.folders) renderFolder(f, true);
-      }
+      for (const f of result.folders) renderFolder(f, true);
     }
 
     if (result.folder) {
