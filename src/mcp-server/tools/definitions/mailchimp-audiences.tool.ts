@@ -7,9 +7,21 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
+import {
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
+import { renderRowTable } from '@/mcp-server/tools/shared/row-table.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
-import type { Audience, SignupForm } from '@/services/mailchimp/types.js';
+import type {
+  Audience,
+  AudienceCampaignDefaults,
+  AudienceContact,
+  SignupForm,
+} from '@/services/mailchimp/types.js';
 
 const OperationSchema = z
   .enum([
@@ -60,7 +72,7 @@ const InputSchema = z.object({
   contact: ContactSchema.partial()
     .optional()
     .describe(
-      'Audience contact info. Required fields: `company`, `address1`, `city`, `state`, `zip`, `country` — required on `create`, optional on `update`.',
+      'Audience contact info. `create` requires `company`, `address1`, `city`, `state`, `zip`, `country`. On `update`, pass only the subfields to change: the tool reads the audience first, and omitted or empty subfields keep their current values.',
     ),
   permissionReminder: z
     .string()
@@ -70,7 +82,9 @@ const InputSchema = z.object({
     ),
   campaignDefaults: CampaignDefaultsSchema.partial()
     .optional()
-    .describe('Default campaign settings. Required on `create`.'),
+    .describe(
+      'Default campaign settings. `create` requires `fromName` and `fromEmail`; `subject` defaults to blank and `language` to `en`. On `update`, pass only the subfields to change: the tool reads the audience first, and omitted or empty subfields keep their current values.',
+    ),
   emailTypeOption: z
     .boolean()
     .optional()
@@ -157,7 +171,7 @@ const OutputSchema = z.object({
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe(
-      'Per-day subscribe/unsubscribe counts. Populated for `list-activity`. Each row: `{ day: "YYYY-MM-DD", subs, unsubs, other_adds, other_removes, hard_bounce, soft_bounce, recipient_clicks, unique_opens, emails_sent }`.',
+      'Per-day subscribe/unsubscribe counts. Populated for `list-activity`. Each row: `{ day: "YYYY-MM-DD", emailsSent, uniqueOpens, recipientClicks, hardBounce, softBounce, subs, unsubs, otherAdds, otherRemoves }`.',
     ),
   growth: z
     .array(
@@ -253,41 +267,94 @@ function summarize(a: Audience): AudienceSummary {
   return summary;
 }
 
-function requireAudienceId(input: z.infer<typeof InputSchema>): string {
+type Input = z.infer<typeof InputSchema>;
+
+function requireAudienceId(input: Input): string {
   if (!input.audienceId) {
     throw validationError(`'audienceId' is required for operation '${input.operation}'.`);
   }
   return input.audienceId;
 }
 
-function buildAudienceBody(
-  input: z.infer<typeof InputSchema>,
-  isCreate: boolean,
-): Partial<Audience> {
+const CONTACT_KEYS = [
+  'company',
+  'address1',
+  'address2',
+  'city',
+  'state',
+  'zip',
+  'country',
+  'phone',
+] as const;
+
+/** Subfields Mailchimp requires whenever `contact` is sent, on create and update alike. */
+const CONTACT_REQUIRED = ['company', 'address1', 'city', 'state', 'zip', 'country'] as const;
+
+/** Caller-supplied contact subfields; `undefined` and `''` count as omitted (form clients send blanks). */
+function suppliedContact(contact: Input['contact']): AudienceContact {
+  const out: AudienceContact = {};
+  for (const key of CONTACT_KEYS) {
+    const value = contact?.[key];
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+/** Caller-supplied campaign-default subfields in wire keys; `undefined` and `''` count as omitted. */
+function suppliedCampaignDefaults(
+  defaults: Input['campaignDefaults'],
+): Partial<AudienceCampaignDefaults> {
+  const out: Partial<AudienceCampaignDefaults> = {};
+  if (defaults?.fromName) out.from_name = defaults.fromName;
+  if (defaults?.fromEmail) out.from_email = defaults.fromEmail;
+  if (defaults?.subject) out.subject = defaults.subject;
+  if (defaults?.language) out.language = defaults.language;
+  return out;
+}
+
+/**
+ * Build the create/update request body. Mailchimp requires the full `contact`
+ * and `campaign_defaults` objects whenever either is sent, so on `update` the
+ * caller's subfields are laid over `current` (the audience as read before the
+ * PATCH) and an omitted subfield is never sent blank. `create` has no current
+ * values: `subject` defaults to blank and `language` to `en`.
+ * @throws validationError naming every required field still missing.
+ */
+function buildAudienceBody(input: Input, current: Audience | undefined): Partial<Audience> {
+  const isCreate = input.operation === 'create';
   const body: Partial<Audience> = {};
+  const missing: string[] = [];
   if (input.name !== undefined) body.name = input.name;
-  if (input.contact) {
-    body.contact = {
-      company: input.contact.company ?? '',
-      address1: input.contact.address1 ?? '',
-      city: input.contact.city ?? '',
-      state: input.contact.state ?? '',
-      zip: input.contact.zip ?? '',
-      country: input.contact.country ?? '',
-      ...(input.contact.address2 ? { address2: input.contact.address2 } : {}),
-      ...(input.contact.phone ? { phone: input.contact.phone } : {}),
-    };
+  if (isCreate && !body.name) missing.push('name');
+
+  const contactIn = suppliedContact(input.contact);
+  if (isCreate || Object.keys(contactIn).length > 0) {
+    const contact: AudienceContact = { ...current?.contact, ...contactIn };
+    // An update re-sends what Mailchimp already stored, a blank (e.g. `state` outside the US) included.
+    for (const key of CONTACT_REQUIRED) {
+      if (isCreate ? !contact[key] : contact[key] === undefined) missing.push(`contact.${key}`);
+    }
+    body.contact = contact;
   }
+
   if (input.permissionReminder !== undefined) body.permission_reminder = input.permissionReminder;
-  if (input.campaignDefaults) {
-    body.campaign_defaults = {
-      from_name: input.campaignDefaults.fromName ?? '',
-      from_email: input.campaignDefaults.fromEmail ?? '',
-      subject: input.campaignDefaults.subject ?? '',
-      language: input.campaignDefaults.language ?? 'en',
-    };
+  if (isCreate && !body.permission_reminder) missing.push('permissionReminder');
+
+  const defaultsIn = suppliedCampaignDefaults(input.campaignDefaults);
+  if (isCreate || Object.keys(defaultsIn).length > 0) {
+    const base = isCreate ? { subject: '', language: 'en' } : current?.campaign_defaults;
+    const { from_name, from_email, subject, language } = { ...base, ...defaultsIn };
+    if (!from_name) missing.push('campaignDefaults.fromName');
+    if (!from_email) missing.push('campaignDefaults.fromEmail');
+    if (subject === undefined) missing.push('campaignDefaults.subject');
+    if (!language) missing.push('campaignDefaults.language');
+    if (from_name && from_email && subject !== undefined && language) {
+      body.campaign_defaults = { from_name, from_email, subject, language };
+    }
   }
+
   if (typeof input.emailTypeOption === 'boolean') body.email_type_option = input.emailTypeOption;
+  if (isCreate && body.email_type_option === undefined) body.email_type_option = false;
   if (typeof input.doubleOptin === 'boolean') body.double_optin = input.doubleOptin;
   if (typeof input.useArchiveBar === 'boolean') body.use_archive_bar = input.useArchiveBar;
   if (input.notifyOnSubscribe !== undefined) body.notify_on_subscribe = input.notifyOnSubscribe;
@@ -295,25 +362,29 @@ function buildAudienceBody(
     body.notify_on_unsubscribe = input.notifyOnUnsubscribe;
   if (input.visibility) body.visibility = input.visibility;
 
-  if (isCreate) {
-    const missing: string[] = [];
-    if (!body.name) missing.push('name');
-    if (!body.contact?.company) missing.push('contact.company');
-    if (!body.contact?.address1) missing.push('contact.address1');
-    if (!body.contact?.city) missing.push('contact.city');
-    if (!body.contact?.state) missing.push('contact.state');
-    if (!body.contact?.zip) missing.push('contact.zip');
-    if (!body.contact?.country) missing.push('contact.country');
-    if (!body.permission_reminder) missing.push('permissionReminder');
-    if (!body.campaign_defaults?.from_name) missing.push('campaignDefaults.fromName');
-    if (!body.campaign_defaults?.from_email) missing.push('campaignDefaults.fromEmail');
-    if (!body.campaign_defaults?.language) missing.push('campaignDefaults.language');
-    if (body.email_type_option === undefined) body.email_type_option = false;
-    if (missing.length > 0) {
-      throw validationError(`Missing required fields for create: ${missing.join(', ')}.`);
-    }
+  if (missing.length > 0) {
+    throw validationError(
+      isCreate
+        ? `Missing required fields for create: ${missing.join(', ')}.`
+        : `Missing required fields for update: ${missing.join(', ')}. The audience has no current value for them; supply each one.`,
+    );
   }
   return body;
+}
+
+/** A table cell: absent renders empty, a line break or non-string renders as JSON. */
+function cell(value: unknown): string {
+  if (value === undefined) return '';
+  const raw = typeof value === 'string' && !/[\r\n]/.test(value) ? value : JSON.stringify(value);
+  return escapeMarkdownInline(raw);
+}
+
+/** A ```json fence longer than any backtick run in the JSON. */
+function jsonFence(value: unknown): string[] {
+  const json = JSON.stringify(value, null, 2);
+  const longestRun = Math.max(2, ...(json.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longestRun + 1);
+  return [`${fence}json`, json, fence];
 }
 
 export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
@@ -322,6 +393,8 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -369,8 +442,20 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
 
     switch (input.operation) {
       case 'list': {
-        const page = await svc.audiences.list(ctx, { count: input.count, offset: input.offset });
+        const query = { count: input.count, offset: input.offset };
+        ctx.enrich({ filters: query });
+        const page = await svc.audiences.list(ctx, query);
         const lists = Array.isArray(page.lists) ? (page.lists as Audience[]) : [];
+        if (lists.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'audiences',
+              query.offset,
+              page.total_items,
+              'This account has no audiences. Create one with `operation: "create"`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           audiences: lists.map(summarize),
@@ -382,32 +467,52 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         return { operation: 'get', audience: summarize(audience) };
       }
       case 'create': {
-        const body = buildAudienceBody(input, true);
+        const body = buildAudienceBody(input, undefined);
         const audience = await svc.audiences.create(ctx, body);
         ctx.log.info('audience created', { audienceId: audience.id, name: audience.name });
         return { operation: 'create', audience: summarize(audience) };
       }
       case 'update': {
         const id = requireAudienceId(input);
-        const body = buildAudienceBody(input, false);
-        const audience = await svc.audiences.update(ctx, id, body);
+        const nestedChange =
+          Object.keys(suppliedContact(input.contact)).length > 0 ||
+          Object.keys(suppliedCampaignDefaults(input.campaignDefaults)).length > 0;
+        const current = nestedChange
+          ? await svc.audiences.get(ctx, id, { fields: ['contact', 'campaign_defaults'] })
+          : undefined;
+        const audience = await svc.audiences.update(ctx, id, buildAudienceBody(input, current));
         return { operation: 'update', audience: summarize(audience) };
       }
       case 'list-activity': {
-        const { activity } = await svc.audiences.listActivity(ctx, requireAudienceId(input), {
-          count: input.count,
-        });
-        return {
-          operation: 'list-activity',
-          activity: normalizeMailchimp<Array<Record<string, unknown>>>(activity ?? []),
-        };
+        const query = { count: input.count };
+        ctx.enrich({ filters: query });
+        const { activity } = await svc.audiences.listActivity(ctx, requireAudienceId(input), query);
+        const rows = normalizeMailchimp<Array<Record<string, unknown>>>(activity ?? []);
+        if (rows.length === 0) {
+          ctx.enrich.notice(
+            'Mailchimp returned no daily activity for this audience; days appear once it sends campaigns or gains subscribers.',
+          );
+        }
+        return { operation: 'list-activity', activity: rows };
       }
       case 'list-growth': {
+        const query = { count: input.count, offset: input.offset };
+        ctx.enrich({ filters: query });
         const { history, total_items } = await svc.audiences.listGrowthHistory(
           ctx,
           requireAudienceId(input),
-          { count: input.count, offset: input.offset },
+          query,
         );
+        if (history.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'months',
+              query.offset,
+              total_items,
+              'This audience has no monthly growth history yet; Mailchimp records a month once the audience has subscriber activity.',
+            ),
+          );
+        }
         return {
           operation: 'list-growth',
           totalItems: total_items,
@@ -428,6 +533,11 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
           ctx,
           requireAudienceId(input),
         );
+        if (clients.length === 0) {
+          ctx.enrich.notice(
+            'Mailchimp has recorded no email clients for this audience. Clients appear after subscribers open a sent campaign.',
+          );
+        }
         return {
           operation: 'list-clients',
           totalItems: total_items,
@@ -435,11 +545,23 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         };
       }
       case 'list-abuse-reports': {
+        const query = { count: input.count, offset: input.offset };
+        ctx.enrich({ filters: query });
         const { abuse_reports, total_items } = await svc.audiences.listAbuseReports(
           ctx,
           requireAudienceId(input),
-          { count: input.count, offset: input.offset },
+          query,
         );
+        if (abuse_reports.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'abuse reports',
+              query.offset,
+              total_items,
+              'No abuse reports against this audience. Deliverability is healthy; nothing to act on.',
+            ),
+          );
+        }
         return {
           operation: 'list-abuse-reports',
           totalItems: total_items,
@@ -455,11 +577,18 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         };
       }
       case 'list-locations': {
+        const query = { count: input.count };
+        ctx.enrich({ filters: query });
         const { locations, total_items } = await svc.audiences.listLocations(
           ctx,
           requireAudienceId(input),
-          { count: input.count },
+          query,
         );
+        if (locations.length === 0) {
+          ctx.enrich.notice(
+            'Mailchimp returned no subscriber locations for this audience; locations appear after subscribers open a campaign.',
+          );
+        }
         return {
           operation: 'list-locations',
           totalItems: total_items,
@@ -477,6 +606,11 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
           ctx,
           requireAudienceId(input),
         );
+        if (!signup_forms?.length) {
+          ctx.enrich.notice(
+            'This audience has no customized signup forms. Create one with `operation: "customize-signup-forms"` and `signupFormConfig`.',
+          );
+        }
         return {
           operation: 'get-signup-forms',
           totalItems: total_items,
@@ -553,12 +687,17 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
     }
 
     if (result.growth) {
-      lines.push('', `# Growth history (${result.growth.length} months)`, '');
-      lines.push('| Month | Subscribed | Unsubscribed | Existing | Imports | Optins | Cleaned |');
-      lines.push('|:------|-----------:|-------------:|---------:|--------:|-------:|--------:|');
+      lines.push('', `# Growth history (${result.growth.length} months)`);
+      if (result.growth.length > 0) {
+        lines.push(
+          '',
+          '| month | subscribed | unsubscribed | existing | imports | optins | cleaned |',
+          '|:------|-----------:|-------------:|---------:|--------:|-------:|--------:|',
+        );
+      }
       for (const g of result.growth) {
         lines.push(
-          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.existing ?? 0} | ${g.imports ?? 0} | ${g.optins ?? 0} | ${g.cleaned ?? 0} |`,
+          `| ${cell(g.month)} | ${cell(g.subscribed)} | ${cell(g.unsubscribed)} | ${cell(g.existing)} | ${cell(g.imports)} | ${cell(g.optins)} | ${cell(g.cleaned)} |`,
         );
       }
     }
@@ -570,7 +709,6 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
 
     if (result.abuseReports) {
       lines.push('', `# Abuse reports (${result.abuseReports.length})`, '');
-      if (result.abuseReports.length === 0) lines.push('_None — deliverability is healthy._');
       for (const r of result.abuseReports) {
         lines.push(
           `- [id:${r.id}] \`${r.email}\` (campaignId: ${r.campaignId})${r.date ? ` at ${r.date}` : ''}`,
@@ -589,24 +727,17 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
     }
 
     if (result.activity) {
-      lines.push('', `# Per-day activity (${result.activity.length} days)`, '');
-      for (const row of result.activity) lines.push(`- ${JSON.stringify(row)}`);
+      lines.push('', `# Per-day activity (${result.activity.length} days)`);
+      if (result.activity.length > 0) lines.push('', ...renderRowTable(result.activity, ['day']));
     }
 
     if (result.signupForms) {
-      lines.push('', `# Signup forms (${result.signupForms.length})`, '');
-      for (const f of result.signupForms) lines.push(`- ${JSON.stringify(f)}`);
+      lines.push('', `# Signup forms (${result.signupForms.length})`);
+      for (const f of result.signupForms) lines.push('', ...jsonFence(f));
     }
 
     if (result.signupForm) {
-      lines.push(
-        '',
-        'Signup form updated.',
-        '',
-        '```json',
-        JSON.stringify(result.signupForm, null, 2),
-        '```',
-      );
+      lines.push('', 'Signup form updated.', '', ...jsonFence(result.signupForm));
     }
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
