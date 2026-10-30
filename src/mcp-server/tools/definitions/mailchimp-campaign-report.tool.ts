@@ -79,7 +79,7 @@ const OutputSchema = z.object({
         })
         .describe('One clicked-link row.'),
     )
-    .describe('Top clicked links, sorted by total clicks.'),
+    .describe("Clicked links, the first `includeTopN` in Mailchimp's default order."),
   topLocations: z
     .array(
       z

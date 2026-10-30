@@ -2,11 +2,11 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.4.0
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
-**MCP SDK:** `@modelcontextprotocol/server` `^2.3.1` (resolved 2.3.1)
-**Zod:** `^4.6.5`
-**Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 3 services (`mailchimp`, `assets`, `templates`)
+**MCP SDK:** `@modelcontextprotocol/server` `^2.4.0` (resolved 2.4.0)
+**Zod:** `^4.6.7`
+**Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 1 published skill (`skills/mailchimp-guide`) · 3 services (`mailchimp`, `assets`, `templates`)
 
 > **Read the framework docs first:** `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` contains the full API reference — builders, Context, error codes, exports, patterns. This file covers server-specific conventions only.
 
@@ -220,7 +220,9 @@ src/
     tools/
       shared/
         asset-rewrite.ts                # Helper used by send-campaign / campaigns / replicate to rewrite @assets/* before set-content
+        list-enrichment.ts              # Shared `filters` / `notice` enrichment for list reads, plus pageEndNotice
         resolve-local-template.ts       # Helper that resolves content.localTemplate → rendered HTML before asset rewrite
+        row-table.ts                    # Shared Markdown table renderer for variable-key list rows
         template-sections-doc.ts        # Shared description for the templateSections field
       definitions/
         index.ts                        # allToolDefinitions barrel (alwaysOn + conditional)
@@ -253,6 +255,8 @@ src/
     prompts/definitions/
       index.ts                          # allPromptDefinitions barrel
       newsletter-from-source.prompt.ts
+skills/
+  mailchimp-guide/SKILL.md              # Published Agent Skill, served via createApp({ skills: 'skills' })
 ```
 
 ---
@@ -286,10 +290,10 @@ Available skills:
 | `add-prompt` | Scaffold a new prompt definition |
 | `add-service` | Scaffold a new service integration |
 | `add-test` | Scaffold test file for a tool, resource, or service |
+| `add-skill` | Author a skill the server publishes in root `skills/` for the agents that use it — when one earns its place, structure, validation, delivery |
 | `field-test` | Exercise tools/resources/prompts with real inputs, verify behavior, report issues |
 | `tool-defs-analysis` | Read-only audit of MCP definition language across the surface — voice, leaks, defaults, recovery hints, output descriptions |
 | `security-pass` | Audit server for MCP-flavored security gaps: output injection, scope blast radius, input sinks, tenant isolation |
-| `devcheck` | Lint, format, typecheck, audit |
 | `polish-docs-meta` | Finalize docs, README, metadata, and agent protocol for shipping |
 | `maintenance` | Investigate changelogs, adopt upstream changes, sync skills to agent dirs |
 | `release-and-publish` | Verify, fast-forward merge the release PR, tag, push, and publish to npm / MCP Registry / GitHub Releases / GHCR |
@@ -326,7 +330,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run clean` | Remove build artifacts |
 | `bun run devcheck` | Lint + format + typecheck + security + docs/skills sync checks |
 | `bun run lint:mcp` | Validate MCP definitions against spec |
-| `bun run lint:packaging` | Validate env-var alignment between `manifest.json` and `server.json` |
+| `bun run lint:packaging` | Packaging surface checks — `server.json`/`manifest.json` env-var parity, `.mcpbignore` coverage, plugin manifests and the root `plugin.json`/`mcp.json` pair, built-bundle contents (run by devcheck) |
 | `bun run list-skills` | Print available skills index |
 | `bun run tree` | Generate directory structure doc |
 | `bun run format` | Auto-fix formatting (safe autofixes only) |
@@ -363,6 +367,7 @@ Run the `release-and-publish` skill — it runs the verification gate (`devcheck
 bun publish --access public
 
 docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg APP_VERSION=<version> \
   -t ghcr.io/cyanheads/mailchimp-mcp-server:<version> \
   -t ghcr.io/cyanheads/mailchimp-mcp-server:latest \
   --push .

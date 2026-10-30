@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/mailchimp-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/mailchimp-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/mailchimp-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -61,6 +61,8 @@ Mailchimp campaign management. Draft, test, and send email campaigns, manage aud
 
 All resource data is also reachable through tools; audiences and campaigns are listed with each tool's `list` operation.
 
+The server also publishes an agent skill, `mailchimp-guide` (`skill://mailchimp-guide/SKILL.md`, source in `skills/mailchimp-guide/`): the send, campaign-lookup, click-tracing, and subscriber gates, plus where each ID comes from.
+
 ### Prompts
 
 | Prompt | Description |
@@ -81,7 +83,8 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_audiences` <sub>tool</sub>
 
 - Operations: `list`, `get`, `create`, `update`, the analytics reads `list-activity`, `list-growth`, `list-clients`, `list-abuse-reports`, `list-locations`, and `get-signup-forms` / `customize-signup-forms` (takes `signupFormConfig`); every operation except `list` and `create` needs `audienceId`
-- `create` requires `name`, `contact` (`company`, `address1`, `city`, `state`, `zip`, `country`), `permissionReminder`, and `campaignDefaults` (`fromName`, `fromEmail`, `language`)
+- `create` requires `name`, `contact` (`company`, `address1`, `city`, `state`, `zip`, `country`), `permissionReminder`, and `campaignDefaults` (`fromName`, `fromEmail`; `language` defaults to `en`)
+- `update` with a partial `contact` or `campaignDefaults` keeps the omitted subfields' current values (one read before the write)
 
 ---
 
@@ -94,7 +97,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 ### `mailchimp_subscribers` <sub>tool</sub>
 
-- `audienceId` on every call and `email` on every operation except `list` (filterable by `status`); operations: `list`, `get`, `update`, `archive`, `list-tags`, `set-tags`, `list-notes` / `add-note` / `update-note` / `delete-note` (by `noteId`), and `list-activity` / `list-events` / `list-goals`
+- `audienceId` on every call and `email` on every operation except `list`, which narrows by `status` only and rejects `email` (look one address up with `get` or `mailchimp_find_subscriber`); operations: `list`, `get`, `update`, `archive`, `list-tags`, `set-tags`, `list-notes` / `add-note` / `update-note` / `delete-note` (by `noteId`), and `list-activity` / `list-events` / `list-goals`
 - Addresses are trimmed and rejected if the local or domain part is missing; an empty `list` email stays unfiltered. `update` to `subscribed` asks for confirmation when resuming a subscription; already-subscribed members are left as they are
 - `set-tags` is declarative: `tags` becomes the full active set and every other tag is removed unless named in `preserveTags` (static-segment membership is stored as a tag). Returns `tagsAdded`, `tagsRemoved`, and `tagsActive`
 
@@ -165,7 +168,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 ### `mailchimp_reports` <sub>tool</sub>
 
-- `list` (filter by `type`, `sinceSendTime` / `beforeSendTime`), `get`, or `slice` with a `campaignId` and a `dimension`: `abuse-reports`, `advice`, `click-details` (one URL via `linkId`), `open-details` (one member via `subscriberHash`), `domain-performance`, `eepurl`, `email-activity`, `locations`, `sent-to`, `unsubscribed`
+- `list` (filter by `type`, `sinceSendTime` / `beforeSendTime`), `get`, or `slice` with a `campaignId` and a `dimension`: `abuse-reports`, `advice`, `click-details` (with `linkId`, the members who clicked that URL), `open-details` (one member via `subscriberHash`), `domain-performance`, `eepurl`, `email-activity`, `locations`, `sent-to`, `unsubscribed`
 - `slice` returns `rows` shaped by the dimension plus `totalItems`; `get` throws `campaign_not_sent` for a campaign with no send
 
 ---
@@ -217,7 +220,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `mailchimp_playbook` <sub>tool</sub>
 
 - `topic`: `send`, `post-send-review`, `deliverability`, `list-hygiene`, `onboarding`, `subscriber-triage`, or `design-campaign`; `audienceId` for `send` / `list-hygiene` / `design-campaign`, `campaignId` for `post-send-review`, `email` for `subscriber-triage`
-- Returns markdown `instructions` tuned to live numbers, a `liveState` snapshot, and `nextToolSuggestions` with pre-filled inputs; makes no writes
+- Returns markdown `instructions` tuned to live numbers, a `liveState` snapshot, `nextToolSuggestions` (`{ toolName, reason, args }` with pre-filled args), and `resourceSuggestions` (ready-to-read resource URIs); makes no writes
 
 ---
 
@@ -268,7 +271,7 @@ Mailchimp-specific:
 
 Agent-friendly output:
 
-- Explained empties: `note` / `notes[]` on empty activity feeds, audience overviews, and searches say whether data is missing or genuinely zero
+- Explained empties: `note` / `notes[]` on empty activity feeds, audience overviews, and searches say whether data is missing or genuinely zero; list reads echo the query sent upstream as `filters` (defaults included) and add a `notice` with a next step when the page is empty
 - Partial failure: `mailchimp_import_subscribers` and `mailchimp_segments` `batch-update-members` return per-row successes and errors instead of failing the batch
 - Discriminated outputs: `operation`, `dimension`, and `mode` say which fields are populated; `isNew` and `cancelledByUser` report what actually happened
 - Typed errors: every declared reason (`campaign_not_sent`, `pre_send_checklist_failed`, `mailchimp_forbidden`, …) carries a recovery hint for the caller's next move
@@ -446,6 +449,7 @@ The Dockerfile defaults to HTTP transport, stateful session mode, and logs to `/
 | `src/services/assets` | Local assets: discovery, hashing, upload cache, `@assets/` rewriting. |
 | `src/services/templates` | Local templates: Eta rendering, frontmatter parsing, seeding from Mailchimp. |
 | `templates/` | Example `.eta` templates; point `MAILCHIMP_TEMPLATES_DIR` here to try them. |
+| `skills/` | Agent skill published over MCP and in the npm package, Docker image, and `.mcpb` bundle (`mailchimp-guide`). |
 | `docs/` | API key guide and the email design playbook. |
 | `tests/` | Vitest suites for config, services, tools, and the prompt. |
 

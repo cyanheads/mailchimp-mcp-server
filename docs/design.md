@@ -13,14 +13,14 @@
 | `mailchimp_upsert_subscriber` | Add or update a subscriber with status, merge fields, tags, and optional note. Reads first, then PUT for new members or PATCH for existing members. New/resumed subscribed status requires bound confirmation before any write; pending uses double-opt-in without an extra round. | `audienceId`, `email`, `status` (`subscribed`\|`unsubscribed`\|`cleaned`\|`pending`\|`transactional`), `mergeFields?`, `tags?`, `preserveTags?`, `note?`, `vip?`, `language?`, `updateExistingStatus?` | `idempotentHint: true` |
 | `mailchimp_import_subscribers` | Batch add/update via POST /lists/{id}, returning per-row results. Defaults to pending; any valid effective subscribed row requires one confirmation before batch writes. Incomplete addresses become row failures. Capped at 500 per call. | `audienceId`, `subscribers[]` (≤500), `status?` (default `'pending'`), `updateExisting?`, `skipMergeValidation?`, `skipDuplicateCheck?`, `syncTags?` | `openWorldHint: true` |
 | `mailchimp_find_subscriber` | Search by address or free-form fragment across one or all audiences. Wraps `/search-members` and enriches with member details and optional tags. | `email`, `audienceId?`, `includeTags?` | `readOnlyHint: true` |
-| `mailchimp_campaign_report` | Aggregated post-send analytics for one campaign: headline stats, top clicked links, open timeline, top locations, unsubscribes, abuse reports. | `campaignId`, `includeTopN?` (default 10) | `readOnlyHint: true` |
-| `mailchimp_audience_overview` | Audience health digest: info, stats, last 12 months of growth history, top email clients, merge-field schema, recent activity. | `audienceId` | `readOnlyHint: true` |
+| `mailchimp_campaign_report` | Aggregated post-send analytics for one campaign: headline delivery and engagement stats (abuse-report count included), clicked links, top locations, recent unsubscribes, industry benchmarks when available. | `campaignId`, `includeTopN?` (default 10) | `readOnlyHint: true` |
+| `mailchimp_audience_overview` | Audience health digest: info, stats, last 12 months of growth history, top email clients, merge-field schema. | `audienceId` | `readOnlyHint: true` |
 
 **Instruction tool** (1) — returns procedural guidance merged with live account state (no writes):
 
 | Name | Description | Input | Annotations |
 |:-----|:------------|:------|:------------|
-| `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (designing a campaign, sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage` \| `design-campaign`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
+| `mailchimp_playbook` | Returns a structured procedural playbook merged with live account state. Use at the start of a complex task (designing a campaign, sending a campaign, post-send review, diagnosing deliverability, cleaning up a list, onboarding, triaging a subscriber issue) to get a tailored walkthrough. Advice-only — the agent executes subsequent steps using other tools. Returns markdown instructions + live state snapshot + `nextToolSuggestions` + `resourceSuggestions`. | `topic`: `send` \| `post-send-review` \| `deliverability` \| `list-hygiene` \| `onboarding` \| `subscriber-triage` \| `design-campaign`; `audienceId?`, `campaignId?`, `email?` (required per topic) | `readOnlyHint: true` |
 
 **Primitive tools** (10) — fine-grained CRUD, consolidated by noun via `operation` enum:
 
@@ -246,19 +246,17 @@ POST   /lists/{id}                           → batch with members[] array, sta
 ```
 Wraps native batch subscribe. Incomplete addresses become local `failed[]` entries while valid rows retain upstream partial results; all-invalid input makes no request. Status defaults to `pending`, with per-row overrides. Any valid effective `subscribed` row prompts once for the complete resolved batch and options, avoiding per-row status reads. Decline/cancel writes nothing for the whole request. Successful `pending` results await double-opt-in; neither failed rows nor other statuses imply an email. Caps input at 500 per call.
 
-**`mailchimp_find_subscriber`** (2–N calls):
+**`mailchimp_find_subscriber`** (1 call, plus 1 per match when `includeTags`):
 ```
-GET    /search-members?query={email}&list_id?   → locate
-GET    /lists/{list_id}/members/{hash}          → (per match) full detail
-GET    /lists/{list_id}/members/{hash}/tags     → (per match) tags
+GET    /search-members?query={email}&list_id?   → locate (matches carry full member detail)
+GET    /lists/{list_id}/members/{hash}/tags     → (per match, includeTags) tags
 ```
 Returns matches across audiences (if `audienceId` omitted) with full state — email, status, merge fields, tags, last activity. Most free accounts have one audience, so usually a single upstream call.
 
-**`mailchimp_campaign_report`** (5 calls, parallelized under concurrency cap):
+**`mailchimp_campaign_report`** (4 calls; the three slices run in parallel under the concurrency cap):
 ```
 GET /reports/{id}
-GET /reports/{id}/click-details?count=N&sort_field=total_clicks
-GET /reports/{id}/open-details?count=N&sort_field=opens
+GET /reports/{id}/click-details?count=N
 GET /reports/{id}/locations?count=N
 GET /reports/{id}/unsubscribed?count=N
 ```
@@ -282,7 +280,7 @@ GET /reports/{campaignId}                  → (topic=post-send-review) campaign
 GET /reports?count=10                      → (topic=deliverability) recent-campaign trend
 GET /search-members?query={email}          → (topic=subscriber-triage) locate subscriber
 ```
-Returns markdown instructions tailored to current account state plus `nextToolSuggestions` (recommended follow-up calls given the live numbers). Read-only — the agent consumes the playbook, then executes steps using action tools.
+Returns markdown instructions tailored to current account state plus `nextToolSuggestions` (`{ toolName, reason, args }` follow-up calls given the live numbers) and `resourceSuggestions` (`{ uri, reason }` resource reads, built only from IDs the topic fetched). Read-only — the agent consumes the playbook, then executes steps using action tools.
 
 ---
 
@@ -392,7 +390,7 @@ z.object({
 - **Pagination is `count`/`offset`, not cursor.** Tools expose `count` and `offset` directly; callers page explicitly. Mailchimp caps `count` at 1000.
 - **Tag sync requires GET + POST.** No atomic "set tags" endpoint; a concurrent modification between our read and write could lose a tag. Acceptable for v1; documented in the tool's description.
 - **Import batch cap.** `mailchimp_import_subscribers` caps at 500 per call. Larger imports require client-side chunking or the async `/batches` API (deferred).
-- **Cleanup-on-error is best-effort.** If the cleanup DELETE also fails (e.g., during a full Mailchimp outage), the orphan remains. Error response includes `cleanedUp: false` so agents know.
+- **Cleanup-on-error is best-effort.** If the cleanup DELETE also fails (e.g., during a full Mailchimp outage), the orphan remains. `mailchimp_send_campaign`'s error response includes `cleanedUp: false` so agents know.
 
 ---
 
@@ -441,8 +439,8 @@ Each step is independently testable. `bun run devcheck` after each.
 12. **`mailchimp_search`** — search-members + search-campaigns.
 13. **`mailchimp_playbook`** — procedural guidance tool with `topic` enum. Static markdown templates per topic + 0–2 live-state fetches merged inline. Lands after action tools so playbook advice can reference them reliably.
 14. **Resources.** `mailchimp://account`, `mailchimp://audiences/{id}`, `mailchimp://campaigns/{id}`, `mailchimp://campaigns/{id}/report`.
-15. **Smoke-test** via `bun run dev:stdio` + MCP Inspector against a real API key.
-16. **Field-test** with `skills/field-test` — exercise each tool with realistic inputs, log pain points.
+15. **Smoke-test** via `bun run start:stdio` + MCP Inspector against a real API key.
+16. **Field-test** with `framework-skills/field-test` — exercise each tool with realistic inputs, log pain points.
 17. **`polish-docs-meta`** — README, CHANGELOG, version sync, server.json description refresh.
 
-Delivered surface: 20 tools (18 always-on, 2 conditional), 4 resources, and 1 prompt.
+Delivered surface: 20 tools (18 always-on, 2 conditional), 4 resources, 1 prompt, and 1 published skill (`mailchimp-guide`).

@@ -16,7 +16,7 @@ export const TEMPLATE_SECTIONS_DOC = [
   'Example: `{ "header": "<h1>Welcome</h1>", "body": "<p>…</p>" }`.',
   'Note: Mailchimp only returns populated sections for drag-and-drop templates.',
   'For user-uploaded HTML templates that use `mc:edit`, `get-default-content` often',
-  'returns an empty map; in that case, discover the region names by reading the',
-  "template's HTML (`mailchimp_templates` with `operation: get`) and pull the",
-  '`mc:edit` attribute values.',
+  'returns an empty map; in that case, take the region names from the `mc:edit`',
+  "attribute values in the template's source HTML (the Mailchimp API does not",
+  "return a saved template's HTML).",
 ].join(' ');
