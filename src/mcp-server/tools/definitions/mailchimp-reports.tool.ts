@@ -6,8 +6,16 @@
  * @module mcp-server/tools/definitions/mailchimp-reports.tool
  */
 
-import { tool, z } from '@cyanheads/mcp-ts-core';
+import { type Context, tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
+import {
+  type AppliedFilters,
+  listEnrichment,
+  listEnrichmentTrailer,
+  pageEndNotice,
+} from '@/mcp-server/tools/shared/list-enrichment.js';
+import { renderRowTable } from '@/mcp-server/tools/shared/row-table.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { CampaignReport } from '@/services/mailchimp/types.js';
@@ -36,8 +44,10 @@ const DimensionSchema = z
     'unsubscribed',
   ])
   .describe(
-    "Report slice dimension. Required when `operation = slice`. Variants: `abuse-reports` — subscribers who marked the campaign as spam · `advice` — Mailchimp's automated tips for the campaign · `click-details` — per-URL click counts (drill into one URL with `linkId`) · `open-details` — per-member open events (drill into one with `subscriberHash`) · `domain-performance` — aggregate stats grouped by recipient email domain · `eepurl` — Mailchimp's shortened-URL stats for this campaign · `email-activity` — per-recipient open/click/bounce timeline · `locations` — opens grouped by country/region · `sent-to` — per-recipient delivery state · `unsubscribed` — members who unsubscribed from this send.",
+    "Report slice dimension. Required when `operation = slice`. Variants: `abuse-reports` — subscribers who marked the campaign as spam · `advice` — Mailchimp's automated tips for the campaign · `click-details` — per-URL click counts; with `linkId`, the members who clicked that one URL · `open-details` — per-member open events (drill into one with `subscriberHash`) · `domain-performance` — aggregate stats grouped by recipient email domain · `eepurl` — Mailchimp's shortened-URL stats for this campaign · `email-activity` — per-recipient open/click/bounce timeline · `locations` — opens grouped by country/region · `sent-to` — per-recipient delivery state · `unsubscribed` — members who unsubscribed from this send.",
   );
+
+type Dimension = z.infer<typeof DimensionSchema>;
 
 const InputSchema = z.object({
   operation: OperationSchema,
@@ -47,7 +57,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Link ID for click-details drill-down (fetches per-member click history for a specific URL).',
+      'Link ID (the `id` of a `click-details` row) — switches `click-details` to the members who clicked that URL, paged by `count`/`offset`.',
     ),
   subscriberHash: z
     .string()
@@ -75,9 +85,13 @@ const InputSchema = z.object({
     .min(1)
     .max(1000)
     .default(20)
-    .describe('Page size for list-style reads. Max 1000.'),
+    .describe(
+      'Page size for list-style reads. Max 1000. Not sent for `abuse-reports`, `advice`, `domain-performance`, `eepurl`, or a `subscriberHash` drill-down, which return everything upstream has.',
+    ),
   offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style pagination.'),
 });
+
+type Input = z.infer<typeof InputSchema>;
 
 const ReportSummarySchema = z
   .object({
@@ -98,12 +112,18 @@ const OutputSchema = z.object({
   operation: OperationSchema,
   dimension: DimensionSchema.optional(),
   campaignId: z.string().optional().describe('Echoed campaign ID for `get` and `slice`.'),
+  linkId: z
+    .string()
+    .optional()
+    .describe('Echoed link ID when `click-details` lists the members who clicked one URL.'),
   report: ReportSummarySchema.optional().describe('Populated for `get`.'),
   reports: z.array(ReportSummarySchema).optional().describe('Populated for `list`.'),
   rows: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
-    .describe('Per-row data for the requested dimension; row shape varies by `dimension`.'),
+    .describe(
+      'Per-row data for the requested dimension; row shape varies by `dimension`. With `linkId`, one row per member who clicked the URL (`emailAddress`, `clicks`, `contactStatus`, …).',
+    ),
   totalItems: z
     .number()
     .optional()
@@ -126,10 +146,192 @@ function summarize(r: CampaignReport): z.infer<typeof ReportSummarySchema> {
   return out;
 }
 
-function requireCampaignId(input: z.infer<typeof InputSchema>): string {
+function requireCampaignId(input: Input): string {
   if (!input.campaignId)
     throw validationError(`'campaignId' is required for operation '${input.operation}'.`);
   return input.campaignId;
+}
+
+/** One dimension's rows plus the query parameters the read sent upstream, if any. */
+interface Slice {
+  filters?: AppliedFilters;
+  rows: Row[];
+  totalItems?: number;
+}
+
+async function readSlice(
+  ctx: Pick<Context, 'signal' | 'log'>,
+  input: Input,
+  id: string,
+  dimension: Dimension,
+): Promise<Slice> {
+  const svc = getMailchimpService();
+  const page = { count: input.count, offset: input.offset };
+  const pageSince: { count: number; offset: number; since?: string } = input.since
+    ? { ...page, since: input.since }
+    : page;
+
+  switch (dimension) {
+    case 'abuse-reports': {
+      const { abuse_reports, total_items } = await svc.reports.abuseReports(ctx, id);
+      return { rows: normalizeRows(abuse_reports), totalItems: total_items };
+    }
+    case 'advice': {
+      const { advice, total_items } = await svc.reports.advice(ctx, id);
+      return { rows: normalizeRows(advice), totalItems: total_items };
+    }
+    case 'click-details': {
+      if (input.linkId) {
+        const { members, total_items } = await svc.reports.clickDetailsMembers(
+          ctx,
+          id,
+          input.linkId,
+          page,
+        );
+        return { rows: normalizeRows(members), totalItems: total_items, filters: page };
+      }
+      const { urls_clicked, total_items } = await svc.reports.clickDetailsList(ctx, id, page);
+      return { rows: normalizeRows(urls_clicked), totalItems: total_items, filters: page };
+    }
+    case 'open-details': {
+      if (input.subscriberHash) {
+        const detail = await svc.reports.openDetailsMember(ctx, id, input.subscriberHash);
+        return { rows: [normalizeRow(detail)] };
+      }
+      const { members, total_items } = await svc.reports.openDetails(ctx, id, pageSince);
+      return { rows: normalizeRows(members), totalItems: total_items, filters: pageSince };
+    }
+    case 'domain-performance': {
+      const { domains, total_items } = await svc.reports.domainPerformance(ctx, id);
+      return { rows: normalizeRows(domains), totalItems: total_items };
+    }
+    case 'eepurl':
+      return { rows: [normalizeRow(await svc.reports.eepurl(ctx, id))] };
+    case 'email-activity': {
+      const { emails, total_items } = await svc.reports.emailActivity(ctx, id, pageSince);
+      return { rows: normalizeRows(emails), totalItems: total_items, filters: pageSince };
+    }
+    case 'locations': {
+      const { locations, total_items } = await svc.reports.locations(ctx, id, page);
+      return { rows: normalizeRows(locations), totalItems: total_items, filters: page };
+    }
+    case 'sent-to': {
+      const { sent_to, total_items } = await svc.reports.sentTo(ctx, id, page);
+      return { rows: normalizeRows(sent_to), totalItems: total_items, filters: page };
+    }
+    case 'unsubscribed': {
+      const { unsubscribes, total_items } = await svc.reports.unsubscribed(ctx, id, page);
+      return { rows: normalizeRows(unsubscribes), totalItems: total_items, filters: page };
+    }
+  }
+}
+
+/** Why a dimension can legitimately come back empty, and where to look next. */
+const EMPTY_SLICE: Record<Dimension, string> = {
+  'abuse-reports': 'No recipient marked this campaign as spam.',
+  advice: 'Mailchimp has no advice for this campaign.',
+  'click-details':
+    'No tracked link in this campaign was clicked; `operation: get` shows its headline click rate.',
+  'open-details':
+    'No opens were recorded for this campaign; `operation: get` shows its headline open rate.',
+  'domain-performance': 'Mailchimp reports no per-domain stats for this campaign.',
+  eepurl: 'Mailchimp reports no shortened-URL stats for this campaign.',
+  'email-activity': 'No recipient activity was recorded for this campaign.',
+  locations: 'No opens with a known location were recorded for this campaign.',
+  'sent-to':
+    'No recipients are recorded for this campaign; confirm it was sent with `operation: get`.',
+  unsubscribed: 'No recipient unsubscribed from this campaign.',
+};
+
+/** Next step for an empty page. Names filter keys only; their values ride in `filters`. */
+function emptyNotice(
+  input: Input,
+  filters: AppliedFilters | undefined,
+  totalItems: number | undefined,
+): string {
+  // Only paged reads send `offset`; an unpaged read returns everything upstream has.
+  const offset = typeof filters?.offset === 'number' ? filters.offset : 0;
+  return pageEndNotice(
+    input.operation === 'list' ? 'campaign reports' : 'rows',
+    offset,
+    totalItems,
+    noRowsText(input, filters),
+  );
+}
+
+/** Why the read matched nothing, naming the filter keys that narrowed it. */
+function noRowsText(input: Input, filters: AppliedFilters | undefined): string {
+  if (input.operation === 'list') {
+    const narrowing = (['type', 'beforeSendTime', 'sinceSendTime'] as const).filter(
+      (key) => filters?.[key] !== undefined,
+    );
+    return narrowing.length > 0
+      ? `No campaign reports match ${narrowing.map((key) => `\`${key}\``).join(', ')}; widen or drop ${narrowing.length > 1 ? 'those filters' : 'that filter'}.`
+      : 'No campaign reports exist yet; only sent campaigns have reports.';
+  }
+
+  if (input.dimension === 'click-details' && input.linkId)
+    return 'No member clicked this link; run `click-details` without `linkId` to compare per-URL counts.';
+  if (filters?.since !== undefined)
+    return 'Nothing was recorded after `since`; move `since` earlier or drop it.';
+  return input.dimension ? EMPTY_SLICE[input.dimension] : 'No rows returned.';
+}
+
+/** Leading columns per dimension; any other key a row carries follows them. */
+const LEADING_COLUMNS: Partial<Record<Dimension, readonly string[]>> = {
+  'click-details': [
+    'url',
+    'totalClicks',
+    'uniqueClicks',
+    'clickPercentage',
+    'uniqueClickPercentage',
+    'lastClick',
+  ],
+  'open-details': ['emailAddress', 'opensCount', 'opens'],
+  locations: ['countryCode', 'region', 'regionName', 'opens'],
+  unsubscribed: ['emailAddress', 'timestamp', 'reason'],
+  'abuse-reports': ['emailAddress', 'date'],
+  'sent-to': ['emailAddress', 'status', 'openCount', 'lastOpen'],
+};
+
+/** Leading columns for the members who clicked one link (`click-details` + `linkId`). */
+const LINK_CLICKER_COLUMNS = ['emailAddress', 'clicks', 'contactStatus', 'vip'] as const;
+
+/** Inline Markdown for one value: strings escaped, nested values as their JSON. */
+function inlineValue(value: unknown): string {
+  if (value === undefined) return '';
+  if (typeof value === 'string') return escapeMarkdownInline(value);
+  if (value === null || typeof value !== 'object') return String(value);
+  return escapeMarkdownInline(JSON.stringify(value));
+}
+
+/** One bullet per key: `- **key:** value`. */
+const keyValueLines = (row: Row): string[] =>
+  Object.entries(row).map(
+    ([key, value]) => `- **${escapeMarkdownInline(key)}:** ${inlineValue(value)}`,
+  );
+
+function renderRows(rows: Row[], dimension: Dimension | undefined, linkId: string | undefined) {
+  if (rows.length === 0) return [];
+  if (dimension === 'eepurl') return rows.flatMap(keyValueLines);
+  if (dimension === 'advice') {
+    return rows.map((row) => {
+      const { type, message, ...rest } = row;
+      const head = [type, message]
+        .filter((v) => v !== undefined)
+        .map(inlineValue)
+        .join(': ');
+      const tail = Object.entries(rest).map(
+        ([key, value]) => ` · ${escapeMarkdownInline(key)}: ${inlineValue(value)}`,
+      );
+      return `- ${head}${tail.join('')}`;
+    });
+  }
+  const leading =
+    dimension === 'click-details' && linkId
+      ? LINK_CLICKER_COLUMNS
+      : (dimension && LEADING_COLUMNS[dimension]) || [];
+  return renderRowTable(rows, leading);
 }
 
 export const mailchimpReportsTool = tool('mailchimp_reports', {
@@ -138,6 +340,8 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
       reason: 'mailchimp_unauthorized',
@@ -186,7 +390,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
 
     switch (input.operation) {
       case 'list': {
-        const q: Parameters<typeof svc.reports.list>[1] = {
+        const q: Parameters<typeof svc.reports.list>[1] & AppliedFilters = {
           count: input.count,
           offset: input.offset,
         };
@@ -194,6 +398,8 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
         if (input.beforeSendTime) q.beforeSendTime = input.beforeSendTime;
         if (input.sinceSendTime) q.sinceSendTime = input.sinceSendTime;
         const { reports, total_items } = await svc.reports.list(ctx, q);
+        ctx.enrich({ filters: q });
+        if (reports.length === 0) ctx.enrich.notice(emptyNotice(input, q, total_items));
         return {
           operation: 'list',
           totalItems: total_items,
@@ -218,136 +424,19 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
         if (!input.dimension)
           throw validationError("'dimension' is required for operation 'slice'.");
         const id = requireCampaignId(input);
-        const pg = { count: input.count, offset: input.offset };
-        switch (input.dimension) {
-          case 'abuse-reports': {
-            const { abuse_reports, total_items } = await svc.reports.abuseReports(ctx, id);
-            return {
-              operation: 'slice',
-              dimension: 'abuse-reports',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(abuse_reports),
-            };
-          }
-          case 'advice': {
-            const { advice, total_items } = await svc.reports.advice(ctx, id);
-            return {
-              operation: 'slice',
-              dimension: 'advice',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(advice),
-            };
-          }
-          case 'click-details': {
-            if (input.linkId) {
-              const detail = await svc.reports.clickDetailsGet(ctx, id, input.linkId);
-              return {
-                operation: 'slice',
-                dimension: 'click-details',
-                campaignId: id,
-                rows: [normalizeRow(detail)],
-              };
-            }
-            const { urls_clicked, total_items } = await svc.reports.clickDetailsList(ctx, id, pg);
-            return {
-              operation: 'slice',
-              dimension: 'click-details',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(urls_clicked),
-            };
-          }
-          case 'open-details': {
-            if (input.subscriberHash) {
-              const detail = await svc.reports.openDetailsMember(ctx, id, input.subscriberHash);
-              return {
-                operation: 'slice',
-                dimension: 'open-details',
-                campaignId: id,
-                rows: [normalizeRow(detail)],
-              };
-            }
-            const odParams: Parameters<typeof svc.reports.openDetails>[2] = {
-              count: input.count,
-              offset: input.offset,
-            };
-            if (input.since) odParams.since = input.since;
-            const { members, total_items } = await svc.reports.openDetails(ctx, id, odParams);
-            return {
-              operation: 'slice',
-              dimension: 'open-details',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(members),
-            };
-          }
-          case 'domain-performance': {
-            const { domains, total_items } = await svc.reports.domainPerformance(ctx, id);
-            return {
-              operation: 'slice',
-              dimension: 'domain-performance',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(domains),
-            };
-          }
-          case 'eepurl': {
-            const data = await svc.reports.eepurl(ctx, id);
-            return {
-              operation: 'slice',
-              dimension: 'eepurl',
-              campaignId: id,
-              rows: [normalizeRow(data)],
-            };
-          }
-          case 'email-activity': {
-            const eaParams: Parameters<typeof svc.reports.emailActivity>[2] = {
-              count: input.count,
-              offset: input.offset,
-            };
-            if (input.since) eaParams.since = input.since;
-            const { emails, total_items } = await svc.reports.emailActivity(ctx, id, eaParams);
-            return {
-              operation: 'slice',
-              dimension: 'email-activity',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(emails),
-            };
-          }
-          case 'locations': {
-            const { locations, total_items } = await svc.reports.locations(ctx, id, pg);
-            return {
-              operation: 'slice',
-              dimension: 'locations',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(locations),
-            };
-          }
-          case 'sent-to': {
-            const { sent_to, total_items } = await svc.reports.sentTo(ctx, id, pg);
-            return {
-              operation: 'slice',
-              dimension: 'sent-to',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(sent_to),
-            };
-          }
-          case 'unsubscribed': {
-            const { unsubscribes, total_items } = await svc.reports.unsubscribed(ctx, id, pg);
-            return {
-              operation: 'slice',
-              dimension: 'unsubscribed',
-              campaignId: id,
-              totalItems: total_items,
-              rows: normalizeRows(unsubscribes),
-            };
-          }
-        }
+        const slice = await readSlice(ctx, input, id, input.dimension);
+        if (slice.filters) ctx.enrich({ filters: slice.filters });
+        if (slice.rows.length === 0)
+          ctx.enrich.notice(emptyNotice(input, slice.filters, slice.totalItems));
+        const result: Output = {
+          operation: 'slice',
+          dimension: input.dimension,
+          campaignId: id,
+          rows: slice.rows,
+        };
+        if (slice.totalItems !== undefined) result.totalItems = slice.totalItems;
+        if (input.dimension === 'click-details' && input.linkId) result.linkId = input.linkId;
+        return result;
       }
     }
   },
@@ -355,7 +444,8 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   format: (result) => {
     const lines: string[] = [`Operation: ${result.operation}`];
     if (result.dimension) lines.push(`Dimension: ${result.dimension}`);
-    if (result.campaignId) lines.push(`_campaignId: ${result.campaignId}_`);
+    if (result.campaignId) lines.push(`_campaignId: ${escapeMarkdownInline(result.campaignId)}_`);
+    if (result.linkId) lines.push(`_linkId: ${escapeMarkdownInline(result.linkId)}_`);
     lines.push('');
 
     const renderSummary = (r: z.infer<typeof ReportSummarySchema>, bullet: boolean): void => {
@@ -363,9 +453,11 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
       const indent = bullet ? '  ' : '';
       const title = r.campaignTitle ?? r.subjectLine ?? r.id;
       const subj =
-        r.subjectLine && r.subjectLine !== title ? ` subjectLine: "${r.subjectLine}"` : '';
-      const aud = r.audienceName ? ` audience:${r.audienceName}` : '';
-      lines.push(`${prefix}**${title}** (\`${r.id}\`)${subj}${aud}`);
+        r.subjectLine && r.subjectLine !== title
+          ? ` subjectLine: "${escapeMarkdownInline(r.subjectLine)}"`
+          : '';
+      const aud = r.audienceName ? ` audience:${escapeMarkdownInline(r.audienceName)}` : '';
+      lines.push(`${prefix}**${escapeMarkdownInline(title)}** (\`${r.id}\`)${subj}${aud}`);
       const metrics: string[] = [];
       if (typeof r.emailsSent === 'number') metrics.push(`emailsSent ${r.emailsSent}`);
       if (typeof r.openRate === 'number')
@@ -386,20 +478,15 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
     if (result.report) {
       if (result.reports) lines.push('');
       const r = result.report;
-      lines.push(`# ${r.campaignTitle ?? r.subjectLine ?? r.id}`, '');
+      lines.push(`# ${escapeMarkdownInline(r.campaignTitle ?? r.subjectLine ?? r.id)}`, '');
       renderSummary(r, false);
     }
 
     if (result.rows) {
-      lines.push(
-        '',
-        `# Rows (${result.rows.length}${result.totalItems ? ` of ${result.totalItems}` : ''})`,
-        '',
-      );
-      const sample = result.rows.slice(0, 30);
-      for (const row of sample) lines.push(`- ${JSON.stringify(row)}`);
-      if (result.rows.length > sample.length)
-        lines.push(`- …and ${result.rows.length - sample.length} more.`);
+      const total = result.totalItems !== undefined ? ` of ${result.totalItems}` : '';
+      if (lines.at(-1) !== '') lines.push('');
+      lines.push(`# Rows (${result.rows.length}${total})`, '');
+      lines.push(...renderRows(result.rows, result.dimension, result.linkId));
     }
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];

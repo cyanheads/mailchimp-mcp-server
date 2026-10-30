@@ -34,6 +34,7 @@ import type {
   CampaignReport,
   CampaignType,
   ClickDetail,
+  ClickDetailMember,
   EmailClient,
   FileFolder,
   FileType,
@@ -443,6 +444,7 @@ export class MailchimpService {
   // ─── Subscribers (members) ────────────────────────────────────────
 
   subscribers = {
+    /** Pages an audience's members. The endpoint has no email filter; look one address up with `get`. */
     list: (
       ctx: Pick<Context, 'signal' | 'log'>,
       listId: string,
@@ -450,7 +452,6 @@ export class MailchimpService {
         count?: number;
         offset?: number;
         status?: SubscriberStatus;
-        email?: string;
         fields?: string[];
       },
     ): Promise<{ members: Subscriber[]; total_items: number }> =>
@@ -461,7 +462,6 @@ export class MailchimpService {
           count: params?.count,
           offset: params?.offset,
           status: params?.status,
-          email_address: params?.email,
           fields: params?.fields,
         },
       }),
@@ -620,7 +620,7 @@ export class MailchimpService {
       listId: string,
       memberHash: string,
       params?: { count?: number; offset?: number; action?: string[] },
-    ): Promise<{ activity: SubscriberActivityItem[]; total_items: number }> =>
+    ): Promise<{ activity: SubscriberActivityItem[]; total_items?: number }> =>
       this.request('GET', `/lists/${listId}/members/${memberHash}/activity-feed`, {
         signal: ctx.signal,
         log: ctx.log,
@@ -1023,22 +1023,12 @@ export class MailchimpService {
         query: params,
       }),
 
-    clickDetailsGet: (
-      ctx: Pick<Context, 'signal' | 'log'>,
-      id: string,
-      linkId: string,
-    ): Promise<ClickDetail> =>
-      this.request('GET', `/reports/${id}/click-details/${linkId}`, {
-        signal: ctx.signal,
-        log: ctx.log,
-      }),
-
     clickDetailsMembers: (
       ctx: Pick<Context, 'signal' | 'log'>,
       id: string,
       linkId: string,
       params?: { count?: number; offset?: number },
-    ): Promise<{ members: Subscriber[]; total_items: number }> =>
+    ): Promise<{ members: ClickDetailMember[]; total_items: number }> =>
       this.request('GET', `/reports/${id}/click-details/${linkId}/members`, {
         signal: ctx.signal,
         log: ctx.log,
@@ -1370,6 +1360,12 @@ function recoveryHintForPath(status: number, method: HttpMethod, path: string): 
   }
   if (/^\/campaigns\/[^/?]+(?:[/?].*)?$/.test(path)) {
     return 'List campaigns via mailchimp_campaigns (operation: list) and copy a valid campaignId.';
+  }
+  if (/^\/reports\/[^/]+\/click-details\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'Run mailchimp_reports slice click-details on this campaign without linkId and copy a row id as linkId.';
+  }
+  if (/^\/reports\/[^/]+\/open-details\/[^/?]+(?:[/?].*)?$/.test(path)) {
+    return 'This recipient has no recorded open on this campaign, or the hash is wrong; run mailchimp_reports slice open-details without subscriberHash to list who opened.';
   }
   if (/^\/reports\/[^/?]+(?:[/?].*)?$/.test(path)) {
     return 'List reports via mailchimp_reports (operation: list) — only sent campaigns have reports.';

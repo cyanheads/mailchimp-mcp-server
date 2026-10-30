@@ -15,6 +15,8 @@ import {
 } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
+import { listEnrichment, listEnrichmentTrailer, pageEndNotice } from '../shared/list-enrichment.js';
+import { renderRowTable } from '../shared/row-table.js';
 import { requireSubscriberAddress } from '../shared/subscriber-address.js';
 import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
@@ -35,7 +37,7 @@ const OperationSchema = z
     'list-goals',
   ])
   .describe(
-    'Which subscriber operation to run. `list`/`get` reads. `update` changes status/merge fields/language (NOT for create — use `mailchimp_upsert_subscriber`). `archive` removes the subscriber from the active audience while preserving the record so they can resubscribe. `list-tags` reads tags; `set-tags` declaratively syncs to a desired set — note that Mailchimp stores static-segment membership as a tag, so `set-tags` will remove segment membership unless you include those names or pass `preserveTags`. `list-notes`/`add-note`/`update-note`/`delete-note` manage CRM-style notes. `list-activity`/`list-events`/`list-goals` are engagement reads.',
+    'Which subscriber operation to run. `list` pages the audience, narrowed by `status` only; `get` reads one subscriber by `email`. `update` changes status/merge fields/language (NOT for create — use `mailchimp_upsert_subscriber`). `archive` removes the subscriber from the active audience while preserving the record so they can resubscribe. `list-tags` reads tags; `set-tags` declaratively syncs to a desired set — note that Mailchimp stores static-segment membership as a tag, so `set-tags` will remove segment membership unless you include those names or pass `preserveTags`. `list-notes`/`add-note`/`update-note`/`delete-note` manage CRM-style notes. `list-activity`/`list-events`/`list-goals` are engagement reads.',
   );
 
 const InputSchema = z.object({
@@ -45,7 +47,7 @@ const InputSchema = z.object({
     .string()
     .optional()
     .describe(
-      'Subscriber email address (case-insensitive). Required for every operation except `list`.',
+      'Subscriber email address (case-insensitive). Required for every operation except `list`, which rejects it: Mailchimp cannot filter the member list by address, so look one up with `get` or `mailchimp_find_subscriber`.',
     ),
   status: z
     .enum(['subscribed', 'unsubscribed', 'cleaned', 'pending', 'transactional'])
@@ -83,8 +85,15 @@ const InputSchema = z.object({
     .min(1)
     .max(1000)
     .default(20)
-    .describe('Page size for list-style reads.'),
-  offset: z.coerce.number().int().min(0).default(0).describe('Offset for list-style reads.'),
+    .describe(
+      'Page size for list-style reads. `list-goals` takes no paging: Mailchimp returns the last 50 goal events.',
+    ),
+  offset: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .default(0)
+    .describe('Offset for list-style reads (not `list-goals`).'),
 });
 
 const SubscriberSummarySchema = z
@@ -184,19 +193,19 @@ const OutputSchema = z.object({
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe(
-      'Subscriber activity events (opens, clicks, bounces). Populated for `list-activity`. Each row: `{ action, timestamp, type, campaign_id?, title?, parent_campaign? }`.',
+      'Activity-feed entries (sends, opens, clicks, bounces, unsubscribes, notes, signups, events). Populated for `list-activity`. Every row carries `activityType` and `createdAtTimestamp`; campaign rows add `campaignId` and `campaignTitle`, and each type adds its own keys (e.g. `linkClicked`, `bounceType`, `unsubscribeReason`, `noteText`, `eventName`, `eventProperties`).',
     ),
   events: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe(
-      'Custom events attached to the subscriber. Populated for `list-events`. Each row: `{ name, properties, occurred_at, is_syncing }`.',
+      'Custom events attached to the subscriber. Populated for `list-events`. Each row: `{ name, occurredAt?, properties? }`.',
     ),
   goals: z
     .array(z.record(z.string(), z.unknown()))
     .optional()
     .describe(
-      'Goal completions attributed to the subscriber. Populated for `list-goals`. Each row: `{ goal_id, event, last_visited_at, data }`.',
+      'Last 50 goal events the subscriber triggered. Populated for `list-goals`. Each row: `{ goalId, event?, lastVisitedAt?, data? }`.',
     ),
   archived: z
     .boolean()
@@ -235,21 +244,38 @@ function summarize(s: Subscriber): z.infer<typeof SubscriberSummarySchema> {
   return out;
 }
 
+/** Leading table columns per row surface — the keys Mailchimp documents for each. */
+const ACTIVITY_COLUMNS = ['activityType', 'createdAtTimestamp', 'campaignId', 'campaignTitle'];
+const EVENT_COLUMNS = ['name', 'occurredAt', 'properties'];
+const GOAL_COLUMNS = ['goalId', 'event', 'lastVisitedAt', 'data'];
+
 export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
   description:
     "Manage subscribers (Mailchimp 'list members') — CRUD except permanent-delete, plus tags/notes/activity. `update` to `subscribed` requests confirmation before writes when resuming marketing delivery; decline/cancel writes nothing. Already-subscribed members need no new confirmation and their subscribed status is not rewritten. Use `mailchimp_upsert_subscriber` to add a new subscriber (that tool handles tags and notes in one idempotent call). `archive` is the strongest removal available; it takes the subscriber out of the active audience but preserves the record, so they can resubscribe. GDPR-forget (`delete-permanent`) is NOT exposed — do it in the Mailchimp UI.",
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
+  enrichment: listEnrichment,
+  enrichmentTrailer: listEnrichmentTrailer,
   errors: [
     {
+      reason: 'list_email_unsupported',
+      code: JsonRpcErrorCode.ValidationError,
+      when: '`list` received an `email`; the Mailchimp member list cannot be filtered by address.',
+      recovery:
+        'Look up one address with operation get or mailchimp_find_subscriber; list narrows by status only.',
+    },
+    // Thrown by the shared requireSubscriberAddress / confirmSubscription helpers, below the handler.
+    {
       reason: 'invalid_email',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.ValidationError,
       when: 'The member address lacks nonempty local or domain parts.',
       recovery: 'Provide an address with nonempty local and domain parts separated by @.',
     },
     {
       reason: 'subscription_cancelled',
+      thrownBy: 'service',
       code: JsonRpcErrorCode.InvalidRequest,
       when: 'The user declined or cancelled subscription confirmation.',
       recovery:
@@ -304,13 +330,32 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
     switch (input.operation) {
       case 'list': {
-        const listOpts: Parameters<typeof svc.subscribers.list>[2] = {
+        // A blank `email` from a form-based client is unset; anything else would imply a filter.
+        if (input.email?.trim()) {
+          throw ctx.fail(
+            'list_email_unsupported',
+            '`list` cannot filter by `email`: the Mailchimp member list has no address filter and would return the unfiltered audience.',
+          );
+        }
+        const query = {
           count: input.count,
           offset: input.offset,
+          ...(input.status ? { status: input.status } : {}),
         };
-        if (input.status) listOpts.status = input.status;
-        if (input.email) listOpts.email = requireSubscriberAddress(input.email);
-        const { members, total_items } = await svc.subscribers.list(ctx, audienceId, listOpts);
+        const { members, total_items } = await svc.subscribers.list(ctx, audienceId, query);
+        ctx.enrich({ filters: query });
+        if (members.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'subscribers',
+              input.offset,
+              total_items,
+              input.status
+                ? 'No subscribers matched `status`. Drop `status` or choose another value to page the rest of the audience.'
+                : 'This audience has no members. Add one with `mailchimp_upsert_subscriber` or a batch with `mailchimp_import_subscribers`.',
+            ),
+          );
+        }
         return {
           operation: 'list',
           subscribers: members.map(summarize),
@@ -367,10 +412,19 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'list-tags': {
         const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
-        const { tags, total_items } = await svc.subscribers.listTags(ctx, audienceId, hash, {
-          count: input.count,
-          offset: input.offset,
-        });
+        const query = { count: input.count, offset: input.offset };
+        const { tags, total_items } = await svc.subscribers.listTags(ctx, audienceId, hash, query);
+        ctx.enrich({ filters: query });
+        if (tags.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'tags',
+              input.offset,
+              total_items,
+              'This subscriber has no active tags. Add some with `operation: set-tags`.',
+            ),
+          );
+        }
         return {
           operation: 'list-tags',
           totalItems: total_items,
@@ -423,10 +477,24 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'list-notes': {
         const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
-        const { notes, total_items } = await svc.subscribers.listNotes(ctx, audienceId, hash, {
-          count: input.count,
-          offset: input.offset,
-        });
+        const query = { count: input.count, offset: input.offset };
+        const { notes, total_items } = await svc.subscribers.listNotes(
+          ctx,
+          audienceId,
+          hash,
+          query,
+        );
+        ctx.enrich({ filters: query });
+        if (notes.length === 0) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'notes',
+              input.offset,
+              total_items,
+              'This subscriber has no notes. Add one with `operation: add-note`.',
+            ),
+          );
+        }
         return {
           operation: 'list-notes',
           totalItems: total_items,
@@ -476,25 +544,55 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'list-activity': {
         const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
+        const query = { count: input.count, offset: input.offset };
         const { activity, total_items } = await svc.subscribers.listActivity(
           ctx,
           audienceId,
           hash,
-          { count: input.count, offset: input.offset },
+          query,
         );
+        ctx.enrich({ filters: query });
+        // The activity-feed endpoint documents no `total_items`; most responses omit it.
+        const total: number | undefined = total_items;
+        if (!activity?.length) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'activity',
+              input.offset,
+              total,
+              total === undefined && input.offset > 0
+                ? 'No activity on this page. The activity feed reports no total, so `offset` may be past the end: retry with `offset: 0`.'
+                : 'No activity is recorded for this subscriber. Entries appear once a campaign is sent to them or they sign up, open, click, or unsubscribe.',
+            ),
+          );
+        }
         return {
           operation: 'list-activity',
-          totalItems: total_items,
+          totalItems: total,
           activity: normalizeMailchimp<Array<Record<string, unknown>>>(activity ?? []),
         };
       }
 
       case 'list-events': {
         const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
-        const { events, total_items } = await svc.subscribers.listEvents(ctx, audienceId, hash, {
-          count: input.count,
-          offset: input.offset,
-        });
+        const query = { count: input.count, offset: input.offset };
+        const { events, total_items } = await svc.subscribers.listEvents(
+          ctx,
+          audienceId,
+          hash,
+          query,
+        );
+        ctx.enrich({ filters: query });
+        if (!events?.length) {
+          ctx.enrich.notice(
+            pageEndNotice(
+              'events',
+              input.offset,
+              total_items,
+              'No custom events are recorded for this subscriber. Integrations post them through the Mailchimp events API; `list-activity` holds campaign engagement.',
+            ),
+          );
+        }
         return {
           operation: 'list-events',
           totalItems: total_items,
@@ -504,7 +602,13 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
       case 'list-goals': {
         const hash = mailchimpMemberHash(requireSubscriberAddress(input.email));
+        // No query parameters: the endpoint returns the last 50 goal events, unpaged.
         const { goals, total_items } = await svc.subscribers.listGoals(ctx, audienceId, hash);
+        if (!goals?.length) {
+          ctx.enrich.notice(
+            'No goal events are recorded for this subscriber. Goal events come from the Mailchimp Goal tracking script on your site.',
+          );
+        }
         return {
           operation: 'list-goals',
           totalItems: total_items,
@@ -609,17 +713,17 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
     if (result.activity) {
       lines.push('', `# Activity (${result.activity.length} events)`, '');
-      for (const a of result.activity) lines.push(`- ${JSON.stringify(a)}`);
+      lines.push(...renderRowTable(result.activity, ACTIVITY_COLUMNS));
     }
 
     if (result.events) {
       lines.push('', `# Events (${result.events.length})`, '');
-      for (const e of result.events) lines.push(`- ${JSON.stringify(e)}`);
+      lines.push(...renderRowTable(result.events, EVENT_COLUMNS));
     }
 
     if (result.goals) {
       lines.push('', `# Goals (${result.goals.length})`, '');
-      for (const g of result.goals) lines.push(`- ${JSON.stringify(g)}`);
+      lines.push(...renderRowTable(result.goals, GOAL_COLUMNS));
     }
 
     if (typeof result.archived === 'boolean') lines.push('', `_Archived: ${result.archived}_`);

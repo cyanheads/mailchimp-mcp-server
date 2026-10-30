@@ -309,14 +309,13 @@ export interface SubscriberNote {
   updated_at?: string;
 }
 
+/** One `/members/{hash}/activity-feed` entry; extra keys vary by `activity_type`. */
 export interface SubscriberActivityItem {
-  action: string;
+  activity_type: string;
   campaign_id?: string;
-  parent_campaign?: string;
-  timestamp?: string;
-  title?: string;
-  type?: string;
-  url?: string;
+  campaign_title?: string;
+  created_at_timestamp?: string;
+  [key: string]: unknown;
 }
 
 export interface SubscriberEvent {
@@ -561,6 +560,20 @@ export interface CampaignReport {
   timewarp?: unknown[];
   type?: CampaignType;
   unsubscribed?: number;
+}
+
+/** One member who clicked a link (`/reports/{id}/click-details/{link_id}/members`). */
+export interface ClickDetailMember {
+  campaign_id?: string;
+  clicks?: number;
+  contact_status?: string;
+  email_address: string;
+  email_id?: string;
+  list_id?: string;
+  list_is_active?: boolean;
+  merge_fields?: Record<string, unknown>;
+  url_id?: string;
+  vip?: boolean;
 }
 
 export interface ClickDetail {

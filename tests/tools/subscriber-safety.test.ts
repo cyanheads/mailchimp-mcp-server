@@ -213,7 +213,7 @@ describe('subscriber safety through HTTP', () => {
     expect(result.isError).toBe(true);
     expect(requests).toHaveLength(0);
   });
-  it('accepts unusual syntax and normalized hashes; omitted/empty list stays unfiltered', async () => {
+  it('accepts unusual syntax and normalized hashes; omitted/blank list stays unfiltered', async () => {
     for (const value of [' User@Example.COM ', 'a+b@localhost', '"a b"@[127.0.0.1]']) {
       await primitive.handler(
         primitive.input.parse({ operation: 'get', audienceId: 'a', email: value }),
@@ -221,7 +221,7 @@ describe('subscriber safety through HTTP', () => {
       );
       expect(requests.at(-1)?.url).toContain(mailchimpMemberHash(value));
     }
-    for (const value of [undefined, '']) {
+    for (const value of [undefined, '', '  ']) {
       const result = await runToolContract(primitive, {
         operation: 'list',
         audienceId: 'a',
@@ -230,8 +230,22 @@ describe('subscriber safety through HTTP', () => {
         count: 1000,
       });
       expect(result.structuredContent).toMatchObject({ subscribers: [], totalItems: 0 });
-      expect(requests.at(-1)?.url).not.toContain('email_address');
+      expect(result.structuredContent).toHaveProperty('filters', { count: 1000, offset: 999 });
+      expect(new URL(requests.at(-1)?.url ?? '', 'http://x').search).toBe('?count=1000&offset=999');
     }
+  });
+  it('list rejects an email filter the members endpoint cannot apply', async () => {
+    const result = await runToolContract(primitive, {
+      operation: 'list',
+      audienceId: 'a',
+      email: 'nobody-here@example.com',
+    });
+    expect(result.isError).toBe(true);
+    expect(requests).toHaveLength(0);
+    expect(result.structuredContent).toMatchObject({
+      error: { data: { reason: 'list_email_unsupported' } },
+    });
+    expect(JSON.stringify(result.content)).toContain('mailchimp_find_subscriber');
   });
   it('retains mixed import failures and avoids all-invalid upstream calls', async () => {
     const result = await runToolContract(batch, {

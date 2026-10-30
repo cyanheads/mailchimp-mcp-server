@@ -27,10 +27,10 @@ function makeService(overrides: Partial<ServerConfig> = {}): MailchimpService {
   return new MailchimpService({ ...BASE_CONFIG, ...overrides });
 }
 
-/** Build a `Response`-like object for the fetch stub. */
+/** Build a `Response`-like object for the fetch stub. A 204 carries a null body, which Node's `Response` requires. */
 function fakeResponse(status: number, body: unknown = ''): Response {
   const text = typeof body === 'string' ? body : JSON.stringify(body);
-  const res = new Response(text, {
+  const res = new Response(status === 204 ? null : text, {
     status,
     statusText: status === 200 ? 'OK' : 'Error',
     headers: { 'content-type': 'application/json' },
@@ -100,6 +100,19 @@ describe('MailchimpService.request', () => {
     expect(calledUrl).toBe('https://us22.api.mailchimp.com/3.0/lists?count=25&fields=id%2Cname');
   });
 
+  it('subscribers.list sends only the query parameters the members endpoint documents', async () => {
+    fetchStub.mockResolvedValueOnce(fakeResponse(200, { members: [], total_items: 0 }));
+    await makeService().subscribers.list(createMockContext(), 'a', {
+      count: 10,
+      offset: 20,
+      status: 'cleaned',
+      fields: ['members.id'],
+    });
+    expect(String(fetchStub.mock.calls[0]?.[0])).toBe(
+      'https://us22.api.mailchimp.com/3.0/lists/a/members?count=10&offset=20&status=cleaned&fields=members.id',
+    );
+  });
+
   it('classifies 401 as Unauthorized with a key-check hint', async () => {
     fetchStub.mockResolvedValueOnce(
       fakeResponse(401, { title: 'API Key Invalid', detail: 'Your key is wrong.' }),
@@ -144,6 +157,18 @@ describe('MailchimpService.request', () => {
     const svc = makeService();
     await expect(svc.request('GET', '/x')).rejects.toMatchObject({
       code: JsonRpcErrorCode.NotFound,
+    });
+  });
+
+  it.each([
+    ['/reports/c1/click-details/L1/members', /click-details on this campaign without linkId/],
+    ['/reports/c1/open-details/abc123', /no recorded open on this campaign/],
+    ['/reports/c1', /only sent campaigns have reports/],
+  ])('a 404 on %s carries the drill-down-specific recovery hint', async (path, hint) => {
+    fetchStub.mockResolvedValueOnce(fakeResponse(404, { title: 'Resource Not Found' }));
+    await expect(makeService().request('GET', path)).rejects.toMatchObject({
+      code: JsonRpcErrorCode.NotFound,
+      data: { recovery: { hint: expect.stringMatching(hint) } },
     });
   });
 
