@@ -1,3 +1,10 @@
+# Paths `mcpb pack` leaves out of the bundle. It reads this file, not
+# .gitignore, so gitignored local files ship unless they are listed here.
+# Anchor every path with a leading "/": an unanchored name also strips the
+# same name inside node_modules/. Root skills/ ships on purpose — it holds the
+# skills this server publishes to installing agents. The asset upload cache is
+# left unanchored on purpose: it sits beside whichever assets directory is in
+# use, at any depth.
 .env*
 .mailchimp-cache.json
 .mailchimp-cache.json.*.tmp
@@ -5,17 +12,26 @@
 /.claude/
 /.agents/
 /framework-skills/
-/tests/
 /src/
 /scripts/
+/tests/
 /docs/
+/changelog/
+/coverage/
+/logs/
+/.cache/
 /.github/
 /.vscode/
-/.cache/
-/coverage/
-/docs/idea.md
-/logs/
+/.claude-plugin/
+/.codex-plugin/
+/plugin.json
+/mcp.json
+/CLAUDE.md
+/AGENTS.md
 /Dockerfile
+/.dockerignore
+/.gitattributes
+/devcheck.config.json
 /bun.lock
 /bunfig.toml
 /wrangler.toml

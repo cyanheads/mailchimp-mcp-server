@@ -3,6 +3,7 @@
     "ignores": [
       "@types/*",
       "pino-pretty",
+      "js-yaml",
       "typescript",
       "tsc-alias",
       "@cyanheads/mcp-ts-core",

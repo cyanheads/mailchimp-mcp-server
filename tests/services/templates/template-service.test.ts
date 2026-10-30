@@ -195,7 +195,11 @@ describe('TemplateService — frontmatter', () => {
   });
 
   it('throws ValidationError on malformed frontmatter YAML', async () => {
-    await writeFile(join(dir, 'bad-yaml.eta'), `---\n: : :\n---\n<p>body</p>\n`, 'utf8');
+    await writeFile(
+      join(dir, 'bad-yaml.eta'),
+      `---\nsubject: [unclosed\n---\n<p>body</p>\n`,
+      'utf8',
+    );
     const svc = new TemplateService(dir);
     await expect(svc.get('bad-yaml')).rejects.toMatchObject({
       code: JsonRpcErrorCode.ValidationError,

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "mailchimp-mcp-server",
+  "version": "0.4.0",
+  "description": "Draft, test, and send Mailchimp campaigns straight from your MCP client — with audience management, subscriber CRUD, and post-send analytics behind safe-by-default send gates. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
+  "homepage": "https://github.com/cyanheads/mailchimp-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/mailchimp-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mailchimp",
+    "mailchimp-api",
+    "email-marketing",
+    "newsletter",
+    "campaigns",
+    "audiences",
+    "subscribers",
+    "mcp",
+    "model-context-protocol",
+    "mcp-server",
+    "typescript",
+    "ai-agent",
+    "stdio",
+    "streamable-http"
+  ]
+}
