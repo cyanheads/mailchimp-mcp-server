@@ -103,7 +103,7 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
       toneAdjustmentCount: 2,
     });
     expect(result.nextToolSuggestions).toHaveLength(3);
-    expect(result.nextToolSuggestions[0]?.tool).toBe('mailchimp_audience_overview');
+    expect(result.nextToolSuggestions[0]?.toolName).toBe('mailchimp_audience_overview');
   });
 
   it('adds the large-list + low-open-rate tone adjustments and nets growth from history', async () => {
@@ -184,19 +184,32 @@ describe('mailchimpPlaybookTool.format', () => {
       liveState: { planType: 'free' },
       nextToolSuggestions: [
         {
-          tool: 'mailchimp_account',
+          toolName: 'mailchimp_account',
           reason: 'Confirm plan and data center',
-          suggestedInput: { operation: 'info' },
+          args: { operation: 'info' },
         },
       ],
+      resourceSuggestions: [{ uri: 'mailchimp://audiences/abc', reason: 'Audience snapshot' }],
     };
     const blocks = mailchimpPlaybookTool.format!(output);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.type).toBe('text');
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('# Onboarding playbook');
-    expect(text).toContain('## Suggested next calls');
-    expect(text).toContain('mailchimp_account');
-    expect(text).toContain('Confirm plan and data center');
+    expect(text.slice(text.indexOf('## Suggested next calls'))).toBe(
+      [
+        '## Suggested next calls',
+        '',
+        '- **`mailchimp_account`** — Confirm plan and data center',
+        '  args:',
+        '  ```json',
+        '  {"operation":"info"}',
+        '  ```',
+        '',
+        '## Suggested resources',
+        '',
+        '- `mailchimp://audiences/abc` — Audience snapshot',
+      ].join('\n'),
+    );
   });
 });

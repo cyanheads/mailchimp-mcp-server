@@ -1,8 +1,9 @@
 /**
  * @fileoverview `mailchimp_playbook` — procedural guidance merged with live
- * account state. Returns markdown instructions tailored to current numbers
- * plus a `nextToolSuggestions` list so the agent can chain follow-up calls
- * deterministically. Read-only; the agent does the work with other tools.
+ * account state. Returns markdown instructions tailored to current numbers,
+ * a `nextToolSuggestions` list so the agent can chain follow-up calls
+ * deterministically, and `resourceSuggestions` with ready-to-read resource
+ * URIs. Read-only; the agent does the work with other tools.
  * @module mcp-server/tools/definitions/mailchimp-playbook.tool
  */
 
@@ -41,14 +42,22 @@ const InputSchema = z.object({
 
 const NextToolSchema = z
   .object({
-    tool: z.string().describe('Tool name to call next.'),
+    toolName: z.string().describe('Tool to call next.'),
     reason: z.string().describe('Why this tool, in the current context.'),
-    suggestedInput: z
+    args: z
       .record(z.string(), z.unknown())
-      .optional()
-      .describe('Prefilled input you can pass to the tool.'),
+      .describe(
+        'Arguments pre-filled from the live state; {} when the tool takes none. Campaign copy and content are left for you to add.',
+      ),
   })
   .describe('A recommended follow-up tool call, with reason and pre-filled arguments.');
+
+const ResourceSuggestionSchema = z
+  .object({
+    uri: z.string().describe('Complete resource URI, ready for resources/read.'),
+    reason: z.string().describe('What reading this resource gives you, in the current context.'),
+  })
+  .describe('A resource worth reading next, built from an ID this call fetched.');
 
 const OutputSchema = z.object({
   topic: TopicSchema,
@@ -60,17 +69,24 @@ const OutputSchema = z.object({
     ),
   nextToolSuggestions: z
     .array(NextToolSchema)
-    .describe('Ordered list of follow-up tool calls, with reasons.'),
+    .describe('Ordered list of follow-up tool calls, with reasons; empty when none applies.'),
+  resourceSuggestions: z
+    .array(ResourceSuggestionSchema)
+    .describe('Resources to read for the entities this call fetched; empty when none applies.'),
 });
 
 type Output = z.infer<typeof OutputSchema>;
+
+const audienceUri = (audienceId: string): string => `mailchimp://audiences/${audienceId}`;
+const campaignReportUri = (campaignId: string): string =>
+  `mailchimp://campaigns/${campaignId}/report`;
 
 const PCT = (v: number | undefined): string =>
   typeof v === 'number' ? `${(v * 100).toFixed(2)}%` : '—';
 
 export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
   description:
-    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (designing a campaign, sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — call the suggested follow-up tools to execute. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments.',
+    'Returns a structured procedural playbook merged with live account state. Call this at the start of a complex multi-step task (designing a campaign, sending a campaign, reviewing a send, diagnosing deliverability, cleaning a list, onboarding, triaging a subscriber) to get a tailored walkthrough. Advice-only — call the suggested follow-up tools to execute. Returns markdown instructions + a live-state snapshot + `nextToolSuggestions` with pre-filled arguments + `resourceSuggestions` with resource URIs ready to read.',
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -132,7 +148,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '',
           '1. **Confirm the account is set up.** `mailchimp_account` with `operation: info` should show your plan, email, and total subscribers.',
           '2. **See what audiences exist.** `mailchimp_audiences` with `operation: list`. Free plan allows 1 audience.',
-          '3. **If no audience exists**, create one with `mailchimp_audiences` `operation: create`. Required fields: name, contact.{company,address1,city,state,zip,country}, permissionReminder, campaignDefaults.{fromName,fromEmail,language}.',
+          '3. **If no audience exists**, create one with `mailchimp_audiences` `operation: create`. Required fields: name, contact.{company,address1,city,state,zip,country}, permissionReminder, campaignDefaults.{fromName,fromEmail} (`language` defaults to `en`).',
           '4. **Review the audience schema.** `mailchimp_merge_fields` `operation: list` shows which subscriber attributes you can personalize on.',
           '5. **Add your first subscribers.** `mailchimp_upsert_subscriber` for one email at a time (status required), or `mailchimp_import_subscribers` for a batch (status defaults to `pending`). Use `pending` for double-opt-in. New or resumed `subscribed` status requires a confirmation round for documented consent before any writes; subscribed imports prompt once for the batch.',
           '6. **Snapshot the audience before sending.** `mailchimp_audience_overview` returns stats + growth + email clients + merge-field schema in one call.',
@@ -149,16 +165,12 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_audiences',
+              toolName: 'mailchimp_audiences',
               reason: 'See what audiences exist',
-              suggestedInput: { operation: 'list' },
-            },
-            {
-              tool: 'mailchimp_audience_overview',
-              reason: 'Once you have an audience, snapshot it',
-              suggestedInput: {},
+              args: { operation: 'list' },
             },
           ],
+          resourceSuggestions: [],
         };
       }
 
@@ -213,14 +225,20 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_templates',
+              toolName: 'mailchimp_templates',
               reason: 'See saved templates before drafting',
-              suggestedInput: { operation: 'list', type: 'user' },
+              args: { operation: 'list', type: 'user' },
             },
             {
-              tool: 'mailchimp_send_campaign',
+              toolName: 'mailchimp_send_campaign',
               reason: 'Draft the campaign and run the send-checklist',
-              suggestedInput: { audienceId: audience.id, mode: 'draft' },
+              args: { audienceId: audience.id, mode: 'draft' },
+            },
+          ],
+          resourceSuggestions: [
+            {
+              uri: audienceUri(audience.id),
+              reason: 'Audience snapshot for the send target: stats, contact, campaign defaults',
             },
           ],
         };
@@ -288,18 +306,35 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
             industryOpenRate: ib?.open_rate,
             industryClickRate: ib?.click_rate,
           },
-          nextToolSuggestions: [
-            {
-              tool: 'mailchimp_campaign_report',
-              reason: 'Full digest with top links, locations, recent unsubs, benchmarks',
-              suggestedInput: { campaignId: report.id },
-            },
-            {
-              tool: 'mailchimp_reports',
-              reason: 'Drill into advice from Mailchimp',
-              suggestedInput: { operation: 'slice', campaignId: report.id, dimension: 'advice' },
-            },
-          ],
+          // An unsent campaign has no report: the digest call fails with `campaign_not_sent`.
+          nextToolSuggestions: report.send_time
+            ? [
+                {
+                  toolName: 'mailchimp_campaign_report',
+                  reason: 'Full digest with top links, locations, recent unsubs, benchmarks',
+                  args: { campaignId: report.id },
+                },
+                {
+                  toolName: 'mailchimp_reports',
+                  reason: 'Drill into advice from Mailchimp',
+                  args: { operation: 'slice', campaignId: report.id, dimension: 'advice' },
+                },
+              ]
+            : [
+                {
+                  toolName: 'mailchimp_campaigns',
+                  reason: 'This campaign has not been sent, so it has no report; inspect the draft',
+                  args: { operation: 'get', campaignId: report.id },
+                },
+              ],
+          resourceSuggestions: report.send_time
+            ? [
+                {
+                  uri: campaignReportUri(report.id),
+                  reason: 'Headline report metrics for this campaign',
+                },
+              ]
+            : [],
         };
       }
 
@@ -345,6 +380,9 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
             : '5. **Click rates look healthy.**',
           '6. **Authentication.** Make sure your sending domain has SPF/DKIM/DMARC records set up in Mailchimp → Website → Domains.',
         ].join('\n');
+        const latest = recent[0];
+        // `list-hygiene` needs an audience: the latest report's, unless that audience was deleted.
+        const latestAudienceId = latest?.list_is_active === false ? undefined : latest?.list_id;
         return {
           topic: 'deliverability',
           instructions,
@@ -357,18 +395,30 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_reports',
+              toolName: 'mailchimp_reports',
               reason: 'Get Mailchimp-generated advice for the most recent campaign',
-              suggestedInput: recent[0]
-                ? { operation: 'slice', campaignId: recent[0].id, dimension: 'advice' }
+              args: latest
+                ? { operation: 'slice', campaignId: latest.id, dimension: 'advice' }
                 : { operation: 'list' },
             },
-            {
-              tool: 'mailchimp_playbook',
-              reason: 'If bounce rate is high, plan list hygiene',
-              suggestedInput: { topic: 'list-hygiene' },
-            },
+            ...(latestAudienceId
+              ? [
+                  {
+                    toolName: 'mailchimp_playbook',
+                    reason: 'If bounce rate is high, plan list hygiene',
+                    args: { topic: 'list-hygiene', audienceId: latestAudienceId },
+                  },
+                ]
+              : []),
           ],
+          resourceSuggestions: latest?.send_time
+            ? [
+                {
+                  uri: campaignReportUri(latest.id),
+                  reason: 'Headline report metrics for the most recent campaign',
+                },
+              ]
+            : [],
         };
       }
 
@@ -411,9 +461,9 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_subscribers',
+              toolName: 'mailchimp_subscribers',
               reason: 'Pull cleaned subscribers for review',
-              suggestedInput: {
+              args: {
                 operation: 'list',
                 audienceId: audience.id,
                 status: 'cleaned',
@@ -421,9 +471,16 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
               },
             },
             {
-              tool: 'mailchimp_audiences',
+              toolName: 'mailchimp_audiences',
               reason: 'Check long-term growth trend for patterns',
-              suggestedInput: { operation: 'list-growth', audienceId: audience.id, count: 12 },
+              args: { operation: 'list-growth', audienceId: audience.id, count: 12 },
+            },
+          ],
+          resourceSuggestions: [
+            {
+              uri: audienceUri(audience.id),
+              reason:
+                'Audience snapshot: member, cleaned, and unsubscribe counts, double-opt-in status',
             },
           ],
         };
@@ -457,13 +514,17 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
               fuzzyMatches: 0,
               computedHash: hash,
             },
-            nextToolSuggestions: [
-              {
-                tool: 'mailchimp_upsert_subscriber',
-                reason: 'Create the subscriber if they should be here',
-                suggestedInput: { email: input.email, status: 'pending' },
-              },
-            ],
+            // The upsert requires an audience; with no match, only the caller can name one.
+            nextToolSuggestions: input.audienceId
+              ? [
+                  {
+                    toolName: 'mailchimp_upsert_subscriber',
+                    reason: 'Create the subscriber if they should be here',
+                    args: { email: input.email, audienceId: input.audienceId, status: 'pending' },
+                  },
+                ]
+              : [],
+            resourceSuggestions: [],
           };
         }
         const top = exact[0] ?? fuzzy[0];
@@ -510,22 +571,28 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_find_subscriber',
+              toolName: 'mailchimp_find_subscriber',
               reason: 'Full record with tags, merge fields, stats',
-              suggestedInput: {
+              args: {
                 email: input.email,
                 ...(input.audienceId ? { audienceId: input.audienceId } : {}),
               },
             },
             {
-              tool: 'mailchimp_subscribers',
+              toolName: 'mailchimp_subscribers',
               reason: 'Recent activity (opens, clicks)',
-              suggestedInput: {
+              args: {
                 operation: 'list-activity',
                 audienceId: top.list_id,
                 email: input.email,
                 count: 20,
               },
+            },
+          ],
+          resourceSuggestions: [
+            {
+              uri: audienceUri(top.list_id),
+              reason: "Snapshot of the top match's audience",
             },
           ],
         };
@@ -653,19 +720,26 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           },
           nextToolSuggestions: [
             {
-              tool: 'mailchimp_audience_overview',
+              toolName: 'mailchimp_audience_overview',
               reason: 'Refresh audience state (growth, clients, merge-field schema)',
-              suggestedInput: { audienceId: audience.id },
+              args: { audienceId: audience.id },
             },
             {
-              tool: 'mailchimp_templates',
+              toolName: 'mailchimp_templates',
               reason: 'Browse saved templates before drafting from scratch',
-              suggestedInput: { operation: 'list', type: 'user' },
+              args: { operation: 'list', type: 'user' },
             },
             {
-              tool: 'mailchimp_send_campaign',
+              toolName: 'mailchimp_send_campaign',
               reason: 'Start the draft once design is settled',
-              suggestedInput: { audienceId: audience.id, mode: 'draft' },
+              args: { audienceId: audience.id, mode: 'draft' },
+            },
+          ],
+          resourceSuggestions: [
+            {
+              uri: audienceUri(audience.id),
+              reason:
+                'Audience snapshot: contact details and campaign defaults (from-name, from-email)',
             },
           ],
         };
@@ -681,12 +755,18 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
     if (result.nextToolSuggestions.length > 0) {
       lines.push('', '## Suggested next calls', '');
       for (const s of result.nextToolSuggestions) {
-        lines.push(`- **\`${s.tool}\`** — ${s.reason}`);
-        if (s.suggestedInput && Object.keys(s.suggestedInput).length > 0) {
-          lines.push(`  \`\`\`json`);
-          lines.push(`  ${JSON.stringify(s.suggestedInput)}`);
+        lines.push(`- **\`${s.toolName}\`** — ${s.reason}`);
+        if (Object.keys(s.args).length > 0) {
+          lines.push('  args:', `  \`\`\`json`);
+          lines.push(`  ${JSON.stringify(s.args)}`);
           lines.push(`  \`\`\``);
         }
+      }
+    }
+    if (result.resourceSuggestions.length > 0) {
+      lines.push('', '## Suggested resources', '');
+      for (const r of result.resourceSuggestions) {
+        lines.push(`- \`${r.uri}\` — ${r.reason}`);
       }
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
