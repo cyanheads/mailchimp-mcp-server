@@ -21,10 +21,11 @@ await createApp({
   title: 'mailchimp-mcp-server',
   sessionMode: { require: 'stateful' },
   instructions:
-    'Use the mailchimp_* tools to manage audiences, subscribers, and campaigns via the Mailchimp Marketing API. Auth is MAILCHIMP_API_KEY, whose required `-<dc>` suffix (e.g. `-us22`) sets the data center. Audiences are "lists" keyed by audience/list ID; subscriber tools take the plain email (the member hash is derived internally). For any multi-step task, call mailchimp_playbook first — it returns tailored guidance plus pre-filled next calls. Typical chain: mailchimp_audiences (list) → mailchimp_find_subscriber → mailchimp_send_campaign → mailchimp_campaign_report. Send/schedule requests human confirmation before campaign mutation. Upsert/update request confirmation for new or resumed subscriptions; imports request one confirmation when any valid effective row is subscribed. Declining subscription confirmation writes nothing; pending/double-opt-in remains available without it. mailchimp_subscribers set-tags is declarative — it strips static-segment membership unless you pass preserveTags.',
+    'Use the mailchimp_* tools to manage audiences, subscribers, and campaigns via the Mailchimp Marketing API. Auth is MAILCHIMP_API_KEY, whose required `-<dc>` suffix (e.g. `-us22`) sets the data center. Audiences are "lists" keyed by audience/list ID; subscriber tools take the plain email (the member hash is derived internally). For any multi-step task, call mailchimp_playbook first — it returns tailored guidance plus pre-filled next calls. Typical chain: mailchimp_audiences (list) → mailchimp_find_subscriber → mailchimp_send_campaign → mailchimp_campaign_report. Send/schedule requests human confirmation before campaign mutation. Upsert/update request confirmation for new or resumed subscriptions; imports request one confirmation when any valid effective row is subscribed. Declining subscription confirmation writes nothing; pending/double-opt-in remains available without it. mailchimp_subscribers set-tags is declarative — it strips static-segment membership unless you pass preserveTags. Before sending, replicating, or analyzing a campaign, or changing a subscriber, read skill://mailchimp-guide/SKILL.md for the gates and ID chains.',
   tools: allToolDefinitions,
   resources: allResourceDefinitions,
   prompts: allPromptDefinitions,
+  skills: 'skills',
   landing: {
     envExample: {
       MAILCHIMP_API_KEY: 'your-api-key-us21',
