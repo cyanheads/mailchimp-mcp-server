@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.6.0](changelog/0.6.x/0.6.0.md) — 2026-10-31 · ⚠️ Breaking
+
+Campaign responses preserve complete content and distinguish unavailable report data from measured zero or empty results.
+
 ## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-10-30 · ⚠️ Breaking
 
 mailchimp_playbook suggestions use { toolName, reason, args }, list reads echo their filters and explain empty pages, and the server publishes the mailchimp-guide agent skill.
