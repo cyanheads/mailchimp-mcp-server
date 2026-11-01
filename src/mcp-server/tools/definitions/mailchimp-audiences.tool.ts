@@ -5,7 +5,7 @@
  * @module mcp-server/tools/definitions/mailchimp-audiences.tool
  */
 
-import { tool, z } from '@cyanheads/mcp-ts-core';
+import { type HandlerContext, tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import {
@@ -318,9 +318,13 @@ function suppliedCampaignDefaults(
  * caller's subfields are laid over `current` (the audience as read before the
  * PATCH) and an omitted subfield is never sent blank. `create` has no current
  * values: `subject` defaults to blank and `language` to `en`.
- * @throws validationError naming every required field still missing.
+ * @throws A declared missing_required_fields error naming every required field still missing.
  */
-function buildAudienceBody(input: Input, current: Audience | undefined): Partial<Audience> {
+function buildAudienceBody(
+  input: Input,
+  current: Audience | undefined,
+  ctx: Pick<HandlerContext<'missing_required_fields'>, 'fail'>,
+): Partial<Audience> {
   const isCreate = input.operation === 'create';
   const body: Partial<Audience> = {};
   const missing: string[] = [];
@@ -363,10 +367,12 @@ function buildAudienceBody(input: Input, current: Audience | undefined): Partial
   if (input.visibility) body.visibility = input.visibility;
 
   if (missing.length > 0) {
-    throw validationError(
+    throw ctx.fail(
+      'missing_required_fields',
       isCreate
         ? `Missing required fields for create: ${missing.join(', ')}.`
         : `Missing required fields for update: ${missing.join(', ')}. The audience has no current value for them; supply each one.`,
+      { missingFields: missing },
     );
   }
   return body;
@@ -396,6 +402,12 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
   enrichment: listEnrichment,
   enrichmentTrailer: listEnrichmentTrailer,
   errors: [
+    {
+      reason: 'missing_required_fields',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Required fields are missing on create or after merging an audience update.',
+      recovery: 'Supply the fields listed in data.missingFields and retry the same operation.',
+    },
     {
       reason: 'mailchimp_unauthorized',
       thrownBy: 'service',
@@ -467,7 +479,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         return { operation: 'get', audience: summarize(audience) };
       }
       case 'create': {
-        const body = buildAudienceBody(input, undefined);
+        const body = buildAudienceBody(input, undefined, ctx);
         const audience = await svc.audiences.create(ctx, body);
         ctx.log.info('audience created', { audienceId: audience.id, name: audience.name });
         return { operation: 'create', audience: summarize(audience) };
@@ -480,7 +492,11 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         const current = nestedChange
           ? await svc.audiences.get(ctx, id, { fields: ['contact', 'campaign_defaults'] })
           : undefined;
-        const audience = await svc.audiences.update(ctx, id, buildAudienceBody(input, current));
+        const audience = await svc.audiences.update(
+          ctx,
+          id,
+          buildAudienceBody(input, current, ctx),
+        );
         return { operation: 'update', audience: summarize(audience) };
       }
       case 'list-activity': {

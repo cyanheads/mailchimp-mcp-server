@@ -174,6 +174,26 @@ describe('create', () => {
     });
     expect(result.isError).toBe(true);
     expect(requests).toHaveLength(0);
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        code: JsonRpcErrorCode.ValidationError,
+        data: {
+          reason: 'missing_required_fields',
+          missingFields: [
+            'contact.company',
+            'contact.address1',
+            'contact.state',
+            'contact.zip',
+            'contact.country',
+            'permissionReminder',
+            'campaignDefaults.fromName',
+            'campaignDefaults.fromEmail',
+          ],
+          recovery: { hint: expect.stringContaining('Supply the fields') },
+        },
+      },
+    });
+    expect(text(result)).toContain('Supply the fields');
     expect(text(result)).toContain(
       'Missing required fields for create: contact.company, contact.address1, contact.state, contact.zip, contact.country, permissionReminder, campaignDefaults.fromName, campaignDefaults.fromEmail.',
     );
@@ -181,6 +201,29 @@ describe('create', () => {
 });
 
 describe('update', () => {
+  it('preserves an upstream lookup failure instead of reporting missing fields', async () => {
+    const result = await runToolContract(tool, {
+      operation: 'update',
+      audienceId: 'missing',
+      contact: { company: 'Acme' },
+    });
+    expect(result.structuredContent).toMatchObject({
+      error: { code: JsonRpcErrorCode.NotFound, data: { reason: 'mailchimp_not_found' } },
+    });
+    expect(text(result)).toContain('mailchimp_not_found');
+    expect(requests.map((request) => request.method)).toEqual(['GET']);
+  });
+
+  it('keeps a missing audienceId distinct and makes no request', async () => {
+    const result = await runToolContract(tool, { operation: 'update', name: 'Renamed' });
+    expect(result.structuredContent).toMatchObject({
+      error: { code: JsonRpcErrorCode.ValidationError },
+    });
+    expect(result.structuredContent).not.toHaveProperty('error.data.reason');
+    expect(text(result)).toContain("'audienceId' is required");
+    expect(requests).toHaveLength(0);
+  });
+
   it('sends only top-level fields the caller set, with no read first', async () => {
     route('PATCH /lists/aud1', { ...CURRENT, name: 'Renamed' });
     const result = await runToolContract(tool, {
@@ -251,6 +294,17 @@ describe('update', () => {
     });
     expect(result.isError).toBe(true);
     expect(requests.map((r) => r.method)).toEqual(['GET']);
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        code: JsonRpcErrorCode.ValidationError,
+        data: {
+          reason: 'missing_required_fields',
+          missingFields: ['contact.address1', 'contact.state', 'contact.zip', 'contact.country'],
+          recovery: { hint: expect.stringContaining('Supply the fields') },
+        },
+      },
+    });
+    expect(text(result)).toContain('Supply the fields');
     expect(text(result)).toContain('contact.address1, contact.state, contact.zip, contact.country');
   });
 
