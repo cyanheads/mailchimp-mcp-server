@@ -63,7 +63,7 @@ Lists themselves (`mailchimp://audiences`, `mailchimp://campaigns`) are not expo
 |:-----|:------------|:-----|
 | `newsletter_from_source` | User-invokable starter that briefs the agent to compose a monthly editorial newsletter from a URL or free-form description. Chains into `mailchimp_playbook` (`topic: design-campaign`) for live audience-aware design guidance, then walks the draft → test → send flow. | `source` (URL or brief), `audienceId?`, `seasonalContext?` |
 
-Design reference: `docs/email-design-playbook.md` — the worked-example playbook (palette, typography, email-safe HTML, graphics via CDN) that the prompt and the `design-campaign` topic both point to.
+The prompt and `design-campaign` topic return inline design guidance for installed clients. `docs/email-design-playbook.md` remains a repository reference; neither runtime surface requires access to that file.
 
 Future candidates:
 
@@ -216,7 +216,7 @@ POST   /campaigns/{id}/actions/schedule      → (if mode=schedule)
 GET    /campaigns/{id}                       → post-action state for the response
 (on mid-flow error + cleanupOnError)         → DELETE /campaigns/{id}
 ```
-Output carries the campaign ID, send-checklist warnings (non-blocking; blocking items throw `ValidationError` before send), resolved mode, `cancelledByUser` if confirmation was declined or cancelled, and archive URL when available. If `ctx.signal` aborts mid-flow or any upstream step throws, and `cleanupOnError: true` (default), the draft is deleted before the error propagates — prevents orphan drafts cluttering the account.
+Output carries the campaign ID, send-checklist warnings (non-blocking; blocking items throw `ValidationError` before send), resolved mode, `cancelledByUser` if confirmation was declined or cancelled, and archive URL when available. A failure after creation attempts draft deletion when `cleanupOnError: true` (default); cancellation or an upstream failure can also prevent that cleanup.
 
 **`mailchimp_replicate_campaign`** (4–9 upstream calls, plus a re-entrant input round):
 ```
@@ -251,7 +251,7 @@ Wraps native batch subscribe. Incomplete addresses become local `failed[]` entri
 GET    /search-members?query={email}&list_id?   → locate (matches carry full member detail)
 GET    /lists/{list_id}/members/{hash}/tags     → (per match, includeTags) tags
 ```
-Returns matches across audiences (if `audienceId` omitted) with full state — email, status, merge fields, tags, last activity. Most free accounts have one audience, so usually a single upstream call.
+Returns matches across audiences (if `audienceId` omitted) with full state — email, status, merge fields, tags, last activity. Requested tag-read failures propagate; a failed lookup is never reported as an empty tag list. With `includeTags: false`, only the search request is made.
 
 **`mailchimp_campaign_report`** (4 calls; the three slices run in parallel under the concurrency cap):
 ```
@@ -260,7 +260,7 @@ GET /reports/{id}/click-details?count=N
 GET /reports/{id}/locations?count=N
 GET /reports/{id}/unsubscribed?count=N
 ```
-Parallelized via `Promise.all` subject to `MAILCHIMP_CONCURRENCY_LIMIT`. Output is a single structured digest. Individual slices remain available via `mailchimp_reports` with `operation: 'slice'` for agents that need one specific dimension in detail.
+Parallelized via `Promise.all` subject to `MAILCHIMP_CONCURRENCY_LIMIT`. Output is a single structured digest; slice failures propagate. Missing metrics stay omitted, and delivered count is derived only when the recipient count and every bounce category are present. Individual slices remain available via `mailchimp_reports` with `operation: 'slice'` for agents that need one specific dimension in detail.
 
 **`mailchimp_audience_overview`** (4 calls, parallelized):
 ```
@@ -316,23 +316,23 @@ z.object({
 ```ts
 z.object({
   campaignId: z.string(),
-  campaignTitle: z.string(),
-  sendTime: z.string(),
-  recipientsCount: z.number(),
+  campaignTitle: z.string().optional(),
+  sendTime: z.string().optional(),
+  recipientsCount: z.number().optional(),
   delivery: z.object({
-    delivered: z.number(),
-    bounces: z.object({ hard: z.number(), soft: z.number(), syntax: z.number() }),
-    abuseReports: z.number(),
+    delivered: z.number().optional(),
+    bounces: z.object({ hard: z.number().optional(), soft: z.number().optional(), syntax: z.number().optional() }),
+    abuseReports: z.number().optional(),
   }),
   engagement: z.object({
-    opens: z.object({ total: z.number(), unique: z.number(), rate: z.number(), lastOpen: z.string().optional() }),
-    clicks: z.object({ total: z.number(), unique: z.number(), rate: z.number(), lastClick: z.string().optional() }),
-    unsubscribes: z.number(),
+    opens: z.object({ total: z.number().optional(), unique: z.number().optional(), rate: z.number().optional(), lastOpen: z.string().optional() }),
+    clicks: z.object({ total: z.number().optional(), unique: z.number().optional(), rate: z.number().optional(), lastClick: z.string().optional() }),
+    unsubscribes: z.number().optional(),
   }),
   topClickedLinks: z.array(z.object({ url: z.string(), totalClicks: z.number(), uniqueClicks: z.number() })),
-  topLocations: z.array(z.object({ country: z.string(), region: z.string().optional(), opens: z.number() })),
-  recentUnsubscribes: z.array(z.object({ email: z.string(), reason: z.string().optional(), timestamp: z.string() })),
-  industryBenchmarks: z.object({ openRate: z.number(), clickRate: z.number() }).optional(),
+  topLocations: z.array(z.object({ countryCode: z.string(), region: z.string().optional(), opens: z.number().optional() })),
+  recentUnsubscribes: z.array(z.object({ email: z.string(), reason: z.string().optional(), timestamp: z.string().optional() })),
+  industryBenchmarks: z.object({ openRate: z.number().optional(), clickRate: z.number().optional() }).optional(),
 })
 ```
 
@@ -390,7 +390,7 @@ z.object({
 - **Pagination is `count`/`offset`, not cursor.** Tools expose `count` and `offset` directly; callers page explicitly. Mailchimp caps `count` at 1000.
 - **Tag sync requires GET + POST.** No atomic "set tags" endpoint; a concurrent modification between our read and write could lose a tag. Acceptable for v1; documented in the tool's description.
 - **Import batch cap.** `mailchimp_import_subscribers` caps at 500 per call. Larger imports require client-side chunking or the async `/batches` API (deferred).
-- **Cleanup-on-error is best-effort.** If the cleanup DELETE also fails (e.g., during a full Mailchimp outage), the orphan remains. `mailchimp_send_campaign`'s error response includes `cleanedUp: false` so agents know.
+- **Cleanup-on-error is best-effort.** If the cleanup DELETE also fails, the draft may remain. Both campaign workflows report `data.cleanedUp` on post-creation errors; replication also names the replica and cleanup outcome in the error text.
 
 ---
 

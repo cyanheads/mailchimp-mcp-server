@@ -6,6 +6,7 @@
  * @module tests/tools/mailchimp-reports.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
@@ -14,6 +15,7 @@ import {
   MailchimpService,
   setMailchimpServiceForTesting,
 } from '@/services/mailchimp/mailchimp-service.js';
+import { reportFixture, SENT, reportText as text } from '../helpers/report-fixture.js';
 
 const BASE_CONFIG: ServerConfig = {
   apiKey: 'abcdef0123456789abcdef0123456789-us22',
@@ -26,13 +28,18 @@ const BASE_CONFIG: ServerConfig = {
 
 let requests: URL[] = [];
 
-/** Serve `body` for every request and record each requested URL. */
+/** Serve slice data plus its sent parent and record every requested URL. */
 function serve(body: unknown): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: Parameters<typeof fetch>[0]) => {
-      requests.push(new URL(String(input instanceof Request ? input.url : input)));
-      return new Response(JSON.stringify(body), {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      requests.push(url);
+      const response =
+        url.pathname === '/3.0/reports/c1'
+          ? { ...SENT, ...(typeof body === 'object' && body !== null ? body : {}) }
+          : body;
+      return new Response(JSON.stringify(response), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -44,7 +51,8 @@ const run = (input: Parameters<typeof runToolContract<typeof mailchimpReportsToo
   runToolContract(mailchimpReportsTool, input);
 
 const lastRequest = (): URL => {
-  const url = requests.at(-1);
+  // Slice assertions inspect the primary read, before the optional parent diagnostic.
+  const url = requests.findLast((url) => url.pathname !== '/3.0/reports/c1') ?? requests.at(-1);
   if (!url) throw new Error('no upstream request recorded');
   return url;
 };
@@ -572,5 +580,212 @@ describe('mailchimpReportsTool — row rendering (#10)', () => {
       '| --- | --- | --- |',
       '| a@example.com | 2 | \\[{"timestamp":"t1"}\\] |',
     ]);
+  });
+});
+
+describe('report availability (#30, #36)', () => {
+  const fixture = reportFixture();
+  const reports = mailchimpReportsTool;
+
+  it('keeps nonempty draft advice without requesting its parent report', async () => {
+    fixture.route(() =>
+      Response.json({
+        advice: [{ type: 'advice-neutralstat', message: 'Suggestions follow sending' }],
+        total_items: 1,
+      }),
+    );
+    const result = await runToolContract(reports, {
+      operation: 'slice',
+      dimension: 'advice',
+      campaignId: 'draft',
+    });
+    expect(result.structuredContent).toMatchObject({
+      rows: [{ message: 'Suggestions follow sending' }],
+    });
+    expect(text(result)).toContain('Suggestions follow sending');
+    expect(fixture.paths).toEqual(['/3.0/reports/draft/advice']);
+  });
+
+  it('draft recovery targets the existing campaign and does not invent status', async () => {
+    fixture.route(() => Response.json({ id: 'draft', type: 'regular', send_time: '' }));
+    const result = await runToolContract(reports, { operation: 'get', campaignId: 'draft' });
+    expect(result.structuredContent).toMatchObject({
+      error: { data: { reason: 'campaign_not_sent' } },
+    });
+    expect(result.structuredContent).not.toHaveProperty('error.data.status');
+    expect(text(result)).toContain('mailchimp_campaigns');
+    expect(text(result)).not.toContain('mailchimp_send_campaign');
+  });
+  it.each(['locations', 'click-details', 'unsubscribed'] as const)(
+    '%s empty draft discloses unsent state',
+    async (dimension) => {
+      fixture.route((path) =>
+        Response.json(
+          path.endsWith('/c1')
+            ? { id: 'c1', send_time: '' }
+            : { locations: [], urls_clicked: [], unsubscribes: [], total_items: 0 },
+        ),
+      );
+      const result = await runToolContract(reports, {
+        operation: 'slice',
+        dimension,
+        campaignId: 'c1',
+        count: 1000,
+      });
+      expect(result.structuredContent).toMatchObject({
+        rows: [],
+        totalItems: 0,
+        filters: { count: 1000, offset: 0 },
+        notice: expect.stringContaining('not been sent'),
+      });
+      expect(text(result)).toContain('not been sent');
+      expect(fixture.paths).toHaveLength(2);
+    },
+  );
+
+  it('sent empty since/offset pages keep their precise notice', async () => {
+    fixture.route((path) =>
+      Response.json(path.endsWith('/c1') ? SENT : { members: [], total_items: 2 }),
+    );
+    const result = await runToolContract(reports, {
+      operation: 'slice',
+      dimension: 'open-details',
+      campaignId: 'c1',
+      since: '2026-01-01',
+      offset: 2,
+    });
+    expect(result.structuredContent).toMatchObject({
+      rows: [],
+      filters: { count: 20, offset: 2, since: '2026-01-01' },
+      notice: expect.stringContaining('at or past'),
+    });
+    expect(text(result)).toContain('at or past');
+  });
+
+  it.each([429, 500, 503])(
+    'a diagnostic HTTP %s preserves the primary answer and discloses unknown status',
+    async (status) => {
+      fixture.route((path) =>
+        path.endsWith('/c1')
+          ? Response.json({ title: 'Diagnostic unavailable' }, { status })
+          : Response.json({ locations: [], total_items: 0 }),
+      );
+      const result = await runToolContract(reports, {
+        operation: 'slice',
+        dimension: 'locations',
+        campaignId: 'c1',
+      });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        rows: [],
+        notice: expect.stringContaining('could not be determined'),
+      });
+      expect(text(result)).toContain('could not be determined');
+      expect(text(result)).not.toContain('not been sent');
+    },
+  );
+
+  it.each([401, 403, 404])('a diagnostic HTTP %s remains a failure', async (status) => {
+    fixture.route((path) =>
+      path.endsWith('/c1')
+        ? Response.json({ title: 'Diagnostic invalid' }, { status })
+        : Response.json({ locations: [], total_items: 0 }),
+    );
+    const result = await runToolContract(reports, {
+      operation: 'slice',
+      dimension: 'locations',
+      campaignId: 'c1',
+    });
+    expect(result.isError).toBe(true);
+    expect(text(result)).toContain(String(status));
+  });
+
+  it('caller cancellation during the diagnostic propagates', async () => {
+    const controller = new AbortController();
+    fixture.route((path, init) => {
+      if (!path.endsWith('/c1')) return Response.json({ locations: [], total_items: 0 });
+      controller.abort(new DOMException('Stop send-state check', 'AbortError'));
+      return Promise.reject(init?.signal?.reason);
+    });
+    const result = await runToolContract(
+      reports,
+      { operation: 'slice', dimension: 'locations', campaignId: 'c1' },
+      { context: { signal: controller.signal } },
+    );
+    expect(result.structuredContent).toMatchObject({
+      error: { code: JsonRpcErrorCode.RequestCancelled },
+    });
+    expect(text(result)).toContain('Stop send-state check');
+  });
+
+  it('a local diagnostic timeout preserves the answer without cancelling its caller', async () => {
+    const deadline = new AbortController();
+    const caller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    fixture.route((path, init) => {
+      if (!path.endsWith('/c1')) return Response.json({ locations: [], total_items: 0 });
+      deadline.abort(new DOMException('Diagnostic deadline exceeded', 'TimeoutError'));
+      return Promise.reject(init?.signal?.reason);
+    });
+    const result = await runToolContract(
+      reports,
+      { operation: 'slice', dimension: 'locations', campaignId: 'c1' },
+      { context: { signal: caller.signal } },
+    );
+    expect(timeout).toHaveBeenCalledWith(2000);
+    expect(caller.signal.aborted).toBe(false);
+    expect(result.isError).not.toBe(true);
+    expect(text(result)).toContain('could not be determined');
+  });
+
+  it('invalid slice arguments fail before any network calls', async () => {
+    fixture.route(() => {
+      throw new Error('Unexpected fetch');
+    });
+    const result = await runToolContract(reports, {
+      operation: 'slice',
+      campaignId: 'c1',
+      dimension: 'locations',
+      count: 1001,
+    });
+    expect(result.isError).toBe(true);
+    expect(fixture.paths).toEqual([]);
+  });
+
+  it('the diagnostic deadline bounds retry backoff as well as network I/O', async () => {
+    vi.useFakeTimers();
+    const retrying = new MailchimpService({ ...BASE_CONFIG, maxRetries: 3 });
+    setMailchimpServiceForTesting(retrying);
+    vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      const deadline = new AbortController();
+      setTimeout(
+        () => deadline.abort(new DOMException('Diagnostic deadline exceeded', 'TimeoutError')),
+        ms,
+      );
+      return deadline.signal;
+    });
+    fixture.route((path) =>
+      path.endsWith('/c1')
+        ? Response.json(
+            { title: 'Rate limited' },
+            { status: 429, headers: { 'retry-after': '30' } },
+          )
+        : Response.json({ locations: [], total_items: 0 }),
+    );
+    try {
+      const pending = runToolContract(reports, {
+        operation: 'slice',
+        dimension: 'locations',
+        campaignId: 'c1',
+      });
+      await vi.advanceTimersByTimeAsync(2_000);
+      const result = await pending;
+      expect(result.isError).not.toBe(true);
+      expect(text(result)).toContain('could not be determined');
+      expect(fixture.paths).toEqual(['/3.0/reports/c1/locations', '/3.0/reports/c1']);
+    } finally {
+      retrying.dispose();
+      vi.clearAllTimers();
+    }
   });
 });

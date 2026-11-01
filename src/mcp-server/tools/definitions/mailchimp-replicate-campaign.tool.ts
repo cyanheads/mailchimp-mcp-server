@@ -434,9 +434,11 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
       });
       return result;
     } catch (err) {
+      let cleanedUp = false;
       if (newCampaignId && input.cleanupOnError) {
         try {
           await svc.campaigns.delete(ctx, newCampaignId);
+          cleanedUp = true;
           ctx.log.info('replica draft cleaned up after failure', { campaignId: newCampaignId });
         } catch (cleanupErr) {
           ctx.log.warning('cleanup failed; replica draft may remain', {
@@ -444,6 +446,12 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
             error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
           });
         }
+      }
+      if (newCampaignId && err instanceof Error) {
+        Object.assign(err, {
+          data: { ...(('data' in err && err.data) || {}), cleanedUp },
+          message: `${err.message} Replica draft ${newCampaignId} ${cleanedUp ? 'was deleted.' : 'was not deleted and may remain.'}`,
+        });
       }
       throw err;
     }

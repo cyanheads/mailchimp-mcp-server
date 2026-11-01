@@ -3,6 +3,7 @@
  * @module tests/tools/campaign-content.test
  */
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mailchimpCampaignsTool as tool } from '@/mcp-server/tools/definitions/mailchimp-campaigns.tool.js';
 import {
@@ -15,6 +16,17 @@ const bodies = {
   plain_text: 'TEXT\r\nunsubscribe',
   archive_html: '<p>ARCHIVE</p>\n',
 };
+
+/** Decodes the single JSON document a content result exposes to Markdown clients. */
+function formattedContent(result: Awaited<ReturnType<typeof runToolContract>>): unknown {
+  const text = result.content.map((block) => (block.type === 'text' ? block.text : '')).join('\n');
+  const fences = new MarkdownIt('commonmark')
+    .parse(text, {})
+    .filter((token) => token.type === 'fence');
+  expect(fences).toHaveLength(1);
+  expect(fences[0]?.info).toBe('json');
+  return JSON.parse(fences[0]?.content ?? '');
+}
 describe('campaign content', () => {
   let service: MailchimpService;
   beforeEach(() => {
@@ -96,6 +108,9 @@ describe('campaign content', () => {
         operation: 'get-content',
         content: variant === 'all' ? expected : { [variant]: expected[variant] },
       });
+      expect(formattedContent(result)).toEqual(
+        variant === 'all' ? expected : { [variant]: expected[variant] },
+      );
       const text = JSON.stringify(result.content);
       for (const key of Object.keys(expected))
         expect(text.includes(key)).toBe(variant === 'all' || key === variant);
@@ -110,8 +125,51 @@ describe('campaign content', () => {
       variant: 'archiveHtml',
     });
     expect(result.structuredContent).toEqual({ operation: 'get-content', content: {} });
+    expect(formattedContent(result)).toEqual({});
     expect(tool.input.safeParse({ operation: 'get-content', variant: 'bogus' }).success).toBe(
       false,
     );
+  });
+
+  it('renders complete default bodies beyond every former preview cutoff', async () => {
+    const upstream = {
+      html: `${'H'.repeat(501)}<footer>*|UNSUB|*</footer>\r\n`,
+      plain_text: `${'P'.repeat(1001)}\rEND`,
+      archive_html: `${'A'.repeat(201)}\n`,
+    };
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify(upstream)));
+    const result = await runToolContract(tool, { operation: 'get-content', campaignId: 'c' });
+    const expected = {
+      html: upstream.html,
+      plainText: upstream.plain_text,
+      archiveHtml: upstream.archive_html,
+    };
+    expect(result.structuredContent).toEqual({ operation: 'get-content', content: expected });
+    expect(formattedContent(result)).toEqual(expected);
+  });
+
+  it.each([
+    'no terminal newline',
+    'terminal LF\n',
+    'CR\rCRLF\r\n',
+    '  \tspaced\t  ',
+    '```\n# heading\n````',
+  ])('preserves literal content bytes through Markdown and JSON: %j', async (html) => {
+    vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ html })));
+    const result = await runToolContract(tool, { operation: 'get-content', campaignId: 'c' });
+    expect(result.structuredContent).toEqual({ operation: 'get-content', content: { html } });
+    expect(formattedContent(result)).toEqual({ html });
+  });
+
+  it('renders set-content bodies without changing the saved response bytes', async () => {
+    const content = { html: `${'H'.repeat(501)}\r\n`, plainText: `${'P'.repeat(1001)}\n` };
+    const result = await runToolContract(tool, {
+      operation: 'set-content',
+      campaignId: 'c',
+      content,
+    });
+    expect(result.structuredContent).toEqual({ operation: 'set-content', content });
+    expect(formattedContent(result)).toEqual(content);
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

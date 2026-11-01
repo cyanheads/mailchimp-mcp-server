@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-10-30 09:59:09
+Generated on: 2026-11-01 05:20:53
 
 ```text
 mailchimp-mcp-server/
@@ -215,6 +215,8 @@ mailchimp-mcp-server/
 │   ├── config/
 │   │   ├── server-config.test.ts
 │   │   └── session-posture.test.ts
+│   ├── helpers/
+│   │   └── report-fixture.ts
 │   ├── mcp-server/
 │   │   └── tools/
 │   │       └── shared/
@@ -248,6 +250,7 @@ mailchimp-mcp-server/
 │       ├── mailchimp-campaign-report.test.ts
 │       ├── mailchimp-campaigns.test.ts
 │       ├── mailchimp-files.test.ts
+│       ├── mailchimp-find-subscriber.test.ts
 │       ├── mailchimp-local-templates.test.ts
 │       ├── mailchimp-merge-fields.test.ts
 │       ├── mailchimp-playbook-suggestions.test.ts

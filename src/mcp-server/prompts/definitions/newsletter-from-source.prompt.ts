@@ -31,7 +31,7 @@ const ArgsSchema = z.object({
 
 export const newsletterFromSourcePrompt = prompt('newsletter_from_source', {
   description:
-    "Compose a monthly editorial newsletter from a source URL or brief. Fetches the source, calls the `design-campaign` playbook with live audience state, drafts HTML using the server's editorial design conventions, and walks the send via draft → test → send. Full design reference lives at `docs/email-design-playbook.md`.",
+    'Compose a monthly editorial newsletter from a source URL or brief. Fetches the source, calls `mailchimp_playbook` with `topic: design-campaign` for inline design guidance and live audience state, drafts HTML using those conventions, and walks the send via draft → test → send.',
   args: ArgsSchema,
   generate: (args) => {
     const audienceLine = args.audienceId
@@ -58,7 +58,7 @@ export const newsletterFromSourcePrompt = prompt('newsletter_from_source', {
             '',
             `2. **Get design guidance.** Call \`mailchimp_playbook\` with \`topic: 'design-campaign'\`${args.audienceId ? ` and \`audienceId: '${args.audienceId}'\`` : ' (with the audience ID once confirmed)'} to get design conventions merged with live audience engagement state.`,
             '',
-            '3. **Compose the HTML.** Follow the editorial patterns from `docs/email-design-playbook.md`:',
+            '3. **Compose the HTML.** Follow the inline design guidance returned by `mailchimp_playbook` (`topic: design-campaign`):',
             '   - 4–6 color palette with defined roles (primary brand, cream body bg, page bg, accent, muted ink, body ink — avoid pure white and pure black)',
             '   - 2 font families max (Georgia + system sans is a safe default), with a size scale',
             '   - 600px outer table, every style inline, table-based layout (no flex/grid — Outlook uses Word renderer)',

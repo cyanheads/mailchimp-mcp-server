@@ -249,9 +249,9 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           throw validationError("'campaignId' is required for topic 'post-send-review'.");
         }
         const report = await svc.reports.get(ctx, input.campaignId);
-        const open = report.opens?.open_rate ?? 0;
-        const click = report.clicks?.click_rate ?? 0;
-        const sent = report.emails_sent ?? 0;
+        const open = report.opens?.open_rate;
+        const click = report.clicks?.click_rate;
+        const sent = report.emails_sent;
         const ib = report.industry_stats;
         const benchmark = (actual: number | undefined, avg: number | undefined): string => {
           if (typeof actual !== 'number' || typeof avg !== 'number') return '';
@@ -261,15 +261,16 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         };
         /** Suppress rate-based advice on tiny sends — 0/1 isn't a "low rate", it's no signal. Threshold: 50 recipients gives roughly ±5pp confidence on a 15% rate. */
         const SAMPLE_THRESHOLD = 50;
-        const tooSmall = sent < SAMPLE_THRESHOLD;
+        const tooSmall = typeof sent === 'number' && sent < SAMPLE_THRESHOLD;
+        const canAnalyze = typeof sent === 'number' && !tooSmall;
         const instructions = [
           `# Post-send review — "${report.campaign_title ?? report.subject_line ?? report.id}"`,
           '',
-          `**Sent to:** ${sent}  `,
-          `**Open rate:** ${PCT(open)}${tooSmall ? '' : benchmark(open, ib?.open_rate)}  `,
-          `**Click rate:** ${PCT(click)}${tooSmall ? '' : benchmark(click, ib?.click_rate)}  `,
-          `**Unsubscribed:** ${report.unsubscribed ?? 0}  `,
-          `**Abuse reports:** ${report.abuse_reports ?? 0}  `,
+          `**Sent to:** ${sent ?? 'unavailable'}  `,
+          `**Open rate:** ${typeof open === 'number' ? PCT(open) : 'unavailable'}${canAnalyze ? benchmark(open, ib?.open_rate) : ''}  `,
+          `**Click rate:** ${typeof click === 'number' ? PCT(click) : 'unavailable'}${canAnalyze ? benchmark(click, ib?.click_rate) : ''}  `,
+          `**Unsubscribed:** ${report.unsubscribed ?? 'unavailable'}  `,
+          `**Abuse reports:** ${report.abuse_reports ?? 'unavailable'}  `,
           '',
           tooSmall
             ? `> **Sample too small for rate analysis.** ${sent} recipient${sent === 1 ? '' : 's'} — open/click rates are not meaningful below ~${SAMPLE_THRESHOLD}. Inspect raw events directly instead of treating percentages as signal.`
@@ -277,17 +278,23 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '1. **Get the full digest.** `mailchimp_campaign_report` returns top clicked links, top locations, recent unsubs, and industry benchmarks in one call.',
           tooSmall
             ? '2. **Inspect the raw event timeline.** `mailchimp_reports` `operation: slice` with `dimension: email-activity` shows per-recipient opens / clicks / bounces — far more useful than a rate at this volume.'
-            : open < 0.15
-              ? "2. **Low opens — look at subject/from.** Open rate is below typical industry benchmarks. Check `mailchimp_reports` with `dimension: advice` for Mailchimp's automated tips."
-              : '2. **Opens look healthy.** Focus review on content → action funnel.',
+            : !canAnalyze || typeof open !== 'number'
+              ? '2. **Open-rate analysis unavailable.** Recipient count and open rate are both needed to assess engagement.'
+              : open < 0.15
+                ? "2. **Low opens — look at subject/from.** Open rate is below typical industry benchmarks. Check `mailchimp_reports` with `dimension: advice` for Mailchimp's automated tips."
+                : '2. **Opens look healthy.** Focus review on content → action funnel.',
           tooSmall
             ? '3. **Click-by-click drilldown.** `mailchimp_reports` `operation: slice` with `dimension: click-details` lists every URL with its click count — useful even when there are zero clicks.'
-            : click < 0.02
-              ? "3. **Low clicks — look at content.** Click rate is low; use `mailchimp_reports` `operation: slice` with `dimension: click-details` to see which links landed (and which didn't)."
-              : '3. **Clicks are healthy — which CTAs won?** `mailchimp_reports` `operation: slice` with `dimension: click-details`.',
-          (report.abuse_reports ?? 0) > 0
-            ? '4. **⚠ Abuse reports present.** Review with `mailchimp_reports` `dimension: abuse-reports` — high counts damage deliverability.'
-            : '4. **No abuse reports.** Good signal.',
+            : !canAnalyze || typeof click !== 'number'
+              ? '3. **Click-rate analysis unavailable.** Recipient count and click rate are both needed to assess engagement.'
+              : click < 0.02
+                ? "3. **Low clicks — look at content.** Click rate is low; use `mailchimp_reports` `operation: slice` with `dimension: click-details` to see which links landed (and which didn't)."
+                : '3. **Clicks are healthy — which CTAs won?** `mailchimp_reports` `operation: slice` with `dimension: click-details`.',
+          typeof report.abuse_reports !== 'number'
+            ? '4. **Abuse reports unavailable.** Mailchimp did not provide this metric.'
+            : report.abuse_reports > 0
+              ? '4. **⚠ Abuse reports present.** Review with `mailchimp_reports` `dimension: abuse-reports` — high counts damage deliverability.'
+              : '4. **No abuse reports.** Good signal.',
           '5. **Unsub reasons.** `mailchimp_reports` with `dimension: unsubscribed` — the `reason` field tells you what drove the unsubs.',
           '6. **If this was bad, diagnose next.** `mailchimp_playbook` with `topic: deliverability`.',
         ]
@@ -298,13 +305,13 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           instructions,
           liveState: {
             campaignId: report.id,
-            emailsSent: report.emails_sent,
-            openRate: open,
-            clickRate: click,
-            unsubscribed: report.unsubscribed,
-            abuseReports: report.abuse_reports,
-            industryOpenRate: ib?.open_rate,
-            industryClickRate: ib?.click_rate,
+            ...(sent !== undefined ? { emailsSent: sent } : {}),
+            ...(open !== undefined ? { openRate: open } : {}),
+            ...(click !== undefined ? { clickRate: click } : {}),
+            ...(report.unsubscribed !== undefined ? { unsubscribed: report.unsubscribed } : {}),
+            ...(report.abuse_reports !== undefined ? { abuseReports: report.abuse_reports } : {}),
+            ...(ib?.open_rate !== undefined ? { industryOpenRate: ib.open_rate } : {}),
+            ...(ib?.click_rate !== undefined ? { industryClickRate: ib.click_rate } : {}),
           },
           // An unsent campaign has no report: the digest call fails with `campaign_not_sent`.
           nextToolSuggestions: report.send_time
@@ -651,7 +658,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '',
           `**Audience state:** ${memberCount} members, avg open ${PCT(open)}, avg click ${PCT(click)}, net growth (3mo): ${recentNet >= 0 ? '+' : ''}${recentNet}.`,
           '',
-          'Design an editorial newsletter: warm, typographic, restrained. Full reference with worked examples lives at `docs/email-design-playbook.md`.',
+          'Design an editorial newsletter: warm, typographic, restrained. Use the inline guidance below for palette, typography, layout, graphics, and copy.',
           '',
           '## 1. Research the brand',
           'Before drafting, build a mental model of the source. Pull palette, voice, visual rhythm, subject-matter specifics, and the one-sentence mission. If the source is a website, `curl -sL https://r.jina.ai/<URL>` returns clean markdown.',

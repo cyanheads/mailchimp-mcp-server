@@ -160,6 +160,25 @@ describe('MailchimpService.request', () => {
     });
   });
 
+  it.each(['/lists/missing/members/h1', '/lists/a1/members/missing'])(
+    'a member 404 at %s keeps both parent and member possibilities',
+    async (path) => {
+      fetchStub.mockResolvedValueOnce(fakeResponse(404, { title: 'Resource Not Found' }));
+      const service = makeService();
+      try {
+        await expect(service.request('GET', path)).rejects.toMatchObject({
+          code: JsonRpcErrorCode.NotFound,
+          data: {
+            reason: 'mailchimp_not_found',
+            recovery: { hint: expect.stringContaining('audienceId') },
+          },
+        });
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
   it.each([
     ['/reports/c1/click-details/L1/members', /click-details on this campaign without linkId/],
     ['/reports/c1/open-details/abc123', /no recorded open on this campaign/],

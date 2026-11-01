@@ -37,34 +37,41 @@ const OutputSchema = z.object({
         .describe('Successfully delivered emails (recipientsCount minus all bounce categories).'),
       bounces: z
         .object({
-          hard: z.number().describe('Hard bounces (permanent delivery failures).'),
-          soft: z.number().describe('Soft bounces (temporary delivery failures).'),
-          syntax: z.number().describe('Syntax-error bounces (malformed addresses).'),
+          hard: z.number().optional().describe('Hard bounces (permanent delivery failures).'),
+          soft: z.number().optional().describe('Soft bounces (temporary delivery failures).'),
+          syntax: z.number().optional().describe('Syntax-error bounces (malformed addresses).'),
         })
         .describe('Per-category bounce counts.'),
-      abuseReports: z.number().describe('Count of subscribers who marked the email as spam.'),
+      abuseReports: z
+        .number()
+        .optional()
+        .describe('Count of subscribers who marked the email as spam.'),
     })
     .describe('Delivery-side metrics.'),
   engagement: z
     .object({
       opens: z
         .object({
-          total: z.number().describe('Total opens (includes repeats by the same subscriber).'),
-          unique: z.number().describe('Unique opens (one per subscriber).'),
-          rate: z.number().describe('Open rate (0–1).'),
+          total: z
+            .number()
+            .optional()
+            .describe('Total opens (includes repeats by the same subscriber).'),
+          unique: z.number().optional().describe('Unique opens (one per subscriber).'),
+          rate: z.number().optional().describe('Open rate (0–1).'),
           lastOpen: z.string().optional().describe('Most recent open timestamp.'),
         })
         .describe('Open metrics.'),
       clicks: z
         .object({
-          total: z.number().describe('Total clicks.'),
-          unique: z.number().describe('Unique clickers.'),
-          rate: z.number().describe('Click rate (0–1).'),
+          total: z.number().optional().describe('Total clicks.'),
+          unique: z.number().optional().describe('Unique clickers.'),
+          rate: z.number().optional().describe('Click rate (0–1).'),
           lastClick: z.string().optional().describe('Most recent click timestamp.'),
         })
         .describe('Click metrics.'),
       unsubscribes: z
         .number()
+        .optional()
         .describe('Count of subscribers who unsubscribed from this campaign.'),
     })
     .describe('Engagement metrics.'),
@@ -87,7 +94,7 @@ const OutputSchema = z.object({
           countryCode: z.string().describe('Two-letter ISO country code.'),
           region: z.string().optional().describe('Region code (e.g. US state abbreviation).'),
           regionName: z.string().optional().describe('Full region name.'),
-          opens: z.number().describe('Opens from this location.'),
+          opens: z.number().optional().describe('Opens from this location.'),
         })
         .describe('One per-location opens row.'),
     )
@@ -162,7 +169,7 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       code: JsonRpcErrorCode.ValidationError,
       when: 'Campaign exists but has not been sent yet — no report data available.',
       recovery:
-        "Send the campaign with mailchimp_send_campaign, or inspect the draft via mailchimp_campaigns operation:'get'.",
+        "Inspect the existing campaign via mailchimp_campaigns operation:'get', or send that campaign through Mailchimp before requesting its report.",
     },
   ] as const,
 
@@ -175,50 +182,32 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
         `Campaign '${input.campaignId}' has not been sent yet — no report data available.`,
         {
           campaignId: input.campaignId,
-          status: report.type ?? 'unsent',
         },
       );
     }
     const [clicks, locations, unsubs] = await Promise.all([
-      svc.reports
-        .clickDetailsList(ctx, input.campaignId, { count: input.includeTopN })
-        .catch(() => ({ urls_clicked: [], total_items: 0 })),
-      svc.reports
-        .locations(ctx, input.campaignId, { count: input.includeTopN })
-        .catch(() => ({ locations: [], total_items: 0 })),
-      svc.reports
-        .unsubscribed(ctx, input.campaignId, { count: input.includeTopN })
-        .catch(() => ({ unsubscribes: [], total_items: 0 })),
+      svc.reports.clickDetailsList(ctx, input.campaignId, { count: input.includeTopN }),
+      svc.reports.locations(ctx, input.campaignId, { count: input.includeTopN }),
+      svc.reports.unsubscribed(ctx, input.campaignId, { count: input.includeTopN }),
     ]);
 
-    const bounces = report.bounces ?? { hard_bounces: 0, soft_bounces: 0, syntax_errors: 0 };
+    const bounces = report.bounces;
     const delivered =
-      typeof report.emails_sent === 'number'
+      typeof report.emails_sent === 'number' &&
+      typeof bounces?.hard_bounces === 'number' &&
+      typeof bounces.soft_bounces === 'number' &&
+      typeof bounces.syntax_errors === 'number'
         ? report.emails_sent - (bounces.hard_bounces + bounces.soft_bounces + bounces.syntax_errors)
         : undefined;
 
     const result: Output = {
       campaignId: report.id,
       delivery: {
-        bounces: {
-          hard: bounces.hard_bounces,
-          soft: bounces.soft_bounces,
-          syntax: bounces.syntax_errors,
-        },
-        abuseReports: report.abuse_reports ?? 0,
+        bounces: {},
       },
       engagement: {
-        opens: {
-          total: report.opens?.opens_total ?? 0,
-          unique: report.opens?.unique_opens ?? 0,
-          rate: report.opens?.open_rate ?? 0,
-        },
-        clicks: {
-          total: report.clicks?.clicks_total ?? 0,
-          unique: report.clicks?.unique_clicks ?? 0,
-          rate: report.clicks?.click_rate ?? 0,
-        },
-        unsubscribes: report.unsubscribed ?? 0,
+        opens: {},
+        clicks: {},
       },
       topClickedLinks: clicks.urls_clicked.map((c) => {
         const row: Output['topClickedLinks'][number] = {
@@ -232,8 +221,8 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       topLocations: locations.locations.map((l) => {
         const row: Output['topLocations'][number] = {
           countryCode: l.country_code,
-          opens: l.opens ?? 0,
         };
+        if (typeof l.opens === 'number') row.opens = l.opens;
         if (l.region) row.region = l.region;
         if (l.region_name) row.regionName = l.region_name;
         return row;
@@ -246,6 +235,28 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       }),
     };
 
+    if (typeof bounces?.hard_bounces === 'number')
+      result.delivery.bounces.hard = bounces.hard_bounces;
+    if (typeof bounces?.soft_bounces === 'number')
+      result.delivery.bounces.soft = bounces.soft_bounces;
+    if (typeof bounces?.syntax_errors === 'number')
+      result.delivery.bounces.syntax = bounces.syntax_errors;
+    if (typeof report.abuse_reports === 'number')
+      result.delivery.abuseReports = report.abuse_reports;
+    if (typeof report.opens?.opens_total === 'number')
+      result.engagement.opens.total = report.opens.opens_total;
+    if (typeof report.opens?.unique_opens === 'number')
+      result.engagement.opens.unique = report.opens.unique_opens;
+    if (typeof report.opens?.open_rate === 'number')
+      result.engagement.opens.rate = report.opens.open_rate;
+    if (typeof report.clicks?.clicks_total === 'number')
+      result.engagement.clicks.total = report.clicks.clicks_total;
+    if (typeof report.clicks?.unique_clicks === 'number')
+      result.engagement.clicks.unique = report.clicks.unique_clicks;
+    if (typeof report.clicks?.click_rate === 'number')
+      result.engagement.clicks.rate = report.clicks.click_rate;
+    if (typeof report.unsubscribed === 'number')
+      result.engagement.unsubscribes = report.unsubscribed;
     if (delivered !== undefined) result.delivery.delivered = delivered;
     if (report.campaign_title) result.campaignTitle = report.campaign_title;
     if (report.subject_line) result.subjectLine = report.subject_line;
@@ -281,7 +292,8 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
   },
 
   format: (result) => {
-    const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+    const pct = (v: number | undefined) =>
+      typeof v === 'number' ? `${(v * 100).toFixed(2)}%` : 'unavailable';
     const lines: string[] = [
       `# ${result.campaignTitle ?? result.subjectLine ?? result.campaignId}`,
       '',
@@ -299,21 +311,21 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
     lines.push('|:-------|------:|');
     if (typeof result.delivery.delivered === 'number')
       lines.push(`| Delivered | ${result.delivery.delivered} |`);
-    lines.push(`| Hard bounces | ${result.delivery.bounces.hard} |`);
-    lines.push(`| Soft bounces | ${result.delivery.bounces.soft} |`);
-    lines.push(`| Syntax errors | ${result.delivery.bounces.syntax} |`);
-    lines.push(`| Abuse reports | ${result.delivery.abuseReports} |`);
+    lines.push(`| Hard bounces | ${result.delivery.bounces.hard ?? 'unavailable'} |`);
+    lines.push(`| Soft bounces | ${result.delivery.bounces.soft ?? 'unavailable'} |`);
+    lines.push(`| Syntax errors | ${result.delivery.bounces.syntax ?? 'unavailable'} |`);
+    lines.push(`| Abuse reports | ${result.delivery.abuseReports ?? 'unavailable'} |`);
 
     lines.push('', '## Engagement');
     lines.push('| Metric | Total | Unique | Rate |');
     lines.push('|:-------|------:|-------:|-----:|');
     lines.push(
-      `| Opens | ${result.engagement.opens.total} | ${result.engagement.opens.unique} | ${pct(result.engagement.opens.rate)} |`,
+      `| Opens | ${result.engagement.opens.total ?? 'unavailable'} | ${result.engagement.opens.unique ?? 'unavailable'} | ${pct(result.engagement.opens.rate)} |`,
     );
     lines.push(
-      `| Clicks | ${result.engagement.clicks.total} | ${result.engagement.clicks.unique} | ${pct(result.engagement.clicks.rate)} |`,
+      `| Clicks | ${result.engagement.clicks.total ?? 'unavailable'} | ${result.engagement.clicks.unique ?? 'unavailable'} | ${pct(result.engagement.clicks.rate)} |`,
     );
-    lines.push(`| Unsubscribes | ${result.engagement.unsubscribes} | — | — |`);
+    lines.push(`| Unsubscribes | ${result.engagement.unsubscribes ?? 'unavailable'} | — | — |`);
     if (result.engagement.opens.lastOpen)
       lines.push(`_Last open: ${result.engagement.opens.lastOpen}_`);
     if (result.engagement.clicks.lastClick)
@@ -353,7 +365,9 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       for (const loc of result.topLocations) {
         const regionParts = [loc.regionName, loc.region].filter(Boolean);
         const regionSuffix = regionParts.length > 0 ? ` (${regionParts.join(' / ')})` : '';
-        lines.push(`- ${loc.countryCode}${regionSuffix}: ${loc.opens} opens`);
+        lines.push(
+          `- ${loc.countryCode}${regionSuffix}: ${typeof loc.opens === 'number' ? `${loc.opens} opens` : 'opens unavailable'}`,
+        );
       }
     }
 

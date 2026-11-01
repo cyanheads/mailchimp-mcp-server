@@ -7,7 +7,7 @@
  */
 
 import { type Context, tool, z } from '@cyanheads/mcp-ts-core';
-import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import {
   type AppliedFilters,
@@ -259,6 +259,39 @@ function emptyNotice(
   );
 }
 
+/** Empty data does not establish send state; bound this optional diagnostic across retries. */
+async function emptySliceNotice(
+  ctx: Pick<Context, 'signal' | 'log'>,
+  input: Input,
+  id: string,
+  slice: Slice,
+): Promise<string> {
+  const deadline = AbortSignal.timeout(2_000);
+  try {
+    const report = await getMailchimpService().reports.get(
+      { signal: AbortSignal.any([ctx.signal, deadline]), log: ctx.log },
+      id,
+    );
+    return report.send_time
+      ? emptyNotice(input, slice.filters, slice.totalItems)
+      : 'This campaign has not been sent yet; post-send report data is not available.';
+  } catch (error) {
+    ctx.signal.throwIfAborted();
+    if (
+      deadline.aborted ||
+      (error instanceof McpError &&
+        [
+          JsonRpcErrorCode.RateLimited,
+          JsonRpcErrorCode.ServiceUnavailable,
+          JsonRpcErrorCode.Timeout,
+        ].includes(error.code))
+    ) {
+      return 'No rows were returned. Campaign send state could not be determined because the report check was temporarily unavailable; retry the report check before interpreting this as no engagement.';
+    }
+    throw error;
+  }
+}
+
 /** Why the read matched nothing, naming the filter keys that narrowed it. */
 function noRowsText(input: Input, filters: AppliedFilters | undefined): string {
   if (input.operation === 'list') {
@@ -336,7 +369,7 @@ function renderRows(rows: Row[], dimension: Dimension | undefined, linkId: strin
 
 export const mailchimpReportsTool = tool('mailchimp_reports', {
   description:
-    "Campaign reports — generic slicer. Use `operation: list` for the report index, `get` for a single campaign's headline metrics, and `slice` with a `dimension` enum to pull one specific breakdown (click-details, open-details, locations, unsubscribed, abuse-reports, advice, domain-performance, eepurl, email-activity, sent-to). For the common 'summarize this campaign' question, prefer the `mailchimp_campaign_report` workflow tool — it parallelizes the top 5 slices into one response.",
+    "Campaign reports — generic slicer. Use `operation: list` for the report index, `get` for a single campaign's headline metrics, and `slice` with a `dimension` enum to pull one specific breakdown (click-details, open-details, locations, unsubscribed, abuse-reports, advice, domain-performance, eepurl, email-activity, sent-to). For the common 'summarize this campaign' question, prefer the `mailchimp_campaign_report` workflow tool — it combines headline metrics with three report slices.",
   annotations: { readOnlyHint: true },
   input: InputSchema,
   output: OutputSchema,
@@ -381,7 +414,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
       code: JsonRpcErrorCode.ValidationError,
       when: 'Campaign exists but has not been sent yet — no report data available.',
       recovery:
-        "Send the campaign with mailchimp_send_campaign, or inspect the draft via mailchimp_campaigns operation:'get'.",
+        "Inspect the existing campaign via mailchimp_campaigns operation:'get', or send that campaign through Mailchimp before requesting its report.",
     },
   ] as const,
 
@@ -427,7 +460,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
         const slice = await readSlice(ctx, input, id, input.dimension);
         if (slice.filters) ctx.enrich({ filters: slice.filters });
         if (slice.rows.length === 0)
-          ctx.enrich.notice(emptyNotice(input, slice.filters, slice.totalItems));
+          ctx.enrich.notice(await emptySliceNotice(ctx, input, id, slice));
         const result: Output = {
           operation: 'slice',
           dimension: input.dimension,

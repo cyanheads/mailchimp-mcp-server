@@ -409,6 +409,78 @@ describe('campaign dispatch confirmation', () => {
   });
 
   describe('mailchimp_replicate_campaign', () => {
+    it('leaves failures before replica creation unchanged', async () => {
+      vi.spyOn(service.campaigns, 'replicate').mockRejectedValue(new Error('Source unavailable'));
+      const remove = vi.spyOn(service.campaigns, 'delete');
+      const result = await runToolContract(mailchimpReplicateCampaignTool, {
+        sourceCampaignId: SOURCE_CAMPAIGN.id,
+      });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).not.toHaveProperty('error.data.cleanedUp');
+      expect(JSON.stringify(result.content)).toContain('Source unavailable');
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { scenario: 'successful cleanup', cleanupOnError: true, deleteFails: false, cleanedUp: true },
+      { scenario: 'failed cleanup', cleanupOnError: true, deleteFails: true, cleanedUp: false },
+      { scenario: 'disabled cleanup', cleanupOnError: false, deleteFails: false, cleanedUp: false },
+    ])(
+      'reports $scenario without replacing the checklist failure',
+      async ({ cleanupOnError, deleteFails, cleanedUp }) => {
+        prepareReplicateWorkflow(service);
+        const remove = vi.spyOn(service.campaigns, 'delete');
+        if (deleteFails) remove.mockRejectedValue(new Error('Deletion unavailable'));
+        else remove.mockResolvedValue();
+        vi.mocked(service.campaigns.getChecklist).mockResolvedValue({
+          is_ready: false,
+          items: [{ type: 'error', heading: 'Missing content', details: 'Provide content.' }],
+        });
+        const result = await runToolContract(mailchimpReplicateCampaignTool, {
+          sourceCampaignId: SOURCE_CAMPAIGN.id,
+          mode: 'test',
+          testEmails: ['test@example.com'],
+          cleanupOnError,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          error: {
+            code: -32007,
+            data: {
+              reason: 'pre_send_checklist_failed',
+              cleanedUp,
+              errors: [{ heading: 'Missing content', details: 'Provide content.' }],
+              recovery: { hint: expect.stringContaining('Inspect data.errors') },
+            },
+          },
+        });
+        expect(JSON.stringify(result.content)).toContain('Missing content');
+        expect(JSON.stringify(result.content)).toContain('Inspect data.errors');
+        expect(JSON.stringify(result.content)).toContain(
+          cleanedUp
+            ? `Replica draft ${DRAFT_CAMPAIGN.id} was deleted.`
+            : `Replica draft ${DRAFT_CAMPAIGN.id} was not deleted and may remain.`,
+        );
+        expect(remove).toHaveBeenCalledTimes(cleanupOnError ? 1 : 0);
+      },
+    );
+
+    it('preserves a draft-mode success without reporting cleanup', async () => {
+      prepareReplicateWorkflow(service);
+      const remove = vi.spyOn(service.campaigns, 'delete');
+      const result = await runToolContract(mailchimpReplicateCampaignTool, {
+        sourceCampaignId: SOURCE_CAMPAIGN.id,
+      });
+      expect(result.isError).toBeFalsy();
+      expect(result.structuredContent).toMatchObject({
+        campaignId: DRAFT_CAMPAIGN.id,
+        mode: 'draft',
+      });
+      expect(result.structuredContent).not.toHaveProperty('cleanedUp');
+      expect(JSON.stringify(result.content)).toContain(DRAFT_CAMPAIGN.id);
+      expect(remove).not.toHaveBeenCalled();
+    });
+
     it('asks again when source campaign content changes between consent rounds', async () => {
       const ctx = await consentContext(
         service,

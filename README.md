@@ -145,7 +145,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - Operations: `list` (filter by `status`, `listId`, `sinceSendTime` / `beforeSendTime`), `get`, `create` (`type` of `regular` / `plaintext` / `rss`, plus `recipients` and `settings`), `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss`; all but `list` and `create` take `campaignId`
 - `set-content` accepts `html`, `plainText`, `templateId` + `templateSections`, `archiveContent`, `url`, or `localTemplate` (exclusive with `html` and `templateId`); `get-checklist` returns `isReady` and typed items
-- `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`); empty bodies are omitted
+- `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`); empty bodies are omitted and formatted output carries complete selected bodies as fenced JSON
 - No send, test, schedule, or delete here; dispatch goes through `mailchimp_send_campaign` or `mailchimp_replicate_campaign`
 
 ---
@@ -162,6 +162,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `sourceCampaignId` plus optional `subjectOverride`, `previewTextOverride`, `fromNameOverride`, `replyToOverride`, `titleOverride`, `audienceOverride`, `segmentOverride`, and `contentOverride`; `mode`, `testEmails`, `scheduleTime`, and `cleanupOnError` work as in `mailchimp_send_campaign`
 - Returns the new `campaignId`, `overridesApplied[]`, and the same status, checklist, and `cancelledByUser` fields
+- Post-creation errors report `data.cleanedUp` and name the replica's cleanup outcome in their text
 - Same `confirmSend: true` plus confirmation-prompt gate for `send` and `schedule`
 
 ---
@@ -170,6 +171,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `list` (filter by `type`, `sinceSendTime` / `beforeSendTime`), `get`, or `slice` with a `campaignId` and a `dimension`: `abuse-reports`, `advice`, `click-details` (with `linkId`, the members who clicked that URL), `open-details` (one member via `subscriberHash`), `domain-performance`, `eepurl`, `email-activity`, `locations`, `sent-to`, `unsubscribed`
 - `slice` returns `rows` shaped by the dimension plus `totalItems`; `get` throws `campaign_not_sent` for a campaign with no send
+- Empty slices check send state and distinguish unsent campaigns from empty engagement; an unavailable diagnostic leaves send state explicitly unknown. Nonempty pre-send advice remains available
 
 ---
 
@@ -177,6 +179,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 - `campaignId` plus `includeTopN` (1–100, default 10) rows per slice
 - Returns `delivery` (delivered, bounces by type, abuse reports), `engagement` (opens, clicks, unsubscribes), `topClickedLinks`, `topLocations`, `recentUnsubscribes`, and `industryBenchmarks` when Mailchimp has them; throws `campaign_not_sent` for a campaign with no send
+- Missing measurements are omitted rather than reported as zero; failed slice reads fail the digest. The post-send playbook withholds analysis that needs unavailable metrics
 
 ---
 

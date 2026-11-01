@@ -4,7 +4,7 @@ description: Gates and ID chains for the mailchimp_* tools. Covers sending a cam
 license: Apache-2.0
 metadata:
   author: cyanheads
-  version: "1.0"
+  version: "1.1"
 ---
 
 ## Scope
@@ -41,7 +41,8 @@ Outside this server: transactional email (Mandrill), automations and customer jo
 ### Finding campaigns and reports
 
 - **"Latest" or "last" campaign:** `mailchimp_campaigns` list returns campaigns in creation order, oldest first, 10 per page by default, so once an account has more than 10 campaigns the newest aren't on page 1. For sent campaigns, `mailchimp_reports` list returns the newest send first. For drafts, filter the campaigns list by status and page to its end.
-- **Only sent campaigns have reports.** `mailchimp_campaign_report` rejects an unsent campaign, and a `mailchimp_reports` slice on one comes back empty, so an empty slice is not proof of no engagement. Pick from `mailchimp_reports` list (sent campaigns only), and never send one just to get a report.
+- **Post-send metrics require a sent campaign.** `mailchimp_campaign_report` rejects an unsent campaign. A `mailchimp_reports` slice can still return advice before sending; an empty slice checks send state and explains when post-send data is unavailable. If that check is temporarily unavailable, its notice leaves send state unknown. Pick from `mailchimp_reports` list for engagement analysis, and never send a campaign just to get a report.
+- **Missing metrics are unknown.** The digest omits unavailable measurements, and the post-send review withholds advice that needs them. A failed digest slice or requested subscriber-tag read fails the call; it is not an empty observation.
 
 ### Who opened, who clicked
 

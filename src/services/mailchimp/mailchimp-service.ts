@@ -1350,7 +1350,7 @@ function recoveryHintForPath(status: number, method: HttpMethod, path: string): 
   if (status !== 404) return;
   /** Order: most-specific first. The /lists/{id}/members/{hash} pattern must beat the bare /lists/{id} match. */
   if (/^\/lists\/[^/]+\/members\/[^/?]+(?:[/?].*)?$/.test(path)) {
-    return 'Verify the subscriber email exists with mailchimp_find_subscriber, then retry. The Mailchimp URL identifies subscribers by an MD5 hash of the lowercased email — wrong email and wrong hash both surface as 404.';
+    return 'Verify audienceId with mailchimp_audiences operation:list first, then verify the subscriber email with mailchimp_find_subscriber for that audience. A wrong audience, email, or subscriber hash can all return 404.';
   }
   if (/^\/lists\/[^/]+\/segments\/[^/?]+(?:[/?].*)?$/.test(path)) {
     return 'List segments via mailchimp_segments (operation: list) for this audience and copy a valid segmentId.';

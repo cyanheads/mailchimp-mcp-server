@@ -81,4 +81,14 @@ describe('newsletterFromSourcePrompt', () => {
   it('rejects missing `source` at the schema level', () => {
     expect(() => newsletterFromSourcePrompt.args?.parse({})).toThrow();
   });
+
+  it('directs installed clients to the design playbook returned by the tool', async () => {
+    const text = await renderText({ source: 'A community newsletter' });
+    expect(newsletterFromSourcePrompt.description).toContain('mailchimp_playbook');
+    expect(newsletterFromSourcePrompt.description).not.toContain('docs/email-design-playbook.md');
+    expect(text).toContain('inline design guidance returned by `mailchimp_playbook`');
+    expect(text).not.toContain('docs/email-design-playbook.md');
+    expect(text).toContain('600px outer table');
+    expect(text).toContain('Section flow: masthead');
+  });
 });

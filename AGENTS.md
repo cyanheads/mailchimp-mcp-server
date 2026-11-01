@@ -156,6 +156,8 @@ Handlers receive a unified `ctx` object. Used in this server:
 
 ---
 
+**Reports:** Digest metrics are optional when Mailchimp omits them; actual zeros remain zero, and derived delivery requires every operand. Requested digest slices and subscriber tags propagate failures. Empty report slices check the parent report under a two-second diagnostic deadline: unsent data is identified, transient check failures disclose unknown send state, and caller cancellation propagates. Nonempty slices, including pre-send advice, make no diagnostic request.
+
 ## Errors
 
 Handlers throw — the framework catches, classifies, and formats.

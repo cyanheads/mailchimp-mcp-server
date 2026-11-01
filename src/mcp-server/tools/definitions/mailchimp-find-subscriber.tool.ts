@@ -135,9 +135,9 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
       reason: 'mailchimp_not_found',
       thrownBy: 'service',
       code: JsonRpcErrorCode.NotFound,
-      when: 'Mailchimp returned 404 — audienceId points at a list that does not exist.',
+      when: 'Mailchimp returned 404 — the audience or a matched subscriber no longer exists.',
       recovery:
-        'Run mailchimp_audiences operation:list to discover valid audienceId values, or omit audienceId to search all audiences.',
+        'Verify audienceId with mailchimp_audiences operation:list, then search again; a matched subscriber may have been removed before its tags were read.',
     },
     {
       reason: 'mailchimp_rate_limited',
@@ -162,9 +162,7 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
     const fetchTags = async (s: Subscriber): Promise<string[] | undefined> => {
       if (!input.includeTags) return;
       const hash = s.id;
-      const { tags } = await svc.subscribers
-        .listTags(ctx, s.list_id, hash, { count: 1000 })
-        .catch(() => ({ tags: [], total_items: 0 }));
+      const { tags } = await svc.subscribers.listTags(ctx, s.list_id, hash, { count: 1000 });
       return tags.map((t) => t.name);
     };
 

@@ -9,6 +9,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { markdown } from '@cyanheads/mcp-ts-core/utils';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
 import {
   listEnrichment,
@@ -516,24 +517,14 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
     }
 
     if (result.content) {
-      lines.push('', '# Campaign content', '');
-      if (result.content.plainText) {
-        lines.push(
-          '**plainText preview:**',
-          '```',
-          result.content.plainText.slice(0, 1000),
-          '```',
-          '',
-        );
-      }
-      if (result.content.html) {
-        const h = result.content.html;
-        lines.push(`**html** (${h.length} chars preview):`, '```html', h.slice(0, 500), '```', '');
-      }
-      if (result.content.archiveHtml) {
-        const a = result.content.archiveHtml;
-        lines.push(`**archiveHtml** (${a.length} chars preview):`, '```', a.slice(0, 200), '```');
-      }
+      lines.push(
+        '',
+        '# Campaign content',
+        '',
+        markdown()
+          .codeBlock(JSON.stringify(result.content, null, 2), 'json')
+          .build(),
+      );
     }
 
     if (result.checklist) {

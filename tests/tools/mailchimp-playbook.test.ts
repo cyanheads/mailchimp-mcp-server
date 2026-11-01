@@ -6,7 +6,7 @@
  * @module tests/tools/mailchimp-playbook.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpPlaybookTool } from '@/mcp-server/tools/definitions/mailchimp-playbook.tool.js';
@@ -14,6 +14,7 @@ import {
   MailchimpService,
   setMailchimpServiceForTesting,
 } from '@/services/mailchimp/mailchimp-service.js';
+import { reportFixture, SENT, reportText as text, ZERO } from '../helpers/report-fixture.js';
 
 const BASE_CONFIG: ServerConfig = {
   apiKey: 'abcdef0123456789abcdef0123456789-us22',
@@ -94,6 +95,13 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
     expect(result.instructions).toContain('Strong open rate (32.00%)');
     expect(result.instructions).not.toContain('**Large list.**');
     expect(result.instructions).not.toContain('Low open rate');
+    expect(result.instructions).not.toContain('docs/email-design-playbook.md');
+    expect(result.instructions).toContain('## 4. Layout (email-safe HTML)');
+    expect(result.instructions).toContain('600px max-width outer table');
+    const rendered = mailchimpPlaybookTool.format!(result);
+    expect(rendered).toEqual([
+      { type: 'text', text: expect.stringContaining(result.instructions) },
+    ]);
 
     expect(result.liveState).toMatchObject({
       audienceId: 'abc',
@@ -211,5 +219,39 @@ describe('mailchimpPlaybookTool.format', () => {
         '- `mailchimp://audiences/abc` — Audience snapshot',
       ].join('\n'),
     );
+  });
+});
+
+describe('post-send review metrics (#31)', () => {
+  const fixture = reportFixture();
+  const playbook = mailchimpPlaybookTool;
+
+  it.each([{ emails_sent: 100 }, { opens: { open_rate: 0.3 }, clicks: { click_rate: 0.1 } }, {}])(
+    'post-send advice with sparse prerequisites stays unknown: %j',
+    async (metrics) => {
+      fixture.route(() => Response.json({ ...SENT, ...metrics }));
+      const result = await runToolContract(playbook, {
+        topic: 'post-send-review',
+        campaignId: 'c1',
+      });
+      expect(result.isError).not.toBe(true);
+      const content = text(result);
+      expect(content).toContain('unavailable');
+      expect(content).not.toMatch(
+        /Low opens|Low clicks|Opens look healthy|Clicks are healthy|No abuse reports|\b0\.00%|NaN|undefined|Sample too small/,
+      );
+      expect(result.structuredContent).not.toHaveProperty('liveState.abuseReports');
+    },
+  );
+
+  it('post-send review retains observed zeros and valid low-rate advice', async () => {
+    fixture.route(() => Response.json(ZERO));
+    const result = await runToolContract(playbook, { topic: 'post-send-review', campaignId: 'c1' });
+    expect(text(result)).toContain('Low opens');
+    expect(text(result)).toContain('Low clicks');
+    expect(text(result)).toContain('No abuse reports');
+    expect(result.structuredContent).toMatchObject({
+      liveState: { openRate: 0, clickRate: 0, abuseReports: 0 },
+    });
   });
 });
