@@ -1,9 +1,5 @@
 /**
- * @fileoverview `mailchimp_campaigns` — campaign CRUD (no delete) and non-send
- * actions. Delete is intentionally omitted: deleting a SENT campaign destroys
- * its report history. Send/test/schedule/replicate-and-send live in the
- * workflow tools (`mailchimp_send_campaign`, `mailchimp_replicate_campaign`)
- * so they can run checklist validation and gate on explicit `confirmSend: true`.
+ * @fileoverview `mailchimp_campaigns` — campaign records, content, and actions by ID.
  * @module mcp-server/tools/definitions/mailchimp-campaigns.tool
  */
 
@@ -11,11 +7,18 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
 import { markdown } from '@cyanheads/mcp-ts-core/utils';
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
+import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
 import {
   listEnrichment,
   listEnrichmentTrailer,
   pageEndNotice,
 } from '@/mcp-server/tools/shared/list-enrichment.js';
+import {
+  codeText,
+  headingText,
+  inlineText,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
@@ -31,13 +34,17 @@ const OperationSchema = z
     'get-content',
     'set-content',
     'get-checklist',
+    'send-test',
+    'send',
+    'schedule',
+    'delete',
     'cancel-send',
     'create-resend',
     'pause-rss',
     'resume-rss',
   ])
   .describe(
-    'Which campaign operation to run. `list`/`get`/`create`/`update` are record-level; `get-content`/`set-content` manage the HTML/plaintext payload; `get-checklist` validates readiness; `cancel-send` aborts an in-flight send; `create-resend` makes a resend-to-non-openers draft; `pause-rss`/`resume-rss` control RSS-driven campaigns. NOT exposed: `send`, `send-test`, `schedule`, `delete`. Use the `mailchimp_send_campaign`/`mailchimp_replicate_campaign` workflow tools for sends — they include send-checklist validation and require explicit `confirmSend: true` to dispatch.',
+    '`send-test`, `send`, `schedule`, and `delete` act on an existing draft. `get-content`/`set-content` manage its body and `get-checklist` checks readiness. `cancel-send` aborts an in-flight send, `create-resend` makes a resend-to-non-openers draft, and `pause-rss`/`resume-rss` control RSS-driven campaigns.',
   );
 
 const CampaignTypeSchema = z
@@ -116,6 +123,28 @@ const InputSchema = z.object({
   recipients: RecipientsSchema.optional().describe('Required for `create`.'),
   settings: SettingsSchema.optional().describe('Required for `create`; partial for `update`.'),
   content: ContentSchema.optional().describe('Required for `set-content`.'),
+  confirmSend: z
+    .boolean()
+    .optional()
+    .describe(
+      'Required for `send` and `schedule` after explicit user authorization. The client must also complete the confirmation round.',
+    ),
+  scheduleTime: z.iso
+    .datetime()
+    .optional()
+    .describe(
+      'Required for `schedule`. Future UTC time on a quarter-hour, including the Z suffix.',
+    ),
+  testEmails: z
+    .array(z.email())
+    .min(1)
+    .max(50)
+    .optional()
+    .describe('Explicit preview addresses for `send-test` (1–50).'),
+  testSendType: z
+    .enum(['html', 'plaintext'])
+    .optional()
+    .describe('Required format for `send-test`.'),
   // filters for list
   status: z
     .string()
@@ -180,6 +209,10 @@ const ChecklistItemSchema = z
 
 const OutputSchema = z.object({
   operation: OperationSchema,
+  campaignId: z
+    .string()
+    .optional()
+    .describe('Existing ID acted on by `send-test`, `send`, `schedule`, or `delete`.'),
   campaign: CampaignSummarySchema.optional().describe(
     'Populated for `get`, `create`, `update`, `replicate`, `create-resend`.',
   ),
@@ -254,13 +287,31 @@ function buildSettings(settings: z.infer<typeof SettingsSchema> | undefined) {
 
 export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
   description:
-    'Campaign record management: list/get/create/update, replicate, content read/write, get-checklist, and RSS/resend controls. DELETE is intentionally not exposed — deleting a sent campaign destroys its historical reports; use `cancel-send` to abort an in-flight send, or delete via the Mailchimp UI if you truly need to. Use the `mailchimp_send_campaign` workflow tool to actually send a campaign (it chains create/content/checklist/send and requires explicit `confirmSend: true`).',
+    'Manage campaigns and revise, test, send, schedule, or delete an existing draft by ID. Use `get-checklist` to check readiness. Send and schedule require explicit user authorization, `confirmSend: true`, and a confirmation round. Deleting a draft requires confirmation. Use `mailchimp_send_campaign` or `mailchimp_replicate_campaign` when you need a new campaign.',
   annotations: { openWorldHint: true },
   input: InputSchema,
   output: OutputSchema,
   enrichment: listEnrichment,
   enrichmentTrailer: listEnrichmentTrailer,
   errors: [
+    {
+      reason: 'campaign_not_draft',
+      code: JsonRpcErrorCode.InvalidRequest,
+      when: 'The requested draft action targets a campaign outside the save state.',
+      recovery: 'List campaigns with status save and choose a draft campaign ID.',
+    },
+    {
+      reason: 'campaign_action_cancelled',
+      code: JsonRpcErrorCode.InvalidRequest,
+      when: 'The user declined or cancelled an existing draft action.',
+      recovery: 'Leave the existing draft as is or begin a new confirmation.',
+    },
+    {
+      reason: 'pre_send_checklist_failed',
+      code: JsonRpcErrorCode.ValidationError,
+      when: 'Mailchimp marked the campaign as unready or reported send-checklist errors.',
+      recovery: 'Review the checklist and fix the existing draft before dispatch.',
+    },
     {
       reason: 'mailchimp_unauthorized',
       thrownBy: 'service',
@@ -449,6 +500,128 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
         };
       }
 
+      case 'send-test':
+      case 'send':
+      case 'schedule':
+      case 'delete': {
+        const campaignId = requireCampaignId(input);
+        if (campaignId === '.' || campaignId === '..' || /[\s/\\%]/u.test(campaignId))
+          throw validationError("'campaignId' must be a single Mailchimp campaign identifier.");
+        const id = encodeURIComponent(campaignId);
+        const { operation, scheduleTime, testEmails, testSendType } = input;
+        if ((operation === 'send' || operation === 'schedule') && !input.confirmSend)
+          throw validationError(
+            "'confirmSend: true' is required after explicit user authorization.",
+          );
+        let performAction: () => Promise<void>;
+        switch (operation) {
+          case 'schedule':
+            if (
+              !scheduleTime ||
+              Date.parse(scheduleTime) <= Date.now() ||
+              !/T\d{2}:(?:00|15|30|45)(?::00(?:\.0+)?)?Z$/.test(scheduleTime)
+            )
+              throw validationError("'scheduleTime' must be a future UTC quarter-hour.");
+            performAction = () => svc.campaigns.schedule(ctx, id, { schedule_time: scheduleTime });
+            break;
+          case 'send-test':
+            if (!testEmails || !testSendType)
+              throw validationError(
+                "'testEmails' and 'testSendType' are required for 'send-test'.",
+              );
+            performAction = () =>
+              svc.campaigns.sendTest(ctx, id, { test_emails: testEmails, send_type: testSendType });
+            break;
+          case 'send':
+            performAction = () => svc.campaigns.send(ctx, id);
+            break;
+          case 'delete':
+            performAction = () => svc.campaigns.delete(ctx, id);
+            break;
+        }
+
+        const campaign = await svc.campaigns.get(ctx, id);
+        if (campaign.status !== 'save')
+          throw ctx.fail(
+            'campaign_not_draft',
+            `Campaign ${campaign.id} has status ${campaign.status}.`,
+          );
+
+        if (operation !== 'delete') {
+          const checklist = await svc.campaigns.getChecklist(ctx, id);
+          const errors = checklist.items.filter((item) => item.type === 'error');
+          if (checklist.is_ready === false || errors.length)
+            throw ctx.fail(
+              'pre_send_checklist_failed',
+              errors.length
+                ? `Campaign checklist errors: ${errors.map((item) => item.heading).join('; ')}.`
+                : 'Mailchimp marked the campaign as unready to send.',
+              { errors },
+            );
+        }
+
+        if (operation !== 'send-test') {
+          const { _links, ...content } = await svc.campaigns.getContent(ctx, id);
+          const {
+            id: campaignId,
+            status,
+            type,
+            settings,
+            recipients,
+            rss_opts,
+            variate_settings,
+            ab_split_opts,
+            tracking,
+            social_card,
+          } = campaign;
+          const confirmed = await confirmCampaignDispatch(
+            ctx,
+            {
+              operation: `mailchimp_campaigns:${operation}`,
+              target: id,
+              content: () => ({
+                status,
+                type,
+                settings,
+                recipients,
+                rss_opts,
+                variate_settings,
+                ab_split_opts,
+                tracking,
+                social_card,
+                content,
+                ...(operation === 'schedule' ? { scheduleTime } : {}),
+              }),
+            },
+            () => {
+              const label = settings?.subject_line ?? settings?.title ?? campaignId;
+              const audience = recipients?.list_name ?? recipients?.list_id;
+              const segment =
+                recipients?.segment_text ??
+                recipients?.segment_opts?.saved_segment_id ??
+                recipients?.segment_opts?.prebuilt_segment_id ??
+                (recipients?.segment_opts?.conditions?.length ? 'custom segment' : undefined);
+              const details = [
+                audience === undefined ? undefined : `audience "${audience}"`,
+                segment === undefined ? undefined : `segment "${segment}"`,
+                recipients?.recipient_count === undefined
+                  ? undefined
+                  : `${recipients.recipient_count} recipients`,
+                operation === 'schedule' ? scheduleTime : undefined,
+              ]
+                .filter((detail) => detail !== undefined)
+                .join(', ');
+              return `${operation === 'delete' ? 'Delete draft' : operation === 'schedule' ? 'Schedule' : 'Send'} "${label}" (ID ${campaignId})${details ? ` — ${details}` : ''}?`;
+            },
+          );
+          if (!confirmed)
+            throw ctx.fail('campaign_action_cancelled', `Campaign ${campaignId} remains a draft.`);
+        }
+
+        await performAction();
+        return { operation, campaignId: campaign.id };
+      }
+
       case 'cancel-send': {
         await svc.campaigns.cancelSend(ctx, requireCampaignId(input));
         return { operation: 'cancel-send' };
@@ -473,27 +646,33 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
 
   format: (result) => {
     const lines: string[] = [`Operation: ${result.operation}`, ''];
+    if (result.campaignId) lines.push(`Campaign ID: ${codeText(result.campaignId)}`);
 
     const renderSummary = (c: z.infer<typeof CampaignSummarySchema>, bullet: boolean): void => {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       const subj = c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? '(untitled)');
       const titleAlt =
-        c.subjectLine && c.title && c.title !== c.subjectLine ? ` [title: ${c.title}]` : '';
+        c.subjectLine && c.title && c.title !== c.subjectLine
+          ? ` [title: ${inlineText(c.title)}]`
+          : '';
       const webIdPart = typeof c.webId === 'number' ? ` webId:${c.webId}` : '';
       lines.push(
-        `${prefix}**${subj}**${titleAlt} (\`${c.id}\`)${webIdPart} — type:${c.type}, status:${c.status}`,
+        `${prefix}**${inlineText(subj)}**${titleAlt} (${codeText(c.id)})${webIdPart} — type:${inlineText(c.type)}, status:${inlineText(c.status)}`,
       );
       const meta: string[] = [];
-      if (c.fromName) meta.push(`from ${c.fromName}`);
-      if (c.audienceName) meta.push(`audience ${c.audienceName} (\`${c.audienceId ?? ''}\`)`);
-      else if (c.audienceId) meta.push(`audienceId ${c.audienceId}`);
-      if (c.segmentText) meta.push(`segment: ${c.segmentText}`);
+      if (c.fromName) meta.push(`from ${inlineText(c.fromName)}`);
+      if (c.audienceName)
+        meta.push(
+          `audience ${inlineText(c.audienceName)}${c.audienceId ? ` (${codeText(c.audienceId)})` : ''}`,
+        );
+      else if (c.audienceId) meta.push(`audienceId ${codeText(c.audienceId)}`);
+      if (c.segmentText) meta.push(`segment: ${inlineText(c.segmentText)}`);
       if (typeof c.recipientCount === 'number') meta.push(`recipientCount ${c.recipientCount}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
       const times: string[] = [];
-      if (c.createTime) times.push(`created ${c.createTime}`);
-      if (c.sendTime) times.push(`sent ${c.sendTime}`);
+      if (c.createTime) times.push(`created ${inlineText(c.createTime)}`);
+      if (c.sendTime) times.push(`sent ${inlineText(c.sendTime)}`);
       if (typeof c.emailsSent === 'number') times.push(`emailsSent ${c.emailsSent}`);
       if (times.length > 0) lines.push(`${indent}${times.join(' · ')}`);
       const rates: string[] = [];
@@ -501,7 +680,7 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
       if (typeof c.clickRate === 'number')
         rates.push(`clickRate ${(c.clickRate * 100).toFixed(2)}%`);
       if (rates.length > 0) lines.push(`${indent}${rates.join(' · ')}`);
-      if (c.archiveUrl) lines.push(`${indent}archiveUrl: ${c.archiveUrl}`);
+      if (c.archiveUrl) lines.push(`${indent}archiveUrl: ${webLink(c.archiveUrl)}`);
     };
 
     if (result.campaigns) {
@@ -512,7 +691,10 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
     if (result.campaign) {
       if (result.campaigns) lines.push('');
       const c = result.campaign;
-      lines.push(`# ${c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? 'Campaign')}`, '');
+      lines.push(
+        headingText(c.subjectLine ? `"${c.subjectLine}"` : (c.title ?? 'Campaign'), 1, 'Campaign'),
+        '',
+      );
       renderSummary(c, false);
     }
 
@@ -536,7 +718,9 @@ export const mailchimpCampaignsTool = tool('mailchimp_campaigns', {
       for (const item of result.checklist.items) {
         const icon = item.type === 'success' ? '✓' : item.type === 'warning' ? '⚠' : '✗';
         const idPart = typeof item.id === 'number' ? ` [id:${item.id}]` : '';
-        lines.push(`- ${icon} [${item.type}]${idPart} **${item.heading}** — ${item.details}`);
+        lines.push(
+          `- ${icon} [${item.type}]${idPart} **${inlineText(item.heading)}** — ${inlineText(item.details)}`,
+        );
       }
     }
 

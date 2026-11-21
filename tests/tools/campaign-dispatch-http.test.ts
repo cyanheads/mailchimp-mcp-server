@@ -23,6 +23,10 @@ let upstreamUrl: string;
 let mutations: string[] = [];
 let output = '';
 let upstreamCalls = 0;
+let draftBody = '<p>Reviewed draft</p>';
+let draftStatus = 'save';
+let draftSubject = 'Test newsletter';
+let scheduleBody = '';
 
 async function listen(server: Server): Promise<number> {
   server.listen(0, '127.0.0.1');
@@ -129,7 +133,15 @@ beforeAll(async () => {
     upstreamCalls++;
     const path = new URL(request.url!, 'http://localhost').pathname;
     if (request.method !== 'GET') mutations.push(`${request.method} ${path}`);
-    if (path.endsWith('/actions/send')) {
+    if (path.endsWith('/actions/schedule')) {
+      request.setEncoding('utf8');
+      request.on('data', (chunk: string) => {
+        scheduleBody += chunk;
+      });
+      request.on('end', () => response.writeHead(204).end());
+      return;
+    }
+    if (path.endsWith('/actions/send') || request.method === 'DELETE') {
       response.writeHead(204).end();
       return;
     }
@@ -141,12 +153,17 @@ beforeAll(async () => {
           : path.endsWith('/send-checklist')
             ? { is_ready: true, items: [] }
             : path.endsWith('/content')
-              ? {}
+              ? { html: draftBody }
               : {
-                  id: 'draft-1',
+                  id: path === '/campaigns/draft-2' ? 'draft-2' : 'draft-1',
                   type: 'regular',
-                  status: mutations.some((m) => m.endsWith('/actions/send')) ? 'sent' : 'save',
-                  settings: { subject_line: args.subject },
+                  status: mutations.some((m) => m.endsWith('/actions/send')) ? 'sent' : draftStatus,
+                  settings: { subject_line: draftSubject },
+                  recipients: {
+                    list_name: 'Readers',
+                    segment_opts: { saved_segment_id: 17 },
+                    recipient_count: 2,
+                  },
                 };
     response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
   });
@@ -180,6 +197,149 @@ afterAll(async () => {
     await once(child, 'exit');
   }
   await new Promise<void>((resolve) => upstream?.close(() => resolve()));
+});
+
+describe('HTTP existing draft actions', () => {
+  async function call(args: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': '2026-07-28',
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': 'mailchimp_campaigns',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 23,
+        method: 'tools/call',
+        params: {
+          name: 'mailchimp_campaigns',
+          arguments: { campaignId: 'draft-1', ...args },
+          ...extra,
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+            'io.modelcontextprotocol/clientInfo': { name: 'confirmation-test', version: '1' },
+            'io.modelcontextprotocol/clientCapabilities': { elicitation: { form: {} } },
+          },
+        },
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    for await (const message of messages(response)) {
+      if (message.id === 23) return message.result;
+    }
+    throw new Error('No MCP result received for the draft action');
+  }
+
+  function answer(
+    asked: Record<string, unknown> | undefined,
+    action: 'accept' | 'decline' | 'cancel',
+  ) {
+    return {
+      requestState: asked?.requestState,
+      inputResponses: {
+        campaignDispatchConfirmation:
+          action === 'accept' ? { action, content: { confirmed: true } } : { action },
+      },
+    };
+  }
+
+  it.each([
+    [{ operation: 'send', confirmSend: true }, 'POST /campaigns/draft-1/actions/send'],
+    [
+      { operation: 'send', confirmSend: true, campaignId: 'draft-2' },
+      'POST /campaigns/draft-2/actions/send',
+    ],
+    [
+      { operation: 'schedule', confirmSend: true, scheduleTime: '2099-01-01T00:15:00Z' },
+      'POST /campaigns/draft-1/actions/schedule',
+    ],
+    [{ operation: 'delete' }, 'DELETE /campaigns/draft-1'],
+  ])('performs exactly one approved by-ID action for %j', async (args, mutation) => {
+    mutations = [];
+    scheduleBody = '';
+    const asked = await call(args);
+    expect(asked?.resultType).toBe('input_required');
+    expect(JSON.stringify(asked?.inputRequests)).toContain('Test newsletter');
+    expect(JSON.stringify(asked?.inputRequests)).toContain('Readers');
+    expect(JSON.stringify(asked?.inputRequests)).toContain('segment \\"17\\", 2 recipients');
+    if ('scheduleTime' in args)
+      expect(JSON.stringify(asked?.inputRequests)).toContain(args.scheduleTime);
+    expect(mutations).toEqual([]);
+
+    const accepted = await call(args, answer(asked, 'accept'));
+    const campaignId = 'campaignId' in args ? args.campaignId : 'draft-1';
+    expect(accepted?.structuredContent).toEqual({
+      operation: args.operation,
+      campaignId,
+    });
+    expect(JSON.stringify(accepted?.content)).toContain(`Campaign ID: \`${campaignId}\``);
+    expect(mutations).toEqual([mutation]);
+    if ('scheduleTime' in args)
+      expect(JSON.parse(scheduleBody)).toEqual({ schedule_time: '2099-01-01T00:15:00Z' });
+    await call(args, answer(asked, 'accept'));
+    expect(mutations).toEqual([mutation]);
+  });
+
+  it.each(['decline', 'cancel'] as const)('leaves a draft after %s', async (action) => {
+    mutations = [];
+    const args = { operation: 'delete' };
+    const result = await call(args, answer(await call(args), action));
+    expect(result?.structuredContent).toMatchObject({
+      error: {
+        data: {
+          reason: 'campaign_action_cancelled',
+          recovery: { hint: 'Leave the existing draft as is or begin a new confirmation.' },
+        },
+      },
+    });
+    expect(JSON.stringify(result?.content)).toContain('campaign_action_cancelled');
+    expect(mutations).toEqual([]);
+  });
+
+  it('asks again after the draft body changes and protects a draft that has since been scheduled', async () => {
+    mutations = [];
+    const send = { operation: 'send', confirmSend: true };
+    const reviewed = await call(send);
+    try {
+      draftBody = '<p>Edited after approval was requested</p>';
+      const changed = await call(send, answer(reviewed, 'accept'));
+      expect(changed?.resultType).toBe('input_required');
+      expect(changed?.requestState).not.toBe(reviewed?.requestState);
+      expect(mutations).toEqual([]);
+
+      const remove = { operation: 'delete' };
+      const discard = await call(remove);
+      draftStatus = 'schedule';
+      const blocked = await call(remove, answer(discard, 'accept'));
+      expect(blocked?.structuredContent).toMatchObject({
+        error: { data: { reason: 'campaign_not_draft' } },
+      });
+      expect(mutations).toEqual([]);
+    } finally {
+      draftBody = '<p>Reviewed draft</p>';
+      draftStatus = 'save';
+    }
+  });
+
+  it('asks again if the reviewed subject changes before the approved send', async () => {
+    mutations = [];
+    const send = { operation: 'send', confirmSend: true };
+    const reviewed = await call(send);
+    expect(reviewed?.resultType).toBe('input_required');
+    try {
+      draftSubject = 'Edited subject after review';
+      const changed = await call(send, answer(reviewed, 'accept'));
+      expect(changed?.resultType).toBe('input_required');
+      expect(changed?.requestState).not.toBe(reviewed?.requestState);
+      expect(JSON.stringify(changed?.inputRequests)).toContain('Edited subject after review');
+      expect(mutations).toEqual([]);
+    } finally {
+      draftSubject = args.subject;
+    }
+  });
 });
 
 describe('HTTP campaign confirmation', () => {

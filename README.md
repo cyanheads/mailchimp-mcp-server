@@ -38,7 +38,7 @@ Mailchimp campaign management. Draft, test, and send email campaigns, manage aud
 | `mailchimp_import_subscribers` | Batch add or update up to 500 subscribers per call, `pending` by default |
 | `mailchimp_segments` | Segment CRUD (saved, static, fuzzy), member listing, and batch add/remove |
 | `mailchimp_merge_fields` | Read, create, and update custom subscriber attributes |
-| `mailchimp_campaigns` | Campaign records, content, send checklist, and RSS/resend controls |
+| `mailchimp_campaigns` | Campaign records, content, and draft actions by ID, including previews and confirmed delivery |
 | `mailchimp_send_campaign` | Compose a campaign and leave it as a draft, test it, send it, or schedule it in one call |
 | `mailchimp_replicate_campaign` | Duplicate a campaign with overrides, then draft, test, send, or schedule |
 | `mailchimp_reports` | Campaign reports: the index, one report, or one of ten report dimensions |
@@ -143,10 +143,11 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 
 ### `mailchimp_campaigns` <sub>tool</sub>
 
-- Operations: `list` (filter by `status`, `listId`, `sinceSendTime` / `beforeSendTime`), `get`, `create` (`type` of `regular` / `plaintext` / `rss`, plus `recipients` and `settings`), `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss`; all but `list` and `create` take `campaignId`
+- Operations: `list` (filter by `status`, `listId`, `sinceSendTime` / `beforeSendTime`), `get`, `create` (`type` of `regular` / `plaintext` / `rss`, plus `recipients` and `settings`), `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `send-test`, `send`, `schedule`, `delete`, `cancel-send`, `create-resend`, `pause-rss`, and `resume-rss`. Every operation except `list` and `create` takes `campaignId`.
 - `set-content` accepts `html`, `plainText`, `templateId` + `templateSections`, `archiveContent`, `url`, or `localTemplate` (exclusive with `html` and `templateId`); `get-checklist` returns `isReady` and typed items
 - `get-content` accepts `variant: html | plainText | archiveHtml | all` (default `all`); empty bodies are omitted and formatted output carries complete selected bodies as fenced JSON
-- No send, test, schedule, or delete here; dispatch goes through `mailchimp_send_campaign` or `mailchimp_replicate_campaign`
+- Reuse the draft's `campaignId` with `send-test` (`testEmails` and `testSendType`), `send`, or `schedule` (future UTC quarter-hour `scheduleTime`). Send and schedule require explicit authorization, `confirmSend: true`, and a confirmation round.
+- `delete` requires confirmation and is limited to drafts in `save` status. Declining leaves the draft available.
 
 ---
 
@@ -258,7 +259,7 @@ Design reference: [`docs/email-design-playbook.md`](./docs/email-design-playbook
 ### `newsletter_from_source` <sub>prompt</sub>
 
 - Arguments: `source` (URL or free-form brief) required; `audienceId` and `seasonalContext` optional
-- Returns one user message that chains `mailchimp_playbook` (`topic: design-campaign`) into an HTML draft, then draft, test, and send via `mailchimp_send_campaign`
+- Chains `mailchimp_playbook` (`topic: design-campaign`) into an HTML draft, then revises, tests, and sends the same campaign ID with `mailchimp_campaigns`.
 
 ## Features
 
@@ -268,7 +269,7 @@ Mailchimp-specific:
 
 - Marketing API v3 client that derives the API host and data center from the key's `-<dc>` suffix, with retries, a process-wide concurrency limit (`MAILCHIMP_CONCURRENCY_LIMIT`), and a cooldown after a 429
 - Send gates: campaigns default to `draft`, `send` / `schedule` need `confirmSend: true` plus a confirmation prompt, and new or resumed `subscribed` subscriptions need confirmation too; imports default to `pending`
-- No irreversible deletes: removing audiences, merge fields, or campaigns, and permanently deleting subscribers, stay in the Mailchimp UI; `archive` is the strongest subscriber removal
+- Removing audiences, merge fields, or campaigns outside draft status, and permanently deleting subscribers, use the Mailchimp UI. `archive` is the strongest subscriber removal.
 - Local authoring: `@assets/<path>` files upload and rewrite at send time, and `.eta` templates render locally, which covers free plans where the Templates API is read-only
 - List operations page with `count` (max 1000) and `offset`
 
@@ -347,7 +348,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 MAILCHIMP_API_KEY=... bun run start:h
 
 ### Prerequisites
 
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+- [Bun v1.4.4](https://bun.sh/) or higher (or Node.js v24+).
 - A Mailchimp Marketing API key. Its `-dc` suffix (e.g. `-us22`) identifies your data center and is parsed at startup.
 
 ### Installation
@@ -393,14 +394,18 @@ cp .env.example .env
 | `MCP_SESSION_MODE` | Session mode; confirmations need `stateful`, and `stateless` refuses HTTP startup (stdio is unaffected). | `stateful` |
 | `MCP_REQUEST_STATE_KEY` | Optional sealing key, at least 32 bytes. Confirmations are single-use and tied to one process, so a restart or another instance asks again. | none |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
+| `MCP_JWT_EXPECTED_AUDIENCE` | When set, signed tokens must include this audience. When unset, JWT mode logs a startup warning and accepts any audience. | none |
+| `MCP_JWT_EXPECTED_ISSUER` | Required JWT issuer when set. Configure it alongside the audience. | none |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `warning`, `error`, etc.). | `info` |
-| `LOGS_DIR` | Directory for log files (Node.js only). | `<app-root>/logs` |
+| `LOGS_DIR` | Directory for log files (Node.js only). Use an absolute path to write logs outside the server package. | `<server-package>/logs` |
 | `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Base URL for traces and metrics. | none |
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | OTLP log endpoint; log export is off unless this is set. | none |
 | `LOG_TOOL_FAILURE_PAYLOADS` | Log failed-call arguments and results, redacted by key name and capped at `LOG_TOOL_FAILURE_PAYLOAD_MAX_BYTES` (default `16384`). Secrets inside free-form values remain visible. | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
+
+When upgrading instances that share filesystem storage, upgrade them together. The first start copies the old layout to `_v2/` under `STORAGE_FILESYSTEM_PATH`. The old files remain and continue to use disk space.
 
 ## Running the server
 

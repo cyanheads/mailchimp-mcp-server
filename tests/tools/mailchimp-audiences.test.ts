@@ -9,8 +9,10 @@
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
+import { mailchimpAudienceOverviewTool as overview } from '@/mcp-server/tools/definitions/mailchimp-audience-overview.tool.js';
 import { mailchimpAudiencesTool as tool } from '@/mcp-server/tools/definitions/mailchimp-audiences.tool.js';
 import {
   MailchimpService,
@@ -119,6 +121,30 @@ const CURRENT = {
     language: 'fr',
   },
 };
+
+it('keeps an audience name literal while its subscribe URL and merge tag remain actionable', async () => {
+  const name = 'July *news* | [draft]\r\n';
+  const url = 'https://example.com/join/(july)';
+  const tag = 'CUSTOM`TAG';
+  route('GET /lists/aud1', { ...CURRENT, name, subscribe_url_long: url });
+  route('GET /lists/aud1/growth-history', { history: [] });
+  route('GET /lists/aud1/clients', { clients: [] });
+  route('GET /lists/aud1/merge-fields', {
+    merge_fields: [{ tag, name: 'Custom name', type: 'text' }],
+  });
+  const result = await runToolContract(overview, { audienceId: 'aud1' });
+  expect(result.structuredContent).toMatchObject({
+    name,
+    subscribeUrl: url,
+    mergeFields: [{ tag }],
+  });
+  const tokens = new MarkdownIt('commonmark')
+    .parse(text(result), {})
+    .flatMap((token) => token.children ?? []);
+  expect(tokens.find((token) => token.type === 'text' && token.content === name)).toBeDefined();
+  expect(tokens.find((token) => token.type === 'link_open')?.attrGet('href')).toBe(url);
+  expect(tokens.find((token) => token.type === 'code_inline')?.content).toBe(tag);
+});
 
 const FULL_CREATE = {
   operation: 'create' as const,

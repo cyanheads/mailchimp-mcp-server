@@ -13,11 +13,18 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { markdown } from '@cyanheads/mcp-ts-core/utils';
 import {
   listEnrichment,
   listEnrichmentTrailer,
   pageEndNotice,
 } from '@/mcp-server/tools/shared/list-enrichment.js';
+import {
+  headingText,
+  inlineText,
+  thumbnailImage,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Template } from '@/services/mailchimp/types.js';
 
@@ -251,20 +258,20 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       lines.push(
-        `${prefix}**${t.name}** (\`${t.id}\`) — ${t.type ?? 'unknown'}${t.category ? ` · ${t.category}` : ''}`,
+        `${prefix}**${inlineText(t.name)}** (\`${t.id}\`) — ${inlineText(t.type ?? 'unknown')}${t.category ? ` · ${inlineText(t.category)}` : ''}`,
       );
       const meta: string[] = [];
-      if (t.createdBy) meta.push(`createdBy ${t.createdBy}`);
-      if (t.dateCreated) meta.push(`dateCreated ${t.dateCreated}`);
-      if (t.dateEdited) meta.push(`dateEdited ${t.dateEdited}`);
+      if (t.createdBy) meta.push(`createdBy ${inlineText(t.createdBy)}`);
+      if (t.dateCreated) meta.push(`dateCreated ${inlineText(t.dateCreated)}`);
+      if (t.dateEdited) meta.push(`dateEdited ${inlineText(t.dateEdited)}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
       const flags: string[] = [];
       if (typeof t.active === 'boolean') flags.push(`active ${t.active}`);
       if (typeof t.dragAndDrop === 'boolean') flags.push(`dragAndDrop ${t.dragAndDrop}`);
       if (typeof t.responsive === 'boolean') flags.push(`responsive ${t.responsive}`);
       if (flags.length > 0) lines.push(`${indent}${flags.join(' · ')}`);
-      if (t.thumbnail) lines.push(`${indent}thumbnail: ${t.thumbnail}`);
-      if (t.shareUrl) lines.push(`${indent}shareUrl: ${t.shareUrl}`);
+      if (t.thumbnail) lines.push(`${indent}thumbnail: ${thumbnailImage(t.thumbnail)}`);
+      if (t.shareUrl) lines.push(`${indent}shareUrl: ${webLink(t.shareUrl)}`);
     };
 
     if (result.templates) {
@@ -274,7 +281,7 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
 
     if (result.template) {
       if (result.templates) lines.push('');
-      lines.push(`# ${result.template.name}`, '');
+      lines.push(headingText(result.template.name), '');
       renderSummary(result.template, false);
     }
 
@@ -287,7 +294,11 @@ export const mailchimpTemplatesTool = tool('mailchimp_templates', {
           '_No default sections recorded. Mailchimp only populates this map for drag-and-drop templates; for user-uploaded HTML templates that use `mc:edit`, take the region names from the `mc:edit="…"` attributes in the template source HTML (`get` returns metadata only, not HTML; `mailchimp_local_templates` reads templates kept locally). Use those names as the keys in `templateSections` when building a campaign from this template._',
         );
       } else {
-        lines.push('```json', JSON.stringify(sections, null, 2), '```');
+        lines.push(
+          markdown()
+            .codeBlock(JSON.stringify(sections, null, 2), 'json')
+            .build(),
+        );
       }
     }
 

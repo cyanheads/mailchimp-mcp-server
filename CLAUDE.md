@@ -2,8 +2,8 @@
 
 **Server:** mailchimp-mcp-server
 **Version:** 0.6.0
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` `^2.4.0` (resolved 2.4.0)
 **Zod:** `^4.6.7`
 **Surface:** 18 tools always-on · 2 conditional (`mailchimp_assets` when `MAILCHIMP_ASSETS_DIR` set, `mailchimp_local_templates` when `MAILCHIMP_TEMPLATES_DIR` set) · 4 resources · 1 prompt · 1 published skill (`skills/mailchimp-guide`) · 3 services (`mailchimp`, `assets`, `templates`)
@@ -77,6 +77,8 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
 ### Tool (workflow — orchestrates multi-step flows, requests confirmation)
 
 Read `src/mcp-server/tools/definitions/mailchimp-send-campaign.tool.ts` and `mailchimp-replicate-campaign.tool.ts` for the workflow implementations. Both call `confirmCampaignDispatch` before creating a campaign, bind the consent to resolved content with `campaignContentSnapshot`, and reuse checked local HTML afterward. A valid decline leaves a draft; any mismatched or spent record asks again. Cleanup catches only failures after draft creation.
+
+`mailchimp_campaigns` operates on the existing draft for `send-test`, `send`, `schedule`, and `delete`. Send, schedule, and delete bind consent to the latest draft snapshot, and decline leaves it available. Recheck `save` status on re-entry and reuse the service methods that suppress mutation retries.
 
 ### Resource
 
@@ -276,7 +278,7 @@ skills/
 
 ## Skills
 
-Skills are modular instructions in `framework-skills/` at the project root. Read them directly when a task matches — e.g., `framework-skills/add-tool/SKILL.md` when adding a tool. Keep root `skills/` free for installable end-user skills; plugin hosts auto-load it.
+Development skills live in `framework-skills/`. Read them directly when a task matches, and run `bun run list-skills` for the full registry. Root `skills/` serves the published Mailchimp guide through plugin installs, the MCPB bundle, npm, Docker, and MCP clients through `createApp({ skills: 'skills' })`. The packaging linter validates the published tree.
 
 **Agent skill directory:** Copy skills into the directory your agent discovers (Claude Code: `.claude/skills/`, others: equivalent). This makes skills available as context without needing to reference `framework-skills/` paths manually. After framework updates, run the `maintenance` skill — it re-syncs the agent directory automatically (Phase B).
 
@@ -351,7 +353,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. After packing, `scripts/clean-mcpb.ts` prunes dev dependencies and strips dependency-shipped agent docs and platform-specific native bindings. MCPB is stdio-only — HTTP deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
+`bun run bundle` produces a stdio-only `.mcpb` extension for Claude Desktop. The packer reads `.mcpbignore`. Use root-anchored exclusions such as `/docs/` for project paths and keep the published root `skills/` in the bundle. After packing, `scripts/clean-mcpb.ts` prunes dev dependencies, dependency agent docs, platform-specific bindings, and build-only files. Runtime skill modules nested inside installed packages stay in the bundle. `bun run lint:packaging` checks the result.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"`, and optional string options carry `"default": ""`.
 

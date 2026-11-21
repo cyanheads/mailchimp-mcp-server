@@ -8,6 +8,7 @@
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpFilesTool } from '@/mcp-server/tools/definitions/mailchimp-files.tool.js';
@@ -404,17 +405,31 @@ describe('mailchimpFilesTool — list enrichment (structuredContent + content[] 
     setMailchimpServiceForTesting(undefined);
   });
 
-  it('list: non-empty page echoes the defaulted query; no notice', async () => {
-    stubList({ files: [FILE_FIXTURE], total_file_size: 68, total_items: 12 });
+  it('list: a non-empty page echoes the defaulted query and renders the uploader literally', async () => {
+    const uploader = 'The *design* team';
+    stubList({
+      files: [{ ...FILE_FIXTURE, created_by: uploader }],
+      total_file_size: 68,
+      total_items: 12,
+    });
     const result = await runToolContract(mailchimpFilesTool, { operation: 'list' });
     expect(sentQuery()).toEqual({ count: '10', offset: '0' });
     expect(result.structuredContent).toMatchObject({
       totalItems: 12,
       totalFileSizeInBytes: 68,
       filters: { count: 10, offset: 0 },
+      files: [{ id: FILE_FIXTURE.id, createdBy: uploader }],
     });
     expect(result.structuredContent).not.toHaveProperty('notice');
-    expect(texts(result)[1]).toBe('\n\n**Filters:** count `10` · offset `0`');
+    const [body, trailer] = texts(result);
+    const tokens = new MarkdownIt('commonmark')
+      .parse(body ?? '', {})
+      .flatMap((token) => token.children ?? []);
+    expect(tokens.find((token) => token.content.includes('createdBy'))).toMatchObject({
+      type: 'text',
+      content: expect.stringContaining(`createdBy ${uploader}`),
+    });
+    expect(trailer).toBe('\n\n**Filters:** count `10` · offset `0`');
   });
 
   it('list: empty filtered page echoes every filter (folderId 0 included) and renders the notice once', async () => {

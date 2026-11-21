@@ -8,6 +8,7 @@
 
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpReportsTool } from '@/mcp-server/tools/definitions/mailchimp-reports.tool.js';
@@ -288,6 +289,17 @@ describe('mailchimpReportsTool — filters / notice enrichment (#7)', () => {
     expect(textOf(result)).not.toContain('**Filters:**');
   });
 
+  it('keeps a multiline campaign title intact below its heading', async () => {
+    const title = 'July *roundup* | [draft]\r\n`Copy`\n';
+    serve({ id: 'c1', campaign_title: title });
+    const result = await run({ operation: 'get', campaignId: 'c1' });
+    expect(sc(result).report).toMatchObject({ campaignTitle: title });
+    const tokens = new MarkdownIt('commonmark').parse(textOf(result), {});
+    const headingEnd = tokens.findIndex((token) => token.type === 'heading_close');
+    const titleParagraph = tokens[headingEnd + 2];
+    expect(titleParagraph?.children?.map((token) => token.content).join('')).toBe(title);
+  });
+
   const SLICES = [
     { dimension: 'abuse-reports', key: 'abuse_reports', filters: undefined },
     { dimension: 'advice', key: 'advice', filters: undefined },
@@ -459,7 +471,7 @@ describe('mailchimpReportsTool — row rendering (#10)', () => {
     ]);
     expect(lines.slice(13)).toHaveLength(40);
     expect(lines.at(-1)).toBe(
-      '| https://example.com/p/39 | 39 | 39 | link39 | {"a":{"totalClicksA":39},"b":{"totalClicksB":0}} |',
+      '| [https://example.com/p/39](<https://example.com/p/39>) | 39 | 39 | link39 | {"a":{"totalClicksA":39},"b":{"totalClicksB":0}} |',
     );
   });
 

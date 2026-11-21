@@ -8,6 +8,12 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import {
+  codeText,
+  headingText,
+  inlineText,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const InputSchema = z.object({
@@ -295,14 +301,14 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
     const pct = (v: number | undefined) =>
       typeof v === 'number' ? `${(v * 100).toFixed(2)}%` : 'unavailable';
     const lines: string[] = [
-      `# ${result.campaignTitle ?? result.subjectLine ?? result.campaignId}`,
+      headingText(result.campaignTitle ?? result.subjectLine ?? result.campaignId),
       '',
-      `**ID:** ${result.campaignId}  `,
+      `**ID:** ${codeText(result.campaignId)}  `,
     ];
-    if (result.subjectLine) lines.push(`**Subject:** "${result.subjectLine}"  `);
-    if (result.type) lines.push(`**Type:** ${result.type}  `);
-    if (result.sendTime) lines.push(`**Sent:** ${result.sendTime}  `);
-    if (result.audienceName) lines.push(`**Audience:** ${result.audienceName}  `);
+    if (result.subjectLine) lines.push(`**Subject:** "${inlineText(result.subjectLine)}"  `);
+    if (result.type) lines.push(`**Type:** ${inlineText(result.type)}  `);
+    if (result.sendTime) lines.push(`**Sent:** ${inlineText(result.sendTime)}  `);
+    if (result.audienceName) lines.push(`**Audience:** ${inlineText(result.audienceName)}  `);
     if (typeof result.recipientsCount === 'number')
       lines.push(`**Emails sent:** ${result.recipientsCount}  `);
 
@@ -327,14 +333,14 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
     );
     lines.push(`| Unsubscribes | ${result.engagement.unsubscribes ?? 'unavailable'} | — | — |`);
     if (result.engagement.opens.lastOpen)
-      lines.push(`_Last open: ${result.engagement.opens.lastOpen}_`);
+      lines.push(`_Last open: ${inlineText(result.engagement.opens.lastOpen)}_`);
     if (result.engagement.clicks.lastClick)
-      lines.push(`_Last click: ${result.engagement.clicks.lastClick}_`);
+      lines.push(`_Last click: ${inlineText(result.engagement.clicks.lastClick)}_`);
 
     if (result.industryBenchmarks) {
       const ib = result.industryBenchmarks;
       lines.push('', '## Industry benchmarks');
-      if (ib.type) lines.push(`_${ib.type}_`);
+      if (ib.type) lines.push(`_${inlineText(ib.type)}_`);
       if (typeof ib.openRate === 'number')
         lines.push(`- Open rate: ${pct(ib.openRate)} (industry avg)`);
       if (typeof ib.clickRate === 'number')
@@ -355,7 +361,7 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
             ? ` [${pct(link.clickPercentage)} of clicks]`
             : '';
         lines.push(
-          `- ${link.totalClicks} clicks (${link.uniqueClicks} unique)${pctSuffix} — ${link.url}`,
+          `- ${link.totalClicks} clicks (${link.uniqueClicks} unique)${pctSuffix} — ${webLink(link.url)}`,
         );
       }
     }
@@ -363,10 +369,13 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
     if (result.topLocations.length > 0) {
       lines.push('', `## Top locations by opens`, '');
       for (const loc of result.topLocations) {
-        const regionParts = [loc.regionName, loc.region].filter(Boolean);
-        const regionSuffix = regionParts.length > 0 ? ` (${regionParts.join(' / ')})` : '';
+        const regionParts = [loc.regionName, loc.region].filter((value): value is string =>
+          Boolean(value),
+        );
+        const regionSuffix =
+          regionParts.length > 0 ? ` (${regionParts.map(inlineText).join(' / ')})` : '';
         lines.push(
-          `- ${loc.countryCode}${regionSuffix}: ${typeof loc.opens === 'number' ? `${loc.opens} opens` : 'opens unavailable'}`,
+          `- ${inlineText(loc.countryCode)}${regionSuffix}: ${typeof loc.opens === 'number' ? `${loc.opens} opens` : 'opens unavailable'}`,
         );
       }
     }
@@ -375,7 +384,7 @@ export const mailchimpCampaignReportTool = tool('mailchimp_campaign_report', {
       lines.push('', `## Recent unsubscribes (${result.recentUnsubscribes.length})`, '');
       for (const u of result.recentUnsubscribes) {
         lines.push(
-          `- \`${u.email}\`${u.timestamp ? ` at ${u.timestamp}` : ''}${u.reason ? ` — ${u.reason}` : ''}`,
+          `- ${codeText(u.email)}${u.timestamp ? ` at ${inlineText(u.timestamp)}` : ''}${u.reason ? ` — ${inlineText(u.reason)}` : ''}`,
         );
       }
     }

@@ -8,6 +8,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { codeText, headingText, inlineText, webLink } from '../shared/markdown-values.js';
 
 const InputSchema = z.object({
   audienceId: z.string().describe('Audience (list) ID to summarize.'),
@@ -256,15 +257,19 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
   },
 
   format: (result) => {
-    const lines: string[] = [`# ${result.name}`, '', `**ID:** ${result.audienceId}  `];
-    if (result.dateCreated) lines.push(`**Created:** ${result.dateCreated}  `);
+    const lines: string[] = [
+      headingText(result.name),
+      '',
+      `**ID:** ${inlineText(result.audienceId)}  `,
+    ];
+    if (result.dateCreated) lines.push(`**Created:** ${inlineText(result.dateCreated)}  `);
     if (typeof result.listRating === 'number')
       lines.push(`**List rating:** ${result.listRating}/5  `);
     if (typeof result.doubleOptin === 'boolean')
       lines.push(`**Double opt-in:** ${result.doubleOptin ? 'yes' : 'no'}  `);
     if (result.visibility)
       lines.push(`**Visibility:** ${result.visibility === 'pub' ? 'public' : 'private'}  `);
-    if (result.subscribeUrl) lines.push(`**Subscribe URL:** ${result.subscribeUrl}  `);
+    if (result.subscribeUrl) lines.push(`**Subscribe URL:** ${webLink(result.subscribeUrl)}  `);
 
     if (result.stats) {
       const s = result.stats;
@@ -285,9 +290,9 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
         lines.push(`| Avg subscribe rate | ${s.avgSubRate.toFixed(2)}/mo |`);
       if (typeof s.avgUnsubRate === 'number')
         lines.push(`| Avg unsubscribe rate | ${s.avgUnsubRate.toFixed(2)}/mo |`);
-      if (s.campaignLastSent) lines.push(`| Last campaign | ${s.campaignLastSent} |`);
-      if (s.lastSubDate) lines.push(`| Last subscribe | ${s.lastSubDate} |`);
-      if (s.lastUnsubDate) lines.push(`| Last unsubscribe | ${s.lastUnsubDate} |`);
+      if (s.campaignLastSent) lines.push(`| Last campaign | ${inlineText(s.campaignLastSent)} |`);
+      if (s.lastSubDate) lines.push(`| Last subscribe | ${inlineText(s.lastSubDate)} |`);
+      if (s.lastUnsubDate) lines.push(`| Last unsubscribe | ${inlineText(s.lastUnsubDate)} |`);
     }
 
     if (result.contact) {
@@ -300,17 +305,17 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
       if (c.country) parts.push(c.country);
       if (parts.length > 0) {
         lines.push('', '## Contact (CAN-SPAM footer)', '');
-        for (const p of parts) lines.push(`- ${p}`);
+        for (const p of parts) lines.push(`- ${inlineText(p)}`);
       }
     }
 
     if (result.campaignDefaults) {
       const d = result.campaignDefaults;
       lines.push('', '## Campaign defaults', '');
-      if (d.fromName) lines.push(`- **From name:** ${d.fromName}`);
-      if (d.fromEmail) lines.push(`- **From email:** ${d.fromEmail}`);
-      if (d.subject) lines.push(`- **Default subject:** ${d.subject}`);
-      if (d.language) lines.push(`- **Language:** ${d.language}`);
+      if (d.fromName) lines.push(`- **From name:** ${inlineText(d.fromName)}`);
+      if (d.fromEmail) lines.push(`- **From email:** ${inlineText(d.fromEmail)}`);
+      if (d.subject) lines.push(`- **Default subject:** ${inlineText(d.subject)}`);
+      if (d.language) lines.push(`- **Language:** ${inlineText(d.language)}`);
     }
 
     if (result.growth.length > 0) {
@@ -319,27 +324,27 @@ export const mailchimpAudienceOverviewTool = tool('mailchimp_audience_overview',
       lines.push('|:------|-----:|-------:|---------:|--------:|');
       for (const g of result.growth) {
         lines.push(
-          `| ${g.month} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.existing ?? 0} | ${g.cleaned ?? 0} |`,
+          `| ${inlineText(g.month)} | ${g.subscribed ?? 0} | ${g.unsubscribed ?? 0} | ${g.existing ?? 0} | ${g.cleaned ?? 0} |`,
         );
       }
     }
 
     if (result.emailClients.length > 0) {
       lines.push('', '## Top email clients', '');
-      for (const c of result.emailClients) lines.push(`- ${c.client}: ${c.members}`);
+      for (const c of result.emailClients) lines.push(`- ${inlineText(c.client)}: ${c.members}`);
     }
 
     if (result.mergeFields.length > 0) {
       lines.push('', `## Merge fields (${result.mergeFields.length})`, '');
       for (const mf of result.mergeFields) {
         const req = mf.required ? ' (required)' : '';
-        lines.push(`- \`${mf.tag}\` — ${mf.name} [${mf.type}]${req}`);
+        lines.push(`- ${codeText(mf.tag)} — ${inlineText(mf.name)} [${inlineText(mf.type)}]${req}`);
       }
     }
 
     if (result.notes && result.notes.length > 0) {
       lines.push('', '## Notes', '');
-      for (const n of result.notes) lines.push(`- _${n}_`);
+      for (const n of result.notes) lines.push(`- _${inlineText(n)}_`);
     }
 
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];

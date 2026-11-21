@@ -13,6 +13,7 @@ import {
   mailchimpMemberHash,
 } from '@/services/mailchimp/mailchimp-service.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
+import { inlineText, webLink } from '../shared/markdown-values.js';
 import { requireSubscriberAddress } from '../shared/subscriber-address.js';
 import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
@@ -258,20 +259,22 @@ export const mailchimpUpsertSubscriberTool = tool('mailchimp_upsert_subscriber',
 
   format: (result) => {
     const lines: string[] = [
-      `# Subscriber ${result.isNew ? 'created (new record)' : 'updated'}: ${result.email}`,
+      `# Subscriber ${result.isNew ? 'created (new record)' : 'updated'}: ${inlineText(result.email)}`,
       '',
-      `**Status:** ${result.status}  `,
-      `**ID:** ${result.subscriberId}  `,
+      `**Status:** ${inlineText(result.status)}  `,
+      `**ID:** ${inlineText(result.subscriberId)}  `,
       `**New record:** ${result.isNew}  `,
     ];
     if (result.mergeFieldsApplied > 0)
       lines.push(`**Merge fields applied:** ${result.mergeFieldsApplied}  `);
-    if (result.tagsAdded.length > 0) lines.push(`**Tags added:** ${result.tagsAdded.join(', ')}  `);
+    if (result.tagsAdded.length > 0)
+      lines.push(`**Tags added:** ${result.tagsAdded.map(inlineText).join(', ')}  `);
     if (result.tagsRemoved.length > 0)
-      lines.push(`**Tags removed:** ${result.tagsRemoved.join(', ')}  `);
-    if (result.tagsFinal.length > 0) lines.push(`**Final tags:** ${result.tagsFinal.join(', ')}  `);
+      lines.push(`**Tags removed:** ${result.tagsRemoved.map(inlineText).join(', ')}  `);
+    if (result.tagsFinal.length > 0)
+      lines.push(`**Final tags:** ${result.tagsFinal.map(inlineText).join(', ')}  `);
     if (result.noteAttached) lines.push('**Note attached:** yes  ');
-    if (result.webUrl) lines.push('', `[Open in Mailchimp](${result.webUrl})`);
+    if (result.webUrl) lines.push('', webLink(result.webUrl, 'Open in Mailchimp'));
     if (result.status === 'pending')
       lines.push(
         '',

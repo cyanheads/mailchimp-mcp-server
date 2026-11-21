@@ -3,7 +3,7 @@
  * briefs the agent to compose a monthly editorial newsletter from a source URL
  * or free-form description. Chains into `mailchimp_playbook` (`topic:
  * design-campaign`) for live audience-aware design guidance, then walks the
- * draft → test → send flow via `mailchimp_send_campaign`.
+ * draft → test → send flow while keeping one campaign ID.
  * @module mcp-server/prompts/definitions/newsletter-from-source.prompt
  */
 
@@ -71,11 +71,11 @@ export const newsletterFromSourcePrompt = prompt('newsletter_from_source', {
             '   ```',
             '   Each placement should label a section, anchor warmth, or pun on content — not decorate aimlessly. curl-check each URL for a 200 before embedding. Every `<img>` needs explicit `width`, `height`, `alt`, `display:block` (or `inline-block` for inline icons), `border:0`.',
             '',
-            "5. **Draft and validate.** `mailchimp_send_campaign` with `mode: 'draft'` to create the campaign and run the send-checklist. Fix any `error` items in `checklistWarnings`.",
+            "5. **Draft and validate.** Call `mailchimp_send_campaign` with `mode: 'draft'` once and keep its `campaignId`. Fix checklist errors with `mailchimp_campaigns` `update` or `set-content` and recheck with `get-checklist` on that ID.",
             '',
-            "6. **Test send.** Re-run with `mode: 'test'` and the user's email in `testEmails` to proofread the rendered output. iOS Mail + Gmail web is a good minimum review pair.",
+            "6. **Test send.** Call `mailchimp_campaigns` with `operation: 'send-test'`, the same `campaignId`, the user's address in `testEmails`, and `testSendType: 'html'`. Proofread and retest on that draft as needed.",
             '',
-            "7. **Send.** `mode: 'send'`. The workflow tool requests confirmation in a re-entrant input round before creating or modifying a campaign — decline downgrades it back to draft safely.",
+            "7. **Send.** After explicit user authorization, call `mailchimp_campaigns` with `operation: 'send'`, the same `campaignId`, and `confirmSend: true`. Complete the confirmation round. Declining leaves the draft available.",
             '',
             "8. **Review after ~24h.** `mailchimp_playbook` with `topic: 'post-send-review'` and the returned `campaignId` for the tailored results digest (opens, clicks, abuse, industry benchmarks).",
             '',

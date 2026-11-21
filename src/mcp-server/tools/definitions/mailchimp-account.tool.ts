@@ -7,6 +7,12 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import {
+  codeText,
+  headingText,
+  inlineText,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const OperationSchema = z
@@ -205,24 +211,24 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
     const hasInfo = result.operation === 'info' || result.accountId !== undefined;
     if (hasInfo) {
       lines.push(
-        `# Account: ${result.accountName ?? '(unnamed)'}`,
+        headingText(`Account: ${result.accountName ?? '(unnamed)'}`),
         '',
         `**Operation:** ${result.operation}  `,
-        `**ID:** ${result.accountId ?? '—'}  `,
-        `**Data center:** ${result.dataCenter ?? '—'}  `,
+        `**ID:** ${result.accountId === undefined ? '—' : codeText(result.accountId)}  `,
+        `**Data center:** ${inlineText(result.dataCenter ?? '—')}  `,
       );
-      if (result.email) lines.push(`**Email:** ${result.email}  `);
-      if (result.username) lines.push(`**Username:** ${result.username}  `);
-      if (result.role) lines.push(`**Role:** ${result.role}  `);
-      if (result.pricingPlanType) lines.push(`**Plan:** ${result.pricingPlanType}  `);
+      if (result.email) lines.push(`**Email:** ${inlineText(result.email)}  `);
+      if (result.username) lines.push(`**Username:** ${inlineText(result.username)}  `);
+      if (result.role) lines.push(`**Role:** ${inlineText(result.role)}  `);
+      if (result.pricingPlanType) lines.push(`**Plan:** ${inlineText(result.pricingPlanType)}  `);
       if (typeof result.proEnabled === 'boolean')
         lines.push(`**Pro enabled:** ${result.proEnabled}  `);
       if (typeof result.totalSubscribers === 'number')
         lines.push(`**Total subscribers:** ${result.totalSubscribers}  `);
-      if (result.industry) lines.push(`**Industry:** ${result.industry}  `);
-      if (result.timezone) lines.push(`**Timezone:** ${result.timezone}  `);
-      if (result.memberSince) lines.push(`**Member since:** ${result.memberSince}  `);
-      if (result.lastLogin) lines.push(`**Last login:** ${result.lastLogin}  `);
+      if (result.industry) lines.push(`**Industry:** ${inlineText(result.industry)}  `);
+      if (result.timezone) lines.push(`**Timezone:** ${inlineText(result.timezone)}  `);
+      if (result.memberSince) lines.push(`**Member since:** ${inlineText(result.memberSince)}  `);
+      if (result.lastLogin) lines.push(`**Last login:** ${inlineText(result.lastLogin)}  `);
       if (result.industryStats) {
         lines.push('', '**Industry benchmarks**');
         if (typeof result.industryStats.openRate === 'number')
@@ -240,21 +246,21 @@ export const mailchimpAccountTool = tool('mailchimp_account', {
       if (hasInfo) lines.push('');
       lines.push(`# Activity feed (${items.length} of ${total}, offset ${result.offset ?? 0})`, '');
       if (items.length === 0) {
-        lines.push(`_${result.note ?? 'No activity in the requested window.'}_`);
+        lines.push(`_${inlineText(result.note ?? 'No activity in the requested window.')}_`);
       } else {
         for (const item of items) {
-          lines.push(`**${item.updateTime}** — type: ${item.type}`);
-          lines.push(`  ${item.activity}`);
-          if (item.title) lines.push(`  _${item.title}_`);
-          if (item.url) lines.push(`  <${item.url}>`);
-          if (item.campaignId) lines.push(`  campaign: \`${item.campaignId}\``);
-          if (item.listId) lines.push(`  list: \`${item.listId}\``);
+          lines.push(`**${inlineText(item.updateTime)}** — type: ${inlineText(item.type)}`);
+          lines.push(`  ${inlineText(item.activity)}`);
+          if (item.title) lines.push(`  _${inlineText(item.title)}_`);
+          if (item.url) lines.push(`  ${webLink(item.url)}`);
+          if (item.campaignId) lines.push(`  campaign: ${codeText(item.campaignId)}`);
+          if (item.listId) lines.push(`  list: ${codeText(item.listId)}`);
           lines.push('');
         }
       }
     }
     if (result.note && (result.items === undefined || result.items.length > 0)) {
-      lines.push('', `_${result.note}_`);
+      lines.push('', `_${inlineText(result.note)}_`);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

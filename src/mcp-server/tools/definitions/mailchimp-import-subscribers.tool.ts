@@ -9,6 +9,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
+import { codeText, inlineText } from '../shared/markdown-values.js';
 import { hasSubscriberAddress } from '../shared/subscriber-address.js';
 import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
 
@@ -246,8 +247,8 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
     const lines: string[] = [
       `# Import: ${result.succeeded.length}/${result.succeeded.length + result.failed.length} succeeded`,
       '',
-      `**Audience:** \`${result.audienceId}\`  `,
-      `**Status applied:** ${result.statusApplied}  `,
+      `**Audience:** ${codeText(result.audienceId)}  `,
+      `**Status applied:** ${inlineText(result.statusApplied)}  `,
       `**Created:** ${result.totalCreated}  `,
       `**Updated:** ${result.totalUpdated}  `,
       `**Failed:** ${result.errorCount}  `,
@@ -260,23 +261,19 @@ export const mailchimpImportSubscribersTool = tool('mailchimp_import_subscribers
     }
     if (result.failed.length > 0) {
       lines.push('', `## Failures (${result.failed.length})`, '');
-      const sample = result.failed.slice(0, 25);
-      for (const f of sample) {
-        lines.push(`- \`${f.email}\`${f.errorCode ? ` [${f.errorCode}]` : ''}: ${f.error}`);
+      for (const f of result.failed) {
+        lines.push(
+          `- ${codeText(f.email)}${f.errorCode ? ` [${inlineText(f.errorCode)}]` : ''}: ${inlineText(f.error)}`,
+        );
       }
-      if (result.failed.length > sample.length)
-        lines.push(`- …and ${result.failed.length - sample.length} more.`);
     }
     if (result.succeeded.length > 0) {
       lines.push('', `## Succeeded (${result.succeeded.length})`, '');
-      const sample = result.succeeded.slice(0, 25);
-      for (const s of sample) {
+      for (const s of result.succeeded) {
         lines.push(
-          `- \`${s.email}\` [${s.subscriberId}] — ${s.status}${s.isNew ? ' (new)' : ' (updated)'}`,
+          `- ${codeText(s.email)} [${inlineText(s.subscriberId)}] — ${inlineText(s.status)}${s.isNew ? ' (new)' : ' (updated)'}`,
         );
       }
-      if (result.succeeded.length > sample.length)
-        lines.push(`- …and ${result.succeeded.length - sample.length} more.`);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

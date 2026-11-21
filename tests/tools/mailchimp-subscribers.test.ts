@@ -7,6 +7,7 @@
  */
 
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 import { mailchimpSubscribersTool as tool } from '@/mcp-server/tools/definitions/mailchimp-subscribers.tool.js';
@@ -77,6 +78,34 @@ const tableLines = (markdown: string): string[] =>
   markdown.split('\n').filter((line) => line.startsWith('|'));
 
 describe('list reads — structuredContent and upstream query', () => {
+  it('round-trips literal notes as one quote for reads and saves', async () => {
+    const note = 'Weekly *news* | [July\r\n\r\nDraft `copy`\r ';
+    routes.set(`${memberPath}/notes`, { notes: [{ id: 1, note }], total_items: 1, id: 1, note });
+    const markdown = new MarkdownIt('commonmark');
+    for (const operation of ['list-notes', 'add-note'] as const) {
+      const result = await runToolContract(tool, {
+        operation,
+        audienceId: 'a',
+        email,
+        ...(operation === 'add-note' && { note }),
+      });
+      expect(result.structuredContent).toMatchObject(
+        operation === 'list-notes' ? { notes: [{ id: 1, note }] } : { note: { id: 1, note } },
+      );
+      const tokens = markdown.parse(formatOf(result), {});
+      const quoteStart = tokens.findIndex((token) => token.type === 'blockquote_open');
+      const quoteEnd = tokens.findIndex((token) => token.type === 'blockquote_close');
+      const children = tokens
+        .slice(quoteStart, quoteEnd)
+        .find((token) => token.type === 'inline')?.children;
+      expect(children?.every((token) => token.type === 'text' || token.type === 'hardbreak')).toBe(
+        true,
+      );
+      expect(
+        children?.map((token) => (token.type === 'hardbreak' ? '\n' : token.content)).join(''),
+      ).toBe(note);
+    }
+  });
   it('list sends count/offset/status and summarizes members', async () => {
     routes.set('/3.0/lists/a/members', {
       members: [{ id: hash, email_address: email, status: 'subscribed', full_name: 'Ada L' }],
@@ -382,7 +411,7 @@ describe('format() — activity, events, goals as Markdown tables', () => {
         '',
         '| activityType | createdAtTimestamp | campaignId | campaignTitle | linkClicked | messageText |',
         '| --- | --- | --- | --- | --- | --- |',
-        '| click | 2026-02-01T00:00:00+00:00 | c1 | Spring | https://example.com/a?x=1 |  |',
+        '| click | 2026-02-01T00:00:00+00:00 | c1 | Spring | [https://example.com/a?x=1](<https://example.com/a?x=1>) |  |',
         '| conversation | 2026-02-02T00:00:00+00:00 | c2 | Reply thread |  | (below) |',
         '',
         '**Row 2 · messageText:** line one\\',

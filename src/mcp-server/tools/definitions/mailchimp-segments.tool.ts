@@ -14,6 +14,7 @@ import {
 } from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Segment } from '@/services/mailchimp/types.js';
+import { codeText, headingText, inlineText } from '../shared/markdown-values.js';
 
 const OperationSchema = z
   .enum(['list', 'get', 'create', 'update', 'delete', 'list-members', 'batch-update-members'])
@@ -334,13 +335,13 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       lines.push(
-        `${prefix}**${s.name}** (\`${s.id}\`) — type:${s.type}${typeof s.memberCount === 'number' ? `, memberCount ${s.memberCount}` : ''}`,
+        `${prefix}**${inlineText(s.name)}** (${codeText(String(s.id))}) — type:${inlineText(s.type)}${typeof s.memberCount === 'number' ? `, memberCount ${s.memberCount}` : ''}`,
       );
       const meta: string[] = [];
-      if (s.match) meta.push(`match ${s.match}`);
+      if (s.match) meta.push(`match ${inlineText(s.match)}`);
       if (typeof s.conditionCount === 'number') meta.push(`conditionCount ${s.conditionCount}`);
-      if (s.createdAt) meta.push(`createdAt ${s.createdAt}`);
-      if (s.updatedAt) meta.push(`updatedAt ${s.updatedAt}`);
+      if (s.createdAt) meta.push(`createdAt ${inlineText(s.createdAt)}`);
+      if (s.updatedAt) meta.push(`updatedAt ${inlineText(s.updatedAt)}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
     };
 
@@ -351,7 +352,7 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
 
     if (result.segment) {
       if (result.segments) lines.push('');
-      lines.push(`# ${result.segment.name}`, '');
+      lines.push(headingText(result.segment.name), '');
       renderSummary(result.segment, false);
     }
 
@@ -361,22 +362,25 @@ export const mailchimpSegmentsTool = tool('mailchimp_segments', {
         `# Members in segment (${result.members.length} of ${result.totalItems ?? '?'})`,
         '',
       );
-      for (const m of result.members) lines.push(`- [${m.id}] ${m.email} — status:${m.status}`);
+      for (const m of result.members)
+        lines.push(
+          `- [${inlineText(m.id)}] ${inlineText(m.email)} — status:${inlineText(m.status)}`,
+        );
     }
 
     if (result.added !== undefined || result.removed !== undefined) {
       lines.push('', '# Segment membership updated');
       lines.push(
-        `- added: ${result.added?.length ?? 0}${result.added?.length ? ` (${result.added.join(', ')})` : ''}`,
+        `- added: ${result.added?.length ?? 0}${result.added?.length ? ` (${result.added.map(inlineText).join(', ')})` : ''}`,
       );
       lines.push(
-        `- removed: ${result.removed?.length ?? 0}${result.removed?.length ? ` (${result.removed.join(', ')})` : ''}`,
+        `- removed: ${result.removed?.length ?? 0}${result.removed?.length ? ` (${result.removed.map(inlineText).join(', ')})` : ''}`,
       );
     }
 
     if (result.errors && result.errors.length > 0) {
       lines.push('', `## Errors (${result.errors.length})`, '');
-      for (const e of result.errors) lines.push(`- \`${e.email}\`: ${e.error}`);
+      for (const e of result.errors) lines.push(`- ${codeText(e.email)}: ${inlineText(e.error)}`);
     }
 
     if (typeof result.deleted === 'boolean') lines.push('', `Deleted: ${result.deleted}`);

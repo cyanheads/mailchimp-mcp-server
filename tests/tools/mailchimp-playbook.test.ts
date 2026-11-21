@@ -55,6 +55,34 @@ describe('mailchimpPlaybookTool — design-campaign topic', () => {
     setMailchimpServiceForTesting(undefined);
   });
 
+  it.each(['send', 'design-campaign'] as const)(
+    'carries one draft through the %s playbook',
+    async (topic) => {
+      vi.stubGlobal(
+        'fetch',
+        routeStub({
+          '/lists/abc/growth-history': { status: 200, body: { history: [], total_items: 0 } },
+          '/lists/abc': {
+            status: 200,
+            body: { id: 'abc', name: 'Readers', stats: { member_count: 12 } },
+          },
+        }),
+      );
+      const result = await runToolContract(mailchimpPlaybookTool, { topic, audienceId: 'abc' });
+      const body = result.structuredContent;
+      const instructions =
+        typeof body === 'object' && body !== null && 'instructions' in body
+          ? body.instructions
+          : undefined;
+      expect(instructions).toEqual(expect.stringContaining('with the same `campaignId`'));
+      expect(instructions).toEqual(expect.stringContaining('`operation: send-test`'));
+      expect(instructions).toEqual(expect.stringContaining('`operation: send`'));
+      expect(instructions).toEqual(expect.stringContaining('`confirmSend: true`'));
+      expect(String(instructions).match(/mailchimp_send_campaign/g) ?? []).toHaveLength(1);
+      expect(text(result)).toContain(String(instructions));
+    },
+  );
+
   it('throws a ValidationError when audienceId is missing', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const ctx = createMockContext({ errors: mailchimpPlaybookTool.errors });

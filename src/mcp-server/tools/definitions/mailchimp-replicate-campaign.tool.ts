@@ -11,6 +11,12 @@ import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors
 import { rewriteAssetsInContent } from '@/mcp-server/tools/shared/asset-rewrite.js';
 import { campaignContentSnapshot } from '@/mcp-server/tools/shared/campaign-content-snapshot.js';
 import { confirmCampaignDispatch } from '@/mcp-server/tools/shared/campaign-dispatch-confirmation.js';
+import {
+  codeText,
+  headingText,
+  inlineText,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { resolveLocalTemplate } from '@/mcp-server/tools/shared/resolve-local-template.js';
 import { TEMPLATE_SECTIONS_DOC } from '@/mcp-server/tools/shared/template-sections-doc.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
@@ -459,28 +465,32 @@ export const mailchimpReplicateCampaignTool = tool('mailchimp_replicate_campaign
 
   format: (result) => {
     const lines: string[] = [
-      `# ${result.cancelledByUser ? 'Replica cancelled' : `Campaign replicated — ${result.mode}`}: ${result.subject}`,
+      headingText(
+        `${result.cancelledByUser ? 'Replica cancelled' : `Campaign replicated — ${result.mode}`}: ${result.subject}`,
+      ),
       '',
-      `**New campaign ID:** ${result.campaignId}  `,
-      `**Source:** ${result.sourceCampaignId}  `,
-      `**Status:** ${result.status}  `,
+      `**New campaign ID:** ${codeText(result.campaignId)}  `,
+      `**Source:** ${codeText(result.sourceCampaignId)}  `,
+      `**Status:** ${inlineText(result.status)}  `,
       `**Mode:** ${result.mode}${result.cancelledByUser ? ' (downgraded from send/schedule)' : ''}  `,
     ];
     if (result.overridesApplied.length > 0)
-      lines.push(`**Overrides applied:** ${result.overridesApplied.join(', ')}  `);
+      lines.push(`**Overrides applied:** ${result.overridesApplied.map(inlineText).join(', ')}  `);
     if (typeof result.recipientCount === 'number')
       lines.push(`**Recipients:** ${result.recipientCount}  `);
-    if (result.sendTime) lines.push(`**Send time:** ${result.sendTime}  `);
+    if (result.sendTime) lines.push(`**Send time:** ${inlineText(result.sendTime)}  `);
     if (result.testsSentTo && result.testsSentTo.length > 0)
-      lines.push(`**Test sent to:** ${result.testsSentTo.join(', ')}  `);
-    if (result.archiveUrl) lines.push(`**Archive:** ${result.archiveUrl}  `);
+      lines.push(`**Test sent to:** ${result.testsSentTo.map(codeText).join(', ')}  `);
+    if (result.archiveUrl) lines.push(`**Archive:** ${webLink(result.archiveUrl)}  `);
     if (typeof result.webId === 'number') lines.push(`**Web ID:** ${result.webId}  `);
-    if (result.webUrl) lines.push(`**Mailchimp UI:** ${result.webUrl}  `);
+    if (result.webUrl) lines.push(`**Mailchimp UI:** ${webLink(result.webUrl)}  `);
     if (result.checklistWarnings.length > 0) {
       lines.push('', `## Checklist warnings (${result.checklistWarnings.length})`, '');
       for (const w of result.checklistWarnings) {
         const icon = w.type === 'warning' ? '⚠' : w.type === 'error' ? '✗' : '·';
-        lines.push(`- ${icon} [${w.type}] **${w.heading}** — ${w.details}`);
+        lines.push(
+          `- ${icon} [${inlineText(w.type)}] **${inlineText(w.heading)}** — ${inlineText(w.details)}`,
+        );
       }
     }
     if (result.cleanedUp) {

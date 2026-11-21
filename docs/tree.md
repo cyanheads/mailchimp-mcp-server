@@ -1,6 +1,6 @@
 # mailchimp-mcp-server - Directory Structure
 
-Generated on: 2026-11-01 05:27:21
+Generated on: 2026-11-21 16:49:17
 
 ```text
 mailchimp-mcp-server/
@@ -192,6 +192,7 @@ mailchimp-mcp-server/
 │   │           ├── campaign-dispatch-confirmation.ts
 │   │           ├── consent-record.ts
 │   │           ├── list-enrichment.ts
+│   │           ├── markdown-values.ts
 │   │           ├── resolve-local-template.ts
 │   │           ├── row-table.ts
 │   │           ├── subscriber-address.ts
@@ -245,6 +246,7 @@ mailchimp-mcp-server/
 │       ├── campaign-content.test.ts
 │       ├── campaign-dispatch-confirmation.test.ts
 │       ├── campaign-dispatch-http.test.ts
+│       ├── existing-campaign-actions.test.ts
 │       ├── input-coercion.test.ts
 │       ├── mailchimp-assets.test.ts
 │       ├── mailchimp-audiences.test.ts
@@ -260,6 +262,7 @@ mailchimp-mcp-server/
 │       ├── mailchimp-segments.test.ts
 │       ├── mailchimp-subscribers.test.ts
 │       ├── mailchimp-templates.test.ts
+│       ├── newsletter-markdown.test.ts
 │       ├── subscriber-safety.test.ts
 │       └── template-sections-doc.test.ts
 ├── .dockerignore

@@ -16,6 +16,13 @@ import {
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
 import { listEnrichment } from '@/mcp-server/tools/shared/list-enrichment.js';
+import {
+  codeText,
+  headingText,
+  inlineText,
+  thumbnailImage,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { getAssetService } from '@/services/assets/asset-service.js';
 
 const OperationSchema = z
@@ -222,7 +229,7 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
   format: (result) => {
     const lines: string[] = [
       `Operation: ${result.operation}`,
-      `_Assets dir: ${result.assetsDir}_`,
+      `_Assets dir: ${inlineText(result.assetsDir)}_`,
       '',
     ];
 
@@ -239,24 +246,25 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
               ? `${(a.sizeInBytes / 1024).toFixed(1)} KB (${a.sizeInBytes} B)`
               : `${(a.sizeInBytes / 1024 / 1024).toFixed(2)} MB (${a.sizeInBytes} B)`;
         lines.push(
-          `- **${a.relPath}** — ${a.isImage ? 'image' : 'file'} · ${sizeLabel} · \`${a.ext}\``,
+          `- **${inlineText(a.relPath)}** — ${a.isImage ? 'image' : 'file'} · ${sizeLabel} · ${codeText(a.ext)}`,
         );
       }
     }
 
     if (result.asset) {
       const a = result.asset;
-      lines.push(`# ${a.relPath}`, '');
+      lines.push(headingText(a.relPath), '');
       lines.push(`- type: ${a.isImage ? 'image' : 'file'}`);
       lines.push(`- sizeInBytes: ${a.sizeInBytes}`);
-      lines.push(`- ext: \`${a.ext}\``);
-      if (a.sha256) lines.push(`- sha256: \`${a.sha256}\``);
+      lines.push(`- ext: ${codeText(a.ext)}`);
+      if (a.sha256) lines.push(`- sha256: ${codeText(a.sha256)}`);
       if (a.cached) {
         lines.push('', '## Cached upload', '');
         lines.push(`- fileId: \`${a.cached.fileId}\``);
-        lines.push(`- fullSizeUrl: ${a.cached.fullSizeUrl}`);
-        if (a.cached.thumbnailUrl) lines.push(`- thumbnailUrl: ${a.cached.thumbnailUrl}`);
-        lines.push(`- uploadedAt: ${a.cached.uploadedAt}`);
+        lines.push(`- fullSizeUrl: ${webLink(a.cached.fullSizeUrl)}`);
+        if (a.cached.thumbnailUrl)
+          lines.push(`- thumbnailUrl: ${thumbnailImage(a.cached.thumbnailUrl)}`);
+        lines.push(`- uploadedAt: ${inlineText(a.cached.uploadedAt)}`);
       } else {
         lines.push('', '_Not yet uploaded. Will upload on next `sync` or campaign send._');
       }
@@ -277,7 +285,8 @@ export const mailchimpAssetsTool = tool('mailchimp_assets', {
       );
       if (result.skipped && result.skipped.length > 0) {
         lines.push('', '## Skipped', '');
-        for (const s of result.skipped) lines.push(`- **${s.relPath}** — ${s.reason}`);
+        for (const s of result.skipped)
+          lines.push(`- **${inlineText(s.relPath)}** — ${inlineText(s.reason)}`);
       }
     }
 

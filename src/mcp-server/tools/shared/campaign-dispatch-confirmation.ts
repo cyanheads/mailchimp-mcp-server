@@ -18,8 +18,8 @@ const CampaignDispatchConfirmationSchema = z.object({
  */
 export function confirmCampaignDispatch(
   ctx: ConfirmationContext,
-  binding: { operation: string; target: string; content: () => Promise<unknown> },
-  message: () => Promise<string>,
+  binding: { operation: string; target: string; content: () => unknown },
+  message: () => string | Promise<string>,
 ): Promise<boolean> {
   return confirmConsent(ctx, binding, {
     key: CONFIRMATION_KEY,

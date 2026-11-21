@@ -14,7 +14,9 @@ import {
   JsonRpcErrorCode,
   validationError,
 } from '@cyanheads/mcp-ts-core/errors';
+import { markdown } from '@cyanheads/mcp-ts-core/utils';
 import { listEnrichment } from '@/mcp-server/tools/shared/list-enrichment.js';
+import { codeText, headingText, inlineText } from '@/mcp-server/tools/shared/markdown-values.js';
 import { getTemplateService } from '@/services/templates/template-service.js';
 
 const OperationSchema = z
@@ -104,6 +106,13 @@ const OutputSchema = z.object({
 });
 
 type Output = z.infer<typeof OutputSchema>;
+
+/** Fenced Markdown appends a terminal LF and normalizes CR and NUL. */
+function templateBlock(value: string, language: 'eta' | 'html'): string {
+  return value.endsWith('\n') && !/[\r\0]/.test(value)
+    ? markdown().codeBlock(value.slice(0, -1), language).build()
+    : markdown().codeBlock(JSON.stringify(value), 'json').build();
+}
 
 function requireService(): NonNullable<ReturnType<typeof getTemplateService>> {
   const svc = getTemplateService();
@@ -242,7 +251,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
   format: (result) => {
     const lines: string[] = [
       `Operation: ${result.operation}`,
-      `_Templates dir: ${result.templatesDir}_`,
+      `_Templates dir: ${inlineText(result.templatesDir)}_`,
       '',
     ];
 
@@ -252,33 +261,33 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
         const sizeLabel =
           t.size < 1024 ? `${t.size} B` : `${(t.size / 1024).toFixed(1)} KB (${t.size} B)`;
         lines.push(
-          `- **${t.name}** — \`${t.relPath}\` · ${sizeLabel}${t.hasMeta ? ' · meta' : ''}`,
+          `- **${inlineText(t.name)}** — ${codeText(t.relPath)} · ${sizeLabel}${t.hasMeta ? ' · meta' : ''}`,
         );
       }
     }
 
     if (result.template) {
       const t = result.template;
-      lines.push(`# ${t.name}`, '');
-      lines.push(`- relPath: \`${t.relPath}\``);
+      lines.push(headingText(t.name, 1, 'Local template'), '');
+      lines.push(`- relPath: ${codeText(t.relPath)}`);
       lines.push(`- size: ${t.size} bytes`);
       lines.push(`- hasMeta: ${t.hasMeta}`);
       if (t.meta) {
         lines.push('', '## Meta', '');
-        if (t.meta.subject) lines.push(`- subject: ${JSON.stringify(t.meta.subject)}`);
-        if (t.meta.previewText) lines.push(`- previewText: ${JSON.stringify(t.meta.previewText)}`);
+        if (t.meta.subject) lines.push(`- subject: ${inlineText(t.meta.subject)}`);
+        if (t.meta.previewText) lines.push(`- previewText: ${inlineText(t.meta.previewText)}`);
         if (t.meta.vars && t.meta.vars.length > 0)
-          lines.push(`- vars: ${t.meta.vars.map((v) => `\`${v}\``).join(', ')}`);
+          lines.push(`- vars: ${t.meta.vars.map(codeText).join(', ')}`);
       }
-      lines.push('', '## Source', '', '```eta', t.source, '```');
+      lines.push('', '## Source', '', templateBlock(t.source, 'eta'));
     }
 
     if (result.rendered) {
       const r = result.rendered;
-      lines.push(`# Rendered \`${r.name}\``, '');
-      if (r.subject) lines.push(`- subject: ${JSON.stringify(r.subject)}`);
-      if (r.previewText) lines.push(`- previewText: ${JSON.stringify(r.previewText)}`);
-      lines.push('', '## HTML', '', '```html', r.html, '```');
+      lines.push(`# Rendered ${codeText(r.name)}`, '');
+      if (r.subject) lines.push(`- subject: ${inlineText(r.subject)}`);
+      if (r.previewText) lines.push(`- previewText: ${inlineText(r.previewText)}`);
+      lines.push('', '## HTML', '', templateBlock(r.html, 'html'));
     }
 
     if (result.seeded) {
@@ -286,7 +295,7 @@ export const mailchimpLocalTemplatesTool = tool('mailchimp_local_templates', {
       lines.push(
         `# Seeded from Mailchimp template \`${s.mailchimpTemplateId}\``,
         '',
-        `- relPath: \`${s.relPath}\``,
+        `- relPath: ${codeText(s.relPath)}`,
         `- bytes: ${s.bytes}`,
       );
     }

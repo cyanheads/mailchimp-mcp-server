@@ -36,12 +36,12 @@ async function redeem(ctx: ConfirmationContext) {
 /** Resolve a bound confirmation or suspend with a fresh ten-minute consent record. */
 export async function confirmConsent(
   ctx: ConfirmationContext,
-  binding: { operation: string; target: string; content: () => Promise<unknown> },
+  binding: { operation: string; target: string; content: () => unknown },
   prompt: {
     key: string;
     schema: z.ZodObject<{ confirmed: z.ZodBoolean }>;
     label: string;
-    message: () => Promise<string>;
+    message: () => string | Promise<string>;
   },
 ): Promise<boolean> {
   for (const [id, expires] of issued) if (expires <= Date.now()) issued.delete(id);

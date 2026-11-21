@@ -9,6 +9,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
+import { codeText, headingText, inlineText } from '@/mcp-server/tools/shared/markdown-values.js';
 import {
   getMailchimpService,
   mailchimpMemberHash,
@@ -144,7 +145,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const instructions = [
           '# Onboarding walkthrough',
           '',
-          `You're on account **${info.account_name}** (plan: ${plan}, total subscribers: ${totalSubs}).`,
+          `You're on account **${inlineText(info.account_name)}** (plan: ${inlineText(plan)}, total subscribers: ${totalSubs}).`,
           '',
           '1. **Confirm the account is set up.** `mailchimp_account` with `operation: info` should show your plan, email, and total subscribers.',
           '2. **See what audiences exist.** `mailchimp_audiences` with `operation: list`. Free plan allows 1 audience.',
@@ -192,15 +193,15 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const click = audience.stats?.click_rate;
         const memberCount = audience.stats?.member_count ?? 0;
         const instructions = [
-          `# Send playbook — "${audience.name}"`,
+          headingText(`Send playbook — "${audience.name}"`, 1, 'Send playbook'),
           '',
           `**Current state:** ${memberCount} members, avg open ${PCT(open)}, avg click ${PCT(click)}, net growth last 3 months: ${recentNet >= 0 ? '+' : ''}${recentNet}.`,
           '',
           '1. **Pick a template or write content.** `mailchimp_templates` `operation: list` to browse saved templates. Or write HTML / plaintext directly.',
-          '2. **Draft first.** Call `mailchimp_send_campaign` with `mode: draft` (or `mode: test` with `testEmails`) to build the campaign and run the send-checklist without dispatching.',
-          '3. **Review the checklist.** The tool returns `checklistWarnings`. Fix any `error` items before sending.',
-          '4. **Send a test.** Re-run with `mode: test` and your own email in `testEmails` to proofread the rendered output.',
-          '5. **Confirm the send.** Re-run with `mode: send` (or `mode: schedule` + `scheduleTime`). The tool requests confirmation in a re-entrant input round before campaign mutation; decline to downgrade back to draft.',
+          '2. **Draft first.** Call `mailchimp_send_campaign` with `mode: draft` once. Keep the returned `campaignId` for each remaining step.',
+          '3. **Revise and validate.** Resolve any checklist errors with `mailchimp_campaigns` `update` or `set-content` on that ID, then run `get-checklist`.',
+          '4. **Send a test.** Use `mailchimp_campaigns` with `operation: send-test`, the same `campaignId`, addresses in `testEmails`, and `testSendType: html`. Proofread and repeat on that draft as needed.',
+          '5. **Confirm the send.** After explicit user authorization, call `mailchimp_campaigns` with the same `campaignId`, `confirmSend: true`, and `operation: send` (or `schedule` with a future UTC quarter-hour `scheduleTime`). Complete the confirmation round. Declining leaves the draft available.',
           '6. **Post-send review.** Once status becomes `sent`, call `mailchimp_playbook` with `topic: post-send-review` and the returned `campaignId` for a tailored follow-up.',
           '',
           open !== undefined && open < 0.15
@@ -264,7 +265,11 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const tooSmall = typeof sent === 'number' && sent < SAMPLE_THRESHOLD;
         const canAnalyze = typeof sent === 'number' && !tooSmall;
         const instructions = [
-          `# Post-send review — "${report.campaign_title ?? report.subject_line ?? report.id}"`,
+          headingText(
+            `Post-send review — "${report.campaign_title ?? report.subject_line ?? report.id}"`,
+            1,
+            'Post-send review',
+          ),
           '',
           `**Sent to:** ${sent ?? 'unavailable'}  `,
           `**Open rate:** ${typeof open === 'number' ? PCT(open) : 'unavailable'}${canAnalyze ? benchmark(open, ib?.open_rate) : ''}  `,
@@ -439,7 +444,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
         const u = audience.stats?.unsubscribe_count ?? 0;
         const cleanedRatio = m > 0 ? c / m : 0;
         const instructions = [
-          `# List hygiene — "${audience.name}"`,
+          headingText(`List hygiene — "${audience.name}"`, 1, 'List hygiene'),
           '',
           `**Members:** ${m}  `,
           `**Cleaned (hard bounces):** ${c} (${PCT(cleanedRatio)})  `,
@@ -507,7 +512,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           return {
             topic: 'subscriber-triage',
             instructions: [
-              `# Subscriber triage — \`${input.email}\``,
+              `# Subscriber triage — ${codeText(input.email)}`,
               '',
               '**No matches** across search-members. They are not currently on any audience on this account.',
               '',
@@ -541,14 +546,14 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           });
         }
         const instructions = [
-          `# Subscriber triage — \`${input.email}\``,
+          `# Subscriber triage — ${codeText(input.email)}`,
           '',
           `Found ${exact.length} exact and ${fuzzy.length} fuzzy matches. Working with the top match:`,
-          `- **Audience:** \`${top.list_id}\``,
-          `- **Status:** ${top.status}`,
+          `- **Audience:** ${codeText(top.list_id)}`,
+          `- **Status:** ${inlineText(top.status)}`,
           `- **Rating:** ${top.member_rating ?? '—'}/5`,
-          top.timestamp_opt ? `- **Opted in:** ${top.timestamp_opt}` : '',
-          top.last_changed ? `- **Last changed:** ${top.last_changed}` : '',
+          top.timestamp_opt ? `- **Opted in:** ${inlineText(top.timestamp_opt)}` : '',
+          top.last_changed ? `- **Last changed:** ${inlineText(top.last_changed)}` : '',
           '',
           '1. **Get the full record.** `mailchimp_find_subscriber` with this email (and optional audienceId) enriches with merge fields, stats, and full tag list.',
           '2. **See their activity.** `mailchimp_subscribers` `operation: list-activity` shows what campaigns they opened/clicked.',
@@ -654,7 +659,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           );
         }
         const instructions = [
-          `# Design playbook — "${audience.name}"`,
+          headingText(`Design playbook — "${audience.name}"`, 1, 'Design playbook'),
           '',
           `**Audience state:** ${memberCount} members, avg open ${PCT(open)}, avg click ${PCT(click)}, net growth (3mo): ${recentNet >= 0 ? '+' : ''}${recentNet}.`,
           '',
@@ -706,9 +711,9 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
           '2. Outline sections and write copy',
           '3. Build HTML (600px table, inline styles)',
           '4. Curl-check any CDN image URLs',
-          '5. `mailchimp_send_campaign` `mode: draft` → review `checklistWarnings`',
-          '6. `mode: test` → proofread the rendered output (iOS + Gmail web minimum)',
-          '7. `mode: send` (requests re-entrant confirmation before campaign mutation)',
+          '5. Create one draft with `mailchimp_send_campaign` `mode: draft`. Keep its `campaignId` and fix checklist errors with `mailchimp_campaigns` `update` or `set-content` on that ID.',
+          '6. Use `mailchimp_campaigns` `operation: send-test` with the same `campaignId`, explicit `testEmails`, and `testSendType: html` to proofread the rendered output.',
+          '7. After the user authorizes delivery, use `mailchimp_campaigns` `operation: send` with that `campaignId` and `confirmSend: true`, then complete the confirmation round.',
           '8. After ~24h: `mailchimp_playbook` `topic: post-send-review`',
         ]
           .filter(Boolean)
@@ -773,7 +778,7 @@ export const mailchimpPlaybookTool = tool('mailchimp_playbook', {
     if (result.resourceSuggestions.length > 0) {
       lines.push('', '## Suggested resources', '');
       for (const r of result.resourceSuggestions) {
-        lines.push(`- \`${r.uri}\` — ${r.reason}`);
+        lines.push(`- ${codeText(r.uri)} — ${r.reason}`);
       }
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];

@@ -82,6 +82,15 @@ describe('newsletterFromSourcePrompt', () => {
     expect(() => newsletterFromSourcePrompt.args?.parse({})).toThrow();
   });
 
+  it('uses a single draft ID for revisions, proofing, and delivery', async () => {
+    const text = await renderText({ source: 'A community newsletter' });
+    expect(text).toContain("`mode: 'draft'` once and keep its `campaignId`");
+    expect(text).toContain("`operation: 'send-test'`, the same `campaignId`");
+    expect(text).toContain("`operation: 'send'`, the same `campaignId`, and `confirmSend: true`");
+    expect(text).toContain('`update` or `set-content`');
+    expect(text.match(/mailchimp_send_campaign/g)).toHaveLength(1);
+  });
+
   it('directs installed clients to the design playbook returned by the tool', async () => {
     const text = await renderText({ source: 'A community newsletter' });
     expect(newsletterFromSourcePrompt.description).toContain('mailchimp_playbook');

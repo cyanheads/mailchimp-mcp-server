@@ -6,6 +6,7 @@
  * @module tests/tools/shared/row-table.test
  */
 
+import MarkdownIt from 'markdown-it';
 import { describe, expect, it } from 'vitest';
 import { renderRowTable } from '@/mcp-server/tools/shared/row-table.js';
 
@@ -58,6 +59,40 @@ describe('parseTable (test helper)', () => {
 });
 
 describe('renderRowTable', () => {
+  const parser = new MarkdownIt('commonmark').enable('table');
+
+  it('keeps column order, hoisted values, and literal punctuation under a GFM parse', () => {
+    const lines = renderRowTable(
+      [
+        { key: 'a|b `copy`', shared: 'North *west*', nested: { details: { score: 3 } } },
+        { key: 'c', shared: 'North *west*', nested: { details: { score: 4 } } },
+      ],
+      ['key'],
+    );
+    const values = parser.parse(lines.join('\n'), {}).filter((token) => token.type === 'inline');
+    expect(values.map((token) => token.children?.map((child) => child.content).join(''))).toEqual([
+      'shared: North *west*',
+      'key',
+      'nested',
+      'a|b `copy`',
+      '{"details":{"score":3}}',
+      'c',
+      '{"details":{"score":4}}',
+    ]);
+  });
+
+  it('preserves line endings in below-table values and keeps URL cells clickable', () => {
+    const value = 'First | [line]\r\n\r\nLast `line`\r ';
+    const url = 'https://example.com/issues/(july)?draft=1|2';
+    const lines = renderRowTable([{ memo: value, url }], []);
+    const values = parser.parse(lines.join('\n'), {}).filter((token) => token.type === 'inline');
+    expect(values[2]?.children?.[0]?.content).toBe('(below)');
+    expect(values[3]?.children?.[0]?.attrGet('href')).toBe(url.replace('|', '%7C'));
+    expect(values[3]?.children?.[1]?.content).toBe(url);
+    expect(values[4]?.children?.map((child) => child.content).join('')).toBe(
+      `Row 1 · memo: ${value}`,
+    );
+  });
   it('renders no lines for zero rows', () => {
     expect(renderRowTable([], ['a'])).toEqual([]);
   });
@@ -119,6 +154,15 @@ describe('renderRowTable', () => {
       '| --- | --- |',
       '| 1 | 2 |',
       '| 3 |  |',
+    ]);
+  });
+
+  it('renders row fields only when they are own keys', () => {
+    expect(renderRowTable([{ id: 'a', toString: 'wording' }, { id: 'b' }], ['id'])).toEqual([
+      '| id | toString |',
+      '| --- | --- |',
+      '| a | wording |',
+      '| b |  |',
     ]);
   });
 
@@ -185,7 +229,7 @@ describe('renderRowTable', () => {
       '| r1 | one line |',
       '| r2 | (below) |',
       '',
-      '**Row 2 · memo:** line one\\\n\\- line two\\\n\\# three',
+      '**Row 2 · memo:** line one&#10;\\- line two&#13;&#10;\\# three',
     ]);
   });
 

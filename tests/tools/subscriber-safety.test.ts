@@ -10,6 +10,7 @@ import {
   expectInputRequired,
   runToolContract,
 } from '@cyanheads/mcp-ts-core/testing';
+import MarkdownIt from 'markdown-it';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mailchimpFindSubscriberTool as find } from '@/mcp-server/tools/definitions/mailchimp-find-subscriber.tool.js';
 import { mailchimpImportSubscribersTool as batch } from '@/mcp-server/tools/definitions/mailchimp-import-subscribers.tool.js';
@@ -92,7 +93,12 @@ describe('subscriber safety through HTTP', () => {
         response = {
           new_members: rows
             .filter((r) => r.email_address !== 'bad@example.com')
-            .map((r) => ({ ...member(), email_address: r.email_address, status: r.status })),
+            .map((r, index) => ({
+              ...member(),
+              id: `import-member-${index}`,
+              email_address: r.email_address,
+              status: r.status,
+            })),
           updated_members: [],
           errors: rows
             .filter((r) => r.email_address === 'bad@example.com')
@@ -483,5 +489,48 @@ describe('subscriber safety through HTTP', () => {
     ).toBe(false);
     expect(batch.input.safeParse({ audienceId: 'a', subscribers: [] }).success).toBe(false);
     expect(requests).toHaveLength(1);
+  });
+
+  it('renders every successful and failed import row', async () => {
+    const succeeded = Array.from({ length: 26 }, (_, i) => ({ email: `good-${i}@example.com` }));
+    const failed = Array.from({ length: 26 }, (_, i) => ({ email: `invalid-${i}` }));
+    const result = await runToolContract(batch, {
+      audienceId: 'a',
+      subscribers: [...succeeded, ...failed],
+    });
+    expect(result.structuredContent).toMatchObject({ succeeded, failed });
+    expect(result.structuredContent).toMatchObject({
+      succeeded: expect.arrayContaining([
+        {
+          email: 'good-0@example.com',
+          subscriberId: 'import-member-0',
+          status: 'pending',
+          isNew: true,
+        },
+        {
+          email: 'good-25@example.com',
+          subscriberId: 'import-member-25',
+          status: 'pending',
+          isNew: true,
+        },
+      ]),
+    });
+    const markdown = result.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n');
+    const rows = new MarkdownIt('commonmark')
+      .parse(markdown, {})
+      .filter((token) => token.type === 'inline' && token.children?.[0]?.type === 'code_inline');
+    expect(rows.map((row) => row.children?.[0]?.content)).toEqual([
+      ...failed.map((row) => row.email),
+      ...succeeded.map((row) => row.email),
+    ]);
+    for (const [email, id] of [
+      ['good-0@example.com', 'import-member-0'],
+      ['good-25@example.com', 'import-member-25'],
+    ]) {
+      const row = rows.find((token) => token.children?.[0]?.content === email);
+      expect(row?.children?.[1]?.content).toBe(` [${id}] — pending (new)`);
+    }
   });
 });

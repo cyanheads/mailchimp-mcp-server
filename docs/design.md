@@ -31,7 +31,7 @@
 | `mailchimp_subscribers` | Subscriber read + update, tags, notes, activity, events, goals. **`archive` is the strongest delete** — removes from active list but preserves the record so the email can be resubscribed. No `delete-permanent` (GDPR-forget is irreversible and un-resubscribable). Upsert lives in the workflow tool. | `list`, `get`, `update`, `archive`, `list-tags`, `set-tags`, `list-notes`, `add-note`, `update-note`, `delete-note`, `list-activity`, `list-events`, `list-goals` | `openWorldHint: true` |
 | `mailchimp_segments` | Segment CRUD and member assignment. `batch-update-members` can add/remove many subscribers in one call — use deliberately. Static and saved segments; conditions are free-tier, advanced dynamic filters require Premium. | `list`, `get`, `create`, `update`, `delete`, `list-members`, `batch-update-members` | `openWorldHint: true` |
 | `mailchimp_merge_fields` | Custom subscriber-attribute (merge field) read + create/update. **No delete** — deleting a merge field removes the column-worth of data from every subscriber. Humans do it in the Mailchimp UI. | `list`, `get`, `create`, `update` | `openWorldHint: true` |
-| `mailchimp_campaigns` | Campaign read + create/update + non-send actions. **No delete** — deleting a sent campaign destroys historical reports; pre-send cancellation is covered by `cancel-send`. Send/test/schedule/replicate+send live in the workflow tools. | `list`, `get`, `create`, `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss` | `openWorldHint: true` |
+| `mailchimp_campaigns` | Campaign records and actions by ID. Revise, preview, send, schedule, or delete an existing draft. Send, schedule, and draft deletion require confirmation. | `list`, `get`, `create`, `update`, `replicate`, `get-content`, `set-content`, `get-checklist`, `send-test`, `send`, `schedule`, `delete`, `cancel-send`, `create-resend`, `pause-rss`, `resume-rss` | `openWorldHint: true` |
 | `mailchimp_reports` | Campaign report slices. For the common at-a-glance digest, use `mailchimp_campaign_report` instead. | `list`, `get`, `slice` (+ `dimension`: `abuse-reports` \| `advice` \| `click-details` \| `open-details` \| `domain-performance` \| `eepurl` \| `email-activity` \| `locations` \| `sent-to` \| `unsubscribed`; + optional `subscriberHash` or `linkId` for drill-down) | `readOnlyHint: true` |
 | `mailchimp_templates` | Template CRUD. Free plan has access to basic templates only. | `list`, `get`, `create`, `update`, `delete`, `get-default-content` | `openWorldHint: true` |
 | `mailchimp_files` | Mailchimp File Manager uploads and metadata operations for campaign assets, plus read-only folder browsing. | `list`, `get`, `upload`, `update`, `delete`, `list-folders`, `get-folder` | `openWorldHint: true` |
@@ -110,7 +110,7 @@ An MCP server that wraps the [Mailchimp Marketing API v3.0](https://mailchimp.co
 
 - Authenticate with a single Mailchimp API key (basic auth, username is any string, password is the key). Data center (`us1` … `us22`) parsed from the `-dc` suffix.
 - Validate the API key at startup by issuing `GET /ping` — fail fast with `ConfigurationError` rather than surfacing auth failures on the first tool call.
-- Support Free-plan operations across: audiences (read/create/update + analytics + signup forms), subscribers (read/update + tags/notes + activity), segments, merge fields (read/create/update), campaigns (regular/plaintext/rss, no delete), templates, reports, search.
+- Support Free-plan operations across: audiences (read/create/update + analytics + signup forms), subscribers (read/update + tags/notes + activity), segments, merge fields (read/create/update), campaigns (regular/plaintext/rss, draft-only delete), templates, reports, search.
 - Expose workflow tools for the seven highest-frequency tasks (send campaign, replicate campaign, upsert/import/find subscribers, campaign report digest, audience overview), an instruction tool (`mailchimp_playbook`) for state-aware procedural guidance on complex multi-step tasks, and primitive tools for everything else.
 - Gate destructive workflow operations (`mailchimp_send_campaign`/`mailchimp_replicate_campaign` with `mode: 'send' \| 'schedule'`) behind a re-entrant `ctx.requestInput` confirmation before any campaign mutation.
 - Default `mailchimp_import_subscribers` to `status: 'pending'` (double-opt-in) to prevent accidental mass-sends.
@@ -170,7 +170,7 @@ Full endpoint inventory from `docs/reference/mailchimp-openapi.json` (282 operat
 | Resource (ops) | Free? | Covered by | Notes |
 |:---------------|:------|:-----------|:------|
 | `lists` (69) | ✅ partial | `mailchimp_audiences` (CRUD-except-delete + signup-forms + analytics), `mailchimp_subscribers` (CRUD-except-delete-permanent + tags/notes/activity), `mailchimp_segments`, `mailchimp_merge_fields` (CRUD-except-delete), `mailchimp_upsert_subscriber`, `mailchimp_import_subscribers`, `mailchimp_find_subscriber`, `mailchimp_audience_overview` | Free capped at 1 audience. Interest-categories + webhooks + signup-form-sub-resources under `/lists/**` deferred as low-signal. |
-| `campaigns` (22) | ✅ partial | `mailchimp_campaigns` (CRUD-except-delete), `mailchimp_send_campaign`, `mailchimp_replicate_campaign` | Regular/plaintext/RSS only. Split/variate paid. Delete deferred (destroys reports). Scheduling may require Standard — surface 403 with hint. |
+| `campaigns` (22) | ✅ partial | `mailchimp_campaigns`, `mailchimp_send_campaign`, `mailchimp_replicate_campaign` | Regular/plaintext/RSS only. Split/variate paid. Delete is limited to confirmed drafts to preserve reports. Scheduling may require Standard. |
 | `reports` (22) | ✅ | `mailchimp_reports` (consolidated via `dimension` enum), `mailchimp_campaign_report` | Basic post-send reports free. |
 | `automations` (18) | ❌ | — | Standard+. **Excluded.** |
 | `reporting` (12) | partial | — | Surveys/facebook-ads paid. **Excluded.** |
@@ -384,8 +384,8 @@ z.object({
 - **No scheduling on some free accounts.** Mailchimp gates scheduling behind Standard on some account tiers. `mailchimp_send_campaign` with `mode: 'schedule'` surfaces the 403 with `requiresPlan: 'standard'`.
 - **No automations or multi-step journeys.** Single-send campaigns only.
 - **No A/B or variate campaigns.** Only `regular`, `plaintext`, `rss` campaign types exposed.
-- **Irreversible deletes unavailable via tool surface.** Audience delete, subscriber permanent-delete, campaign delete, merge-field delete are intentionally excluded. Humans do them in the UI.
-- **Dispatch requires a confirmation round trip.** Clients that cannot complete the input request cannot send or schedule through the workflow tools; `draft` and `test` modes remain available.
+- **Destructive actions.** Audience deletion, permanent subscriber deletion, merge-field deletion, and deletion of campaigns outside draft status use the Mailchimp UI.
+- **Dispatch requires a confirmation round trip.** Clients that can complete the input request can send or schedule through both the workflow tools and `mailchimp_campaigns`. Draft creation and test email remain available without that round.
 - **Rate limit is per-account-concurrent, not per-period.** 10 simultaneous requests. Workflow tools cap internal concurrency at `MAILCHIMP_CONCURRENCY_LIMIT` (default 4) to leave headroom for other sessions.
 - **Pagination is `count`/`offset`, not cursor.** Tools expose `count` and `offset` directly; callers page explicitly. Mailchimp caps `count` at 1000.
 - **Tag sync requires GET + POST.** No atomic "set tags" endpoint; a concurrent modification between our read and write could lose a tag. Acceptable for v1; documented in the tool's description.
@@ -433,7 +433,7 @@ Each step is independently testable. `bun run devcheck` after each.
 6. **`mailchimp_audiences`** + **`mailchimp_audience_overview`** — list/get/create/update + analytics + signup-forms + the digest workflow tool.
 7. **`mailchimp_subscribers`** + **`mailchimp_upsert_subscriber`** + **`mailchimp_find_subscriber`** + **`mailchimp_import_subscribers`** — the subscriber surface. `import_subscribers` defaults status to `'pending'`.
 8. **`mailchimp_segments`** + **`mailchimp_merge_fields`** — audience-config tools.
-9. **`mailchimp_campaigns`** + **`mailchimp_send_campaign`** + **`mailchimp_replicate_campaign`** — campaign CRUD (no delete) and send workflows with re-entrant confirmation.
+9. **`mailchimp_campaigns`** + **`mailchimp_send_campaign`** + **`mailchimp_replicate_campaign`** — campaign records, draft actions by ID, and send workflows with re-entrant confirmation.
 10. **`mailchimp_reports`** (consolidated `list`/`get`/`slice` with `dimension` enum) + **`mailchimp_campaign_report`** — reports + digest.
 11. **`mailchimp_templates`** — template CRUD.
 12. **`mailchimp_search`** — search-members + search-campaigns.

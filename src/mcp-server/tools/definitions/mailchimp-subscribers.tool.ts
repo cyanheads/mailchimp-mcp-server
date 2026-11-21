@@ -16,6 +16,7 @@ import {
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
 import { listEnrichment, listEnrichmentTrailer, pageEndNotice } from '../shared/list-enrichment.js';
+import { headingText, inlineText, quoteText } from '../shared/markdown-values.js';
 import { renderRowTable } from '../shared/row-table.js';
 import { requireSubscriberAddress } from '../shared/subscriber-address.js';
 import { confirmSubscription, isSubscriptionReentry } from '../shared/subscription-confirmation.js';
@@ -625,19 +626,19 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       lines.push(
-        `${prefix}**${s.email}** [${s.id}] — ${s.status}${s.fullName ? ` (${s.fullName})` : ''}`,
+        `${prefix}**${inlineText(s.email)}** [${inlineText(s.id)}] — ${inlineText(s.status)}${s.fullName ? ` (${inlineText(s.fullName)})` : ''}`,
       );
       const meta: string[] = [];
       if (typeof s.memberRating === 'number') meta.push(`rating ${s.memberRating}/5`);
-      if (s.language) meta.push(`lang ${s.language}`);
+      if (s.language) meta.push(`lang ${inlineText(s.language)}`);
       if (typeof s.vip === 'boolean') meta.push(`vip ${s.vip}`);
-      if (s.source) meta.push(`source ${s.source}`);
+      if (s.source) meta.push(`source ${inlineText(s.source)}`);
       if (typeof s.tagsCount === 'number') meta.push(`tagsCount ${s.tagsCount}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
       const stamps: string[] = [];
-      if (s.timestampSignup) stamps.push(`signed up ${s.timestampSignup}`);
-      if (s.timestampOpt) stamps.push(`opted in ${s.timestampOpt}`);
-      if (s.lastChanged) stamps.push(`last changed ${s.lastChanged}`);
+      if (s.timestampSignup) stamps.push(`signed up ${inlineText(s.timestampSignup)}`);
+      if (s.timestampOpt) stamps.push(`opted in ${inlineText(s.timestampOpt)}`);
+      if (s.lastChanged) stamps.push(`last changed ${inlineText(s.lastChanged)}`);
       if (stamps.length > 0) lines.push(`${indent}${stamps.join(' · ')}`);
       if (s.stats) {
         const st: string[] = [];
@@ -648,12 +649,17 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
         if (st.length > 0) lines.push(`${indent}Stats: ${st.join(', ')}`);
       }
       if (s.tags && s.tags.length > 0) {
-        lines.push(`${indent}Tags: ${s.tags.map((t) => `${t.name} [id:${t.id}]`).join(', ')}`);
+        lines.push(
+          `${indent}Tags: ${s.tags.map((t) => `${inlineText(t.name)} [id:${t.id}]`).join(', ')}`,
+        );
       }
       if (s.mergeFields) {
         const entries = Object.entries(s.mergeFields)
           .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-          .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+          .map(
+            ([k, v]) =>
+              `${inlineText(k)}=${inlineText(typeof v === 'object' ? JSON.stringify(v) : String(v))}`,
+          );
         lines.push(
           `${indent}Merge fields: ${entries.length > 0 ? entries.join(', ') : '(none populated)'}`,
         );
@@ -667,7 +673,7 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
 
     if (result.subscriber) {
       if (result.subscribers) lines.push('');
-      lines.push(`# ${result.subscriber.email}`, '');
+      lines.push(headingText(result.subscriber.email), '');
       renderSummary(result.subscriber, false);
     }
 
@@ -675,7 +681,9 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       lines.push('', `# Tags active (${result.tagsActive.length})`, '');
       for (const t of result.tagsActive) {
         const idPart = typeof t.id === 'number' ? ` [id:${t.id}]` : '';
-        lines.push(`- ${t.name}${idPart}${t.dateAdded ? ` (since ${t.dateAdded})` : ''}`);
+        lines.push(
+          `- ${inlineText(t.name)}${idPart}${t.dateAdded ? ` (since ${inlineText(t.dateAdded)})` : ''}`,
+        );
       }
     }
 
@@ -683,12 +691,12 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       lines.push('', 'Tags sync:');
       if (result.tagsAdded) {
         lines.push(
-          `**tagsAdded:** ${result.tagsAdded.length > 0 ? result.tagsAdded.join(', ') : '(none)'}`,
+          `**tagsAdded:** ${result.tagsAdded.length > 0 ? result.tagsAdded.map(inlineText).join(', ') : '(none)'}`,
         );
       }
       if (result.tagsRemoved) {
         lines.push(
-          `**tagsRemoved:** ${result.tagsRemoved.length > 0 ? result.tagsRemoved.join(', ') : '(none)'}`,
+          `**tagsRemoved:** ${result.tagsRemoved.length > 0 ? result.tagsRemoved.map(inlineText).join(', ') : '(none)'}`,
         );
       }
     }
@@ -697,18 +705,18 @@ export const mailchimpSubscribersTool = tool('mailchimp_subscribers', {
       lines.push('', `# Notes (${result.notes.length})`, '');
       for (const n of result.notes) {
         const meta: string[] = [];
-        if (n.createdAt) meta.push(`createdAt ${n.createdAt}`);
-        if (n.updatedAt) meta.push(`updatedAt ${n.updatedAt}`);
-        if (n.createdBy) meta.push(`createdBy ${n.createdBy}`);
+        if (n.createdAt) meta.push(`createdAt ${inlineText(n.createdAt)}`);
+        if (n.updatedAt) meta.push(`updatedAt ${inlineText(n.updatedAt)}`);
+        if (n.createdBy) meta.push(`createdBy ${inlineText(n.createdBy)}`);
         lines.push(`**#${n.id}** ${meta.join(' · ')}`);
-        lines.push(`> ${n.note}`, '');
+        lines.push(quoteText(n.note), '');
       }
     }
 
     if (result.note) {
       lines.push('', `Note #${result.note.id} saved.`);
-      if (result.note.createdAt) lines.push(`_createdAt: ${result.note.createdAt}_`);
-      lines.push('', `> ${result.note.note}`);
+      if (result.note.createdAt) lines.push(`_createdAt: ${inlineText(result.note.createdAt)}_`);
+      lines.push('', quoteText(result.note.note));
     }
 
     if (result.activity) {

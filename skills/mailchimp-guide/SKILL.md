@@ -11,7 +11,7 @@ metadata:
 
 One Mailchimp account through its Marketing API: audiences, subscribers, tags and segments, regular/plaintext/RSS campaigns, reports, templates, and File Manager files.
 
-Outside this server: transactional email (Mandrill), automations and customer journeys, A/B campaigns, landing pages, and interest groups. Deleting an audience, campaign, or merge field, and permanently deleting a subscriber, are things the user does in the Mailchimp UI. Say so rather than looking for a workaround.
+Outside this server: transactional email (Mandrill), automations and customer journeys, A/B campaigns, landing pages, and interest groups. Use the Mailchimp UI to delete an audience, a campaign outside draft status, or a merge field, or to permanently delete a subscriber.
 
 `mailchimp_assets` and `mailchimp_local_templates` exist only when the operator has configured them. Plan around them only when they appear in your tool list.
 
@@ -31,9 +31,9 @@ Outside this server: transactional email (Mandrill), automations and customer jo
 
 ### Sending
 
-- **Each `mailchimp_send_campaign` call creates a new campaign, including `draft` and `test` calls.** No tool sends an existing campaign by ID, and no tool deletes one. Calling it again in send mode after a draft or test sends a second campaign, built from your inputs, and leaves the reviewed one behind.
-- **To send what the user reviewed** (a draft or test campaign, including edits they made in the Mailchimp UI), call `mailchimp_replicate_campaign` on that campaign in send mode. It sends a copy, and the original stays as a draft. If the user already approved the content in chat and doesn't want a draft, a single send-mode `mailchimp_send_campaign` call leaves nothing behind.
-- **Before you finish, name the leftover draft and test campaigns** so the user can delete them in the UI.
+- **Create one draft.** `mailchimp_send_campaign` creates a new campaign on each call. Use `mode: draft` once and keep the returned `campaignId`.
+- **Review and deliver the same draft.** Use `mailchimp_campaigns` to revise it with `update` or `set-content`, then preview with `send-test`, explicit `testEmails`, and `testSendType`. After authorization, use `send` or `schedule` with `confirmSend: true` and complete the confirmation round for that ID.
+- **Discard a draft** with `mailchimp_campaigns` `delete` and confirmation. It is available only in `save` status.
 - **Dispatch waits on a confirmation prompt in the client.** If the client can't show it, the send or schedule can't complete. Leave a draft and give the user its Mailchimp UI link so they can send it there.
 - **Free plan: no scheduling.** When `mailchimp_account` info reports `forever_free`, send now or leave a draft. The send-checklist flags this only as a warning, so it won't stop a schedule attempt.
 - **To send to a tag**, use the tag's ID as the segment ID.
@@ -57,8 +57,8 @@ Outside this server: transactional email (Mandrill), automations and customer jo
 
 ## Workflows
 
-**Newsletter, start to finish:** `mailchimp_playbook` (`design-campaign` or `send`) → `mailchimp_send_campaign` as a draft or test → the user reviews it in the Mailchimp UI → `mailchimp_replicate_campaign` in send mode from the reviewed campaign (or the user sends it from the UI) → name the leftover campaigns → `mailchimp_campaign_report` once it has sent.
+**Newsletter, start to finish:** `mailchimp_playbook` (`design-campaign` or `send`) → `mailchimp_send_campaign` as a draft → revise, test, and send that `campaignId` with `mailchimp_campaigns` → `mailchimp_campaign_report` once it has sent.
 
-**Reusing a past campaign:** `mailchimp_reports` list → pick a source campaign → `mailchimp_replicate_campaign` as a draft with the new content → review → send with the replicate call from the Sending gates.
+**Reusing a past campaign:** `mailchimp_reports` list → pick a source campaign → `mailchimp_replicate_campaign` as a draft with the new content → review and dispatch the new draft ID with `mailchimp_campaigns`.
 
 **Why did engagement change:** `mailchimp_reports` list → `mailchimp_campaign_report` (or the `post-send-review` playbook) for each campaign you're comparing → the `email-activity` slice when the question is about specific recipients.

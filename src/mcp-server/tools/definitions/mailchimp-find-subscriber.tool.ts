@@ -8,6 +8,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { Subscriber } from '@/services/mailchimp/types.js';
+import { codeText, inlineText } from '../shared/markdown-values.js';
 
 const InputSchema = z.object({
   email: z
@@ -189,7 +190,7 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
 
   format: (result) => {
     const lines: string[] = [
-      `# \`${result.email}\``,
+      `# ${codeText(result.email)}`,
       '',
       `Searched: ${result.searchedAcross}`,
       `Total matches: ${result.totalMatches}`,
@@ -200,16 +201,16 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
     }
     const render = (m: z.infer<typeof MatchSchema>): string[] => {
       const sub: string[] = [
-        `- **${m.email}** — ${m.status}${m.fullName ? ` (${m.fullName})` : ''}`,
-        `  Audience: \`${m.audienceId}\` · Subscriber: \`${m.subscriberId}\``,
+        `- **${inlineText(m.email)}** — ${inlineText(m.status)}${m.fullName ? ` (${inlineText(m.fullName)})` : ''}`,
+        `  Audience: ${codeText(m.audienceId)} · Subscriber: ${codeText(m.subscriberId)}`,
       ];
       if (typeof m.memberRating === 'number') sub.push(`  Rating: ${m.memberRating}/5`);
-      if (m.language) sub.push(`  Language: ${m.language}`);
+      if (m.language) sub.push(`  Language: ${inlineText(m.language)}`);
       if (typeof m.vip === 'boolean') sub.push(`  VIP: ${m.vip}`);
-      if (m.source) sub.push(`  Source: ${m.source}`);
-      if (m.timestampSignup) sub.push(`  Signed up: ${m.timestampSignup}`);
-      if (m.timestampOpt) sub.push(`  Opted in: ${m.timestampOpt}`);
-      if (m.lastChanged) sub.push(`  Last changed: ${m.lastChanged}`);
+      if (m.source) sub.push(`  Source: ${inlineText(m.source)}`);
+      if (m.timestampSignup) sub.push(`  Signed up: ${inlineText(m.timestampSignup)}`);
+      if (m.timestampOpt) sub.push(`  Opted in: ${inlineText(m.timestampOpt)}`);
+      if (m.lastChanged) sub.push(`  Last changed: ${inlineText(m.lastChanged)}`);
       if (m.stats) {
         const parts: string[] = [];
         if (typeof m.stats.avgOpenRate === 'number')
@@ -218,11 +219,14 @@ export const mailchimpFindSubscriberTool = tool('mailchimp_find_subscriber', {
           parts.push(`avgClickRate ${(m.stats.avgClickRate * 100).toFixed(2)}%`);
         if (parts.length > 0) sub.push(`  Stats: ${parts.join(', ')}`);
       }
-      if (m.tags && m.tags.length > 0) sub.push(`  Tags: ${m.tags.join(', ')}`);
+      if (m.tags && m.tags.length > 0) sub.push(`  Tags: ${m.tags.map(inlineText).join(', ')}`);
       if (m.mergeFields) {
         const kv = Object.entries(m.mergeFields)
           .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-          .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`);
+          .map(
+            ([k, v]) =>
+              `${inlineText(k)}=${inlineText(typeof v === 'object' ? JSON.stringify(v) : String(v))}`,
+          );
         sub.push(`  Merge fields: ${kv.length > 0 ? kv.join(', ') : '(none populated)'}`);
       }
       return sub;

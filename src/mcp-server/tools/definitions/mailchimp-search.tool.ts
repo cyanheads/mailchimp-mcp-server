@@ -6,6 +6,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { codeText, inlineText } from '@/mcp-server/tools/shared/markdown-values.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 
 const ScopeSchema = z
@@ -193,25 +194,25 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
   },
 
   format: (result) => {
-    const lines: string[] = [`# Search: \`${result.query}\` (${result.scope})`, ''];
+    const lines: string[] = [`# Search: ${codeText(result.query)} (${result.scope})`, ''];
     if (result.members) {
       const m = result.members;
       lines.push(`**Exact matches:** ${m.totalExact} (showing ${m.exact.length})`);
       for (const r of m.exact) {
         lines.push(
-          `- \`${r.email}\` [${r.subscriberId}] — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
+          `- ${codeText(r.email)} [${codeText(r.subscriberId)}] — ${inlineText(r.status)}${r.fullName ? ` (${inlineText(r.fullName)})` : ''} in ${codeText(r.audienceId)}`,
         );
       }
       if (m.fuzzy.length > 0) {
         lines.push('', `**Fuzzy matches:** ${m.totalFuzzy} (showing ${m.fuzzy.length})`);
         for (const r of m.fuzzy) {
           lines.push(
-            `- \`${r.email}\` [${r.subscriberId}] — ${r.status}${r.fullName ? ` (${r.fullName})` : ''} in \`${r.audienceId}\``,
+            `- ${codeText(r.email)} [${codeText(r.subscriberId)}] — ${inlineText(r.status)}${r.fullName ? ` (${inlineText(r.fullName)})` : ''} in ${codeText(r.audienceId)}`,
           );
         }
       }
       if (m.exact.length === 0 && m.fuzzy.length === 0) {
-        lines.push(result.note ? `_${result.note}_` : '_No matches._');
+        lines.push(result.note ? `_${inlineText(result.note)}_` : '_No matches._');
       }
     }
     if (result.campaigns) {
@@ -223,15 +224,16 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
       );
       for (const r of c.matches) {
         const titleLabel = r.subjectLine ?? r.title ?? r.campaignId;
-        const titleAlt = r.title && r.title !== titleLabel ? ` / title: ${r.title}` : '';
-        const typeTag = r.type ? ` [${r.type}]` : '';
+        const titleAlt =
+          r.title && r.title !== titleLabel ? ` / title: ${inlineText(r.title)}` : '';
+        const typeTag = r.type ? ` [${inlineText(r.type)}]` : '';
         lines.push(
-          `- **${titleLabel}**${titleAlt} (\`${r.campaignId}\`)${typeTag}${r.status ? ` — ${r.status}` : ''}${r.sendTime ? ` · ${r.sendTime}` : ''}`,
+          `- **${inlineText(titleLabel)}**${titleAlt} (${codeText(r.campaignId)})${typeTag}${r.status ? ` — ${inlineText(r.status)}` : ''}${r.sendTime ? ` · ${inlineText(r.sendTime)}` : ''}`,
         );
-        if (r.snippet) lines.push(`  _${r.snippet}_`);
+        if (r.snippet) lines.push(`  _${inlineText(r.snippet)}_`);
       }
       if (c.matches.length === 0) {
-        lines.push(result.note ? `_${result.note}_` : '_No matches._');
+        lines.push(result.note ? `_${inlineText(result.note)}_` : '_No matches._');
       }
     }
     if (
@@ -239,7 +241,7 @@ export const mailchimpSearchTool = tool('mailchimp_search', {
       ((result.members && (result.members.exact.length > 0 || result.members.fuzzy.length > 0)) ||
         (result.campaigns && result.campaigns.matches.length > 0))
     ) {
-      lines.push('', `_${result.note}_`);
+      lines.push('', `_${inlineText(result.note)}_`);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

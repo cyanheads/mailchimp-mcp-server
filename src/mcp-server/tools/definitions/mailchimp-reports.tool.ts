@@ -8,7 +8,6 @@
 
 import { type Context, tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import {
   type AppliedFilters,
   listEnrichment,
@@ -19,6 +18,7 @@ import { renderRowTable } from '@/mcp-server/tools/shared/row-table.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import { normalizeMailchimp } from '@/services/mailchimp/normalize.js';
 import type { CampaignReport } from '@/services/mailchimp/types.js';
+import { codeText, headingText, inlineText } from '../shared/markdown-values.js';
 
 type Row = Record<string, unknown>;
 const normalizeRows = (rows: unknown): Row[] => normalizeMailchimp<Row[]>(rows ?? []);
@@ -333,16 +333,14 @@ const LINK_CLICKER_COLUMNS = ['emailAddress', 'clicks', 'contactStatus', 'vip'] 
 /** Inline Markdown for one value: strings escaped, nested values as their JSON. */
 function inlineValue(value: unknown): string {
   if (value === undefined) return '';
-  if (typeof value === 'string') return escapeMarkdownInline(value);
+  if (typeof value === 'string') return inlineText(value);
   if (value === null || typeof value !== 'object') return String(value);
-  return escapeMarkdownInline(JSON.stringify(value));
+  return inlineText(JSON.stringify(value));
 }
 
 /** One bullet per key: `- **key:** value`. */
 const keyValueLines = (row: Row): string[] =>
-  Object.entries(row).map(
-    ([key, value]) => `- **${escapeMarkdownInline(key)}:** ${inlineValue(value)}`,
-  );
+  Object.entries(row).map(([key, value]) => `- **${inlineText(key)}:** ${inlineValue(value)}`);
 
 function renderRows(rows: Row[], dimension: Dimension | undefined, linkId: string | undefined) {
   if (rows.length === 0) return [];
@@ -355,7 +353,7 @@ function renderRows(rows: Row[], dimension: Dimension | undefined, linkId: strin
         .map(inlineValue)
         .join(': ');
       const tail = Object.entries(rest).map(
-        ([key, value]) => ` · ${escapeMarkdownInline(key)}: ${inlineValue(value)}`,
+        ([key, value]) => ` · ${inlineText(key)}: ${inlineValue(value)}`,
       );
       return `- ${head}${tail.join('')}`;
     });
@@ -477,8 +475,8 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
   format: (result) => {
     const lines: string[] = [`Operation: ${result.operation}`];
     if (result.dimension) lines.push(`Dimension: ${result.dimension}`);
-    if (result.campaignId) lines.push(`_campaignId: ${escapeMarkdownInline(result.campaignId)}_`);
-    if (result.linkId) lines.push(`_linkId: ${escapeMarkdownInline(result.linkId)}_`);
+    if (result.campaignId) lines.push(`_campaignId: ${inlineText(result.campaignId)}_`);
+    if (result.linkId) lines.push(`_linkId: ${inlineText(result.linkId)}_`);
     lines.push('');
 
     const renderSummary = (r: z.infer<typeof ReportSummarySchema>, bullet: boolean): void => {
@@ -487,10 +485,10 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
       const title = r.campaignTitle ?? r.subjectLine ?? r.id;
       const subj =
         r.subjectLine && r.subjectLine !== title
-          ? ` subjectLine: "${escapeMarkdownInline(r.subjectLine)}"`
+          ? ` subjectLine: "${inlineText(r.subjectLine)}"`
           : '';
-      const aud = r.audienceName ? ` audience:${escapeMarkdownInline(r.audienceName)}` : '';
-      lines.push(`${prefix}**${escapeMarkdownInline(title)}** (\`${r.id}\`)${subj}${aud}`);
+      const aud = r.audienceName ? ` audience:${inlineText(r.audienceName)}` : '';
+      lines.push(`${prefix}**${inlineText(title)}** (${codeText(r.id)})${subj}${aud}`);
       const metrics: string[] = [];
       if (typeof r.emailsSent === 'number') metrics.push(`emailsSent ${r.emailsSent}`);
       if (typeof r.openRate === 'number')
@@ -500,7 +498,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
       if (typeof r.unsubscribed === 'number') metrics.push(`unsubscribed ${r.unsubscribed}`);
       if (typeof r.abuseReports === 'number') metrics.push(`abuseReports ${r.abuseReports}`);
       if (metrics.length > 0) lines.push(`${indent}${metrics.join(' · ')}`);
-      if (r.sendTime) lines.push(`${indent}sendTime ${r.sendTime}`);
+      if (r.sendTime) lines.push(`${indent}sendTime ${inlineText(r.sendTime)}`);
     };
 
     if (result.reports) {
@@ -511,7 +509,7 @@ export const mailchimpReportsTool = tool('mailchimp_reports', {
     if (result.report) {
       if (result.reports) lines.push('');
       const r = result.report;
-      lines.push(`# ${escapeMarkdownInline(r.campaignTitle ?? r.subjectLine ?? r.id)}`, '');
+      lines.push(headingText(r.campaignTitle ?? r.subjectLine ?? r.id), '');
       renderSummary(r, false);
     }
 

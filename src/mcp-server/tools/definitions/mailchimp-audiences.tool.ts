@@ -7,7 +7,6 @@
 
 import { type HandlerContext, tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, validationError } from '@cyanheads/mcp-ts-core/errors';
-import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
 import {
   listEnrichment,
   listEnrichmentTrailer,
@@ -22,6 +21,7 @@ import type {
   AudienceContact,
   SignupForm,
 } from '@/services/mailchimp/types.js';
+import { codeText, headingText, inlineText } from '../shared/markdown-values.js';
 
 const OperationSchema = z
   .enum([
@@ -382,7 +382,7 @@ function buildAudienceBody(
 function cell(value: unknown): string {
   if (value === undefined) return '';
   const raw = typeof value === 'string' && !/[\r\n]/.test(value) ? value : JSON.stringify(value);
-  return escapeMarkdownInline(raw);
+  return inlineText(raw);
 }
 
 /** A ```json fence longer than any backtick run in the JSON. */
@@ -665,9 +665,11 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
         ? ` visibility:${a.visibility === 'pub' ? 'public' : 'private'}`
         : '';
       const dOpt = typeof a.doubleOptin === 'boolean' ? ` doubleOptin:${a.doubleOptin}` : '';
-      lines.push(`${prefix}**${a.name}** (\`${a.id}\`)${webId}${visLabel}${dOpt}`);
+      lines.push(
+        `${prefix}**${inlineText(a.name)}** (${codeText(a.id)})${webId}${visLabel}${dOpt}`,
+      );
       const meta: string[] = [];
-      if (a.dateCreated) meta.push(`dateCreated ${a.dateCreated}`);
+      if (a.dateCreated) meta.push(`dateCreated ${inlineText(a.dateCreated)}`);
       if (typeof a.listRating === 'number') meta.push(`listRating ${a.listRating}/5`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
       if (a.stats) {
@@ -684,9 +686,9 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
           parts.push(`clickRate ${(s.clickRate * 100).toFixed(2)}%`);
         if (parts.length > 0) lines.push(`${indent}Stats: ${parts.join(', ')}`);
         const stamps: string[] = [];
-        if (s.campaignLastSent) stamps.push(`campaignLastSent ${s.campaignLastSent}`);
-        if (s.lastSubDate) stamps.push(`lastSubDate ${s.lastSubDate}`);
-        if (s.lastUnsubDate) stamps.push(`lastUnsubDate ${s.lastUnsubDate}`);
+        if (s.campaignLastSent) stamps.push(`campaignLastSent ${inlineText(s.campaignLastSent)}`);
+        if (s.lastSubDate) stamps.push(`lastSubDate ${inlineText(s.lastSubDate)}`);
+        if (s.lastUnsubDate) stamps.push(`lastUnsubDate ${inlineText(s.lastUnsubDate)}`);
         if (stamps.length > 0) lines.push(`${indent}${stamps.join(' · ')}`);
       }
     };
@@ -698,7 +700,7 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
 
     if (result.audience) {
       if (result.audiences) lines.push('');
-      lines.push(`# ${result.audience.name}`, '');
+      lines.push(headingText(result.audience.name), '');
       renderSummary(result.audience, false);
     }
 
@@ -720,14 +722,14 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
 
     if (result.clients) {
       lines.push('', `# Email clients (${result.clients.length})`, '');
-      for (const c of result.clients) lines.push(`- ${c.client}: ${c.members} members`);
+      for (const c of result.clients) lines.push(`- ${inlineText(c.client)}: ${c.members} members`);
     }
 
     if (result.abuseReports) {
       lines.push('', `# Abuse reports (${result.abuseReports.length})`, '');
       for (const r of result.abuseReports) {
         lines.push(
-          `- [id:${r.id}] \`${r.email}\` (campaignId: ${r.campaignId})${r.date ? ` at ${r.date}` : ''}`,
+          `- [id:${r.id}] ${codeText(r.email)} (campaignId: ${inlineText(r.campaignId)})${r.date ? ` at ${inlineText(r.date)}` : ''}`,
         );
       }
     }
@@ -735,10 +737,10 @@ export const mailchimpAudiencesTool = tool('mailchimp_audiences', {
     if (result.locations) {
       lines.push('', '# Top subscriber locations', '');
       for (const l of result.locations) {
-        const ccPart = l.cc ? ` (cc: ${l.cc})` : '';
+        const ccPart = l.cc ? ` (cc: ${inlineText(l.cc)})` : '';
         const totalPart = typeof l.total === 'number' ? ` total ${l.total}` : '';
         const pctPart = typeof l.percent === 'number' ? ` (${(l.percent * 100).toFixed(1)}%)` : '';
-        lines.push(`- ${l.country}${ccPart}:${totalPart}${pctPart}`);
+        lines.push(`- ${inlineText(l.country)}${ccPart}:${totalPart}${pctPart}`);
       }
     }
 

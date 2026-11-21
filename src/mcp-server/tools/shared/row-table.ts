@@ -7,6 +7,7 @@
  */
 
 import { escapeMarkdownInline } from '@cyanheads/mcp-ts-core/utils';
+import { inlineText, webLink } from './markdown-values.js';
 
 type Row = Record<string, unknown>;
 
@@ -16,7 +17,7 @@ const hasLineBreak = (value: unknown): value is string =>
 /** Inline text for a single-line value: absent → empty, nested values as their JSON. */
 function cellText(value: unknown): string {
   if (value === undefined) return '';
-  if (typeof value === 'string') return escapeMarkdownInline(value);
+  if (typeof value === 'string') return webLink(value).replace(/(?<!\\)\|/g, '\\|');
   if (value === null || typeof value !== 'object') return String(value);
   return escapeMarkdownInline(JSON.stringify(value));
 }
@@ -35,7 +36,7 @@ export function renderRowTable(rows: readonly Row[], leading: readonly string[])
   if (!first) return [];
   const keys = [
     ...new Set([
-      ...leading.filter((key) => rows.some((row) => key in row)),
+      ...leading.filter((key) => rows.some((row) => Object.hasOwn(row, key))),
       ...rows.flatMap((row) => Object.keys(row)),
     ]),
   ];
@@ -45,26 +46,26 @@ export function renderRowTable(rows: readonly Row[], leading: readonly string[])
       rows.length > 1 &&
       (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') &&
       !hasLineBreak(value) &&
-      rows.every((row) => key in row && row[key] === value)
+      rows.every((row) => Object.hasOwn(row, key) && row[key] === value)
     );
   };
   const hoisted = keys.filter(isHoisted);
   const columns = keys.filter((key) => !hoisted.includes(key));
 
-  const lines = hoisted.map((key) => `- **${escapeMarkdownInline(key)}:** ${cellText(first[key])}`);
+  const lines = hoisted.map((key) => `- **${inlineText(key)}:** ${cellText(first[key])}`);
   if (columns.length === 0) return lines;
   if (lines.length > 0) lines.push('');
 
   const line = (cells: string[]) => `| ${cells.join(' | ')} |`;
   const below: string[] = [];
-  lines.push(line(columns.map(escapeMarkdownInline)), line(columns.map(() => '---')));
+  lines.push(line(columns.map(inlineText)), line(columns.map(() => '---')));
   rows.forEach((row, index) => {
     const cells = columns.map((key) => {
-      const value = row[key];
+      const value = Object.hasOwn(row, key) ? row[key] : undefined;
       if (!hasLineBreak(value)) return cellText(value);
       below.push(
         '',
-        `**Row ${index + 1} · ${escapeMarkdownInline(key)}:** ${escapeMarkdownInline(value)}`,
+        `**Row ${index + 1} · ${inlineText(key)}:** ${value.includes('\r') ? inlineText(value) : escapeMarkdownInline(value)}`,
       );
       return '(below)';
     });

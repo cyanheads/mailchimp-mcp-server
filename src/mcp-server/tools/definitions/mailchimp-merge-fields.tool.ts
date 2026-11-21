@@ -14,6 +14,7 @@ import {
 } from '@/mcp-server/tools/shared/list-enrichment.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { MergeField } from '@/services/mailchimp/types.js';
+import { codeText, inlineText } from '../shared/markdown-values.js';
 
 const OperationSchema = z
   .enum(['list', 'get', 'create', 'update'])
@@ -270,27 +271,29 @@ export const mailchimpMergeFieldsTool = tool('mailchimp_merge_fields', {
       for (const m of result.mergeFields) {
         const req = m.required ? ' (required)' : '';
         const pub = typeof m.public === 'boolean' ? ` public: ${m.public}` : '';
-        const def = m.defaultValue ? ` default: "${m.defaultValue}"` : '';
+        const def = m.defaultValue ? ` default: "${inlineText(m.defaultValue)}"` : '';
         const ord = typeof m.displayOrder === 'number' ? ` order: ${m.displayOrder}` : '';
-        lines.push(`- [${m.mergeId}] \`${m.tag}\` — ${m.name} [${m.type}]${req}${pub}${def}${ord}`);
-        if (m.helpText) lines.push(`  _${m.helpText}_`);
+        lines.push(
+          `- [${m.mergeId}] ${codeText(m.tag)} — ${inlineText(m.name)} [${inlineText(m.type)}]${req}${pub}${def}${ord}`,
+        );
+        if (m.helpText) lines.push(`  _${inlineText(m.helpText)}_`);
       }
     }
     if (result.mergeField) {
       const m = result.mergeField;
       if (result.mergeFields) lines.push('');
       lines.push(
-        `# \`${m.tag}\` — ${m.name}`,
+        `# ${codeText(m.tag)} — ${inlineText(m.name)}`,
         '',
         `**ID:** ${m.mergeId}  `,
-        `**Type:** ${m.type}  `,
+        `**Type:** ${inlineText(m.type)}  `,
       );
       if (typeof m.required === 'boolean')
         lines.push(`**Required:** ${m.required ? 'yes' : 'no'}  `);
       if (typeof m.public === 'boolean') lines.push(`**Public:** ${m.public}  `);
-      if (m.defaultValue) lines.push(`**Default value:** ${m.defaultValue}  `);
+      if (m.defaultValue) lines.push(`**Default value:** ${inlineText(m.defaultValue)}  `);
       if (typeof m.displayOrder === 'number') lines.push(`**Display order:** ${m.displayOrder}  `);
-      if (m.helpText) lines.push(`**Help text:** ${m.helpText}  `);
+      if (m.helpText) lines.push(`**Help text:** ${inlineText(m.helpText)}  `);
     }
     return [{ type: 'text', text: lines.join('\n').trimEnd() }];
   },

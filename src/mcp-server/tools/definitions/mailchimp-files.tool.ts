@@ -16,6 +16,12 @@ import {
   listEnrichmentTrailer,
   pageEndNotice,
 } from '@/mcp-server/tools/shared/list-enrichment.js';
+import {
+  headingText,
+  inlineText,
+  thumbnailImage,
+  webLink,
+} from '@/mcp-server/tools/shared/markdown-values.js';
 import { getMailchimpService } from '@/services/mailchimp/mailchimp-service.js';
 import type { FileFolder, File as MailchimpFile } from '@/services/mailchimp/types.js';
 
@@ -335,14 +341,14 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
           ? ` · ${f.widthInPixels}×${f.heightInPixels}`
           : '';
       lines.push(
-        `${prefix}**${f.name}** (\`${f.id}\`) — ${f.type ?? 'file'} · ${formatBytes(f.sizeInBytes)}${dims}`,
+        `${prefix}**${inlineText(f.name)}** (\`${f.id}\`) — ${inlineText(f.type ?? 'file')} · ${formatBytes(f.sizeInBytes)}${dims}`,
       );
-      lines.push(`${indent}fullSizeUrl: ${f.fullSizeUrl}`);
-      if (f.thumbnailUrl) lines.push(`${indent}thumbnailUrl: ${f.thumbnailUrl}`);
+      lines.push(`${indent}fullSizeUrl: ${webLink(f.fullSizeUrl)}`);
+      if (f.thumbnailUrl) lines.push(`${indent}thumbnailUrl: ${thumbnailImage(f.thumbnailUrl)}`);
       const meta: string[] = [];
       if (typeof f.folderId === 'number' && f.folderId > 0) meta.push(`folderId ${f.folderId}`);
-      if (f.createdBy) meta.push(`createdBy ${f.createdBy}`);
-      if (f.createdAt) meta.push(`createdAt ${f.createdAt}`);
+      if (f.createdBy) meta.push(`createdBy ${inlineText(f.createdBy)}`);
+      if (f.createdAt) meta.push(`createdAt ${inlineText(f.createdAt)}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
     };
 
@@ -350,11 +356,11 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
       const prefix = bullet ? '- ' : '';
       const indent = bullet ? '  ' : '';
       lines.push(
-        `${prefix}**${f.name}** (\`${f.id}\`)${typeof f.fileCount === 'number' ? ` — ${f.fileCount} files` : ''}`,
+        `${prefix}**${inlineText(f.name)}** (\`${f.id}\`)${typeof f.fileCount === 'number' ? ` — ${f.fileCount} files` : ''}`,
       );
       const meta: string[] = [];
-      if (f.createdBy) meta.push(`createdBy ${f.createdBy}`);
-      if (f.createdAt) meta.push(`createdAt ${f.createdAt}`);
+      if (f.createdBy) meta.push(`createdBy ${inlineText(f.createdBy)}`);
+      if (f.createdAt) meta.push(`createdAt ${inlineText(f.createdAt)}`);
       if (meta.length > 0) lines.push(`${indent}${meta.join(' · ')}`);
     };
 
@@ -369,7 +375,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
     if (result.file) {
       if (result.files) lines.push('');
       lines.push(
-        `# ${result.file.name}`,
+        headingText(result.file.name),
         '',
         result.operation === 'upload'
           ? '_Uploaded. Embed `fullSizeUrl` below in your campaign HTML (`<img src="…">`)._'
@@ -386,7 +392,7 @@ export const mailchimpFilesTool = tool('mailchimp_files', {
 
     if (result.folder) {
       if (result.folders) lines.push('');
-      lines.push(`# ${result.folder.name}`, '');
+      lines.push(headingText(result.folder.name), '');
       renderFolder(result.folder, false);
     }
 
