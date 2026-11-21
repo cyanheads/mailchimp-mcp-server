@@ -19,5 +19,6 @@ describe('bundle exclusions', () => {
     'nested/assets/.mailchimp-cache.json',
     '.mailchimp-cache.json.123.tmp',
     'nested/assets/.mailchimp-cache.json.abc.tmp',
+    'node_modules/.vitest-cache/_metadata.json',
   ])('excludes %s', (file) => expect(rules.ignores(file)).toBe(true));
 });
