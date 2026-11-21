@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.7.0](changelog/0.7.x/0.7.0.md) — 2026-11-21 · ⚠️ Breaking
+
+Preview, revise, and dispatch a reviewed Mailchimp draft by its campaign ID.
+
 ## [0.6.0](changelog/0.6.x/0.6.0.md) — 2026-10-31 · ⚠️ Breaking
 
 Campaign responses preserve complete content and distinguish unavailable report data from measured zero or empty results.
