@@ -83,11 +83,13 @@ describe('renderRowTable', () => {
 
   it('preserves line endings in below-table values and keeps URL cells clickable', () => {
     const value = 'First | [line]\r\n\r\nLast `line`\r ';
-    const url = 'https://example.com/issues/(july)?draft=1|2';
+    const url = 'https://example.com/issues/(july)?draft=1|2|3';
     const lines = renderRowTable([{ memo: value, url }], []);
     const values = parser.parse(lines.join('\n'), {}).filter((token) => token.type === 'inline');
     expect(values[2]?.children?.[0]?.content).toBe('(below)');
-    expect(values[3]?.children?.[0]?.attrGet('href')).toBe(url.replace('|', '%7C'));
+    expect(values[3]?.children?.[0]?.attrGet('href')).toBe(
+      'https://example.com/issues/(july)?draft=1%7C2%7C3',
+    );
     expect(values[3]?.children?.[1]?.content).toBe(url);
     expect(values[4]?.children?.map((child) => child.content).join('')).toBe(
       `Row 1 · memo: ${value}`,
